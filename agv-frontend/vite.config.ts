@@ -21,5 +21,17 @@ export default defineConfig({
         ws: true
       }
     }
+  },
+  build: {
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          three: ['three'],
+          echarts: ['echarts'],
+          element: ['element-plus']
+        }
+      }
+    }
   }
 })

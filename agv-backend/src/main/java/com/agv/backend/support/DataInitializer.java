@@ -1,11 +1,17 @@
 package com.agv.backend.support;
 
+import com.agv.backend.dto.TaskDto;
+import com.agv.backend.dto.TaskSetPayload;
 import com.agv.backend.entity.SysDict;
 import com.agv.backend.entity.SysUser;
+import com.agv.backend.entity.TaskSet;
 import com.agv.backend.entity.WarehouseMap;
 import com.agv.backend.repository.SysDictRepository;
 import com.agv.backend.repository.SysUserRepository;
+import com.agv.backend.repository.TaskSetRepository;
 import com.agv.backend.repository.WarehouseMapRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -23,14 +29,19 @@ public class DataInitializer implements CommandLineRunner {
     private final SysUserRepository userRepository;
     private final SysDictRepository dictRepository;
     private final WarehouseMapRepository mapRepository;
+    private final TaskSetRepository taskSetRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ObjectMapper objectMapper;
 
     public DataInitializer(SysUserRepository userRepository, SysDictRepository dictRepository,
-                           WarehouseMapRepository mapRepository, PasswordEncoder passwordEncoder) {
+                           WarehouseMapRepository mapRepository, TaskSetRepository taskSetRepository,
+                           PasswordEncoder passwordEncoder, ObjectMapper objectMapper) {
         this.userRepository = userRepository;
         this.dictRepository = dictRepository;
         this.mapRepository = mapRepository;
+        this.taskSetRepository = taskSetRepository;
         this.passwordEncoder = passwordEncoder;
+        this.objectMapper = objectMapper;
     }
 
     @Override
@@ -38,6 +49,7 @@ public class DataInitializer implements CommandLineRunner {
         seedUsers();
         seedDicts();
         seedTemplates();
+        seedTaskSet();
     }
 
     private void seedUsers() {
@@ -90,5 +102,32 @@ public class DataInitializer implements CommandLineRunner {
         map.setIsTemplate(true);
         map.setCreateUser(null);
         return map;
+    }
+
+    /** 演示任务集：20 单在三个工位之间循环，覆盖空驶、会车与等待冲突。 */
+    private void seedTaskSet() {
+        if (taskSetRepository.count() > 0) {
+            return;
+        }
+        String[] stations = {"W1", "W2", "W3"};
+        java.util.List<TaskDto> tasks = new java.util.ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            String from = stations[i % 3];
+            String to = stations[(i + 1 + i / 3) % 3];
+            if (from.equals(to)) {
+                to = stations[(i + 2) % 3];
+            }
+            tasks.add(new TaskDto(i + 1, from, to));
+        }
+        try {
+            TaskSet set = new TaskSet();
+            set.setName("演示任务集（20 单）");
+            set.setTasksJson(objectMapper.writeValueAsString(new TaskSetPayload(tasks)));
+            set.setCreateUser(null);
+            taskSetRepository.save(set);
+            log.info("初始化演示任务集：20 单");
+        } catch (JsonProcessingException ex) {
+            log.warn("演示任务集初始化失败", ex);
+        }
     }
 }

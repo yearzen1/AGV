@@ -109,6 +109,34 @@ class ApiSmokeTest {
                 .andExpect(jsonPath("$.data.length()").value(0));
     }
 
+    @Test
+    @DisplayName("任务集已初始化，且能跑通双算法对比实验并入库")
+    void taskSetAndComparisonExperiment() throws Exception {
+        String token = login("dispatcher", "dispatcher123");
+
+        mockMvc.perform(get("/api/taskset/list").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].taskCount").value(20));
+
+        mockMvc.perform(post("/api/experiment/compare")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"mapId":1,"taskSetId":1,"agvCount":3,"seed":20261107}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].status").value("FINISHED"))
+                .andExpect(jsonPath("$.data[1].status").value("FINISHED"))
+                .andExpect(jsonPath("$.data[0].makespan").isNumber())
+                .andExpect(jsonPath("$.data[1].conflictCount").isNumber());
+
+        mockMvc.perform(get("/api/experiment/list").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2));
+    }
+
     private String login(String username, String password) throws Exception {
         String body = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

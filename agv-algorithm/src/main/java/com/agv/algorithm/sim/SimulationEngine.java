@@ -42,6 +42,9 @@ public final class SimulationEngine {
      */
     private static final int NODE_CAPACITY = 2;
 
+    /** 任务全部完成后，回充宽限期（tick）。超时即收尾，保证仿真一定能结束。 */
+    private static final long PARK_GRACE_TICKS = 400;
+
     private final RoadNet net;
     private final List<Task> allTasks;
     private final SimConfig config;
@@ -57,6 +60,7 @@ public final class SimulationEngine {
     private long tick;
     private int completedTasks;
     private long makespan;
+    private long tasksDoneTick = -1;
     private double totalPathLen;
     private long totalWaitTicks;
     private int conflictCount;
@@ -268,6 +272,9 @@ public final class SimulationEngine {
     private void completeTask(Agv agv, List<SimEvent> events) {
         completedTasks++;
         makespan = tick;
+        if (completedTasks >= allTasks.size()) {
+            tasksDoneTick = tick;
+        }
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.TASK_DONE,
                 agv.currentNode, "任务 " + agv.task.id() + " 完成"));
         agv.task = null;
@@ -328,6 +335,7 @@ public final class SimulationEngine {
         }
         if (!result.found()) {
             // 起终点在设计期已校验可达，这里只可能是临时封锁导致，降级为等待
+            reservations.release(agv.currentNode, agv.id);
             agv.status = AgvStatus.WAITING;
             return;
         }
@@ -366,6 +374,9 @@ public final class SimulationEngine {
                 events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_CONFLICT,
                         next.id(), blockedReason));
             }
+            // 等待期间释放节点：等待者不持有任何资源，持有资源的只可能是行驶中的车，
+            // 行驶中的车必然在有限时间内释放，因此不会形成互相等待的环。
+            reservations.release(agv.currentNode, agv.id);
             agv.status = AgvStatus.WAITING;
             agv.waitTicks = 0;
             agv.wantedEdgeId = next.edgeId();
@@ -566,7 +577,9 @@ public final class SimulationEngine {
         }
         boolean allParked = agvs.values().stream()
                 .allMatch(a -> a.status == AgvStatus.CHARGING || a.status == AgvStatus.DONE);
-        if (allParked) {
+        // 充电位数量可能少于车辆数，允许一段回充宽限期后收尾，避免因停不进去而永不结束
+        boolean graceExpired = tasksDoneTick >= 0 && tick - tasksDoneTick > PARK_GRACE_TICKS;
+        if (allParked || graceExpired) {
             finished = true;
             events.add(new SimEvent(tick, "-", SimEvent.Type.FINISHED, "-",
                     "全部任务完成，用时 " + makespan + " tick"));
