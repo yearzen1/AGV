@@ -118,8 +118,18 @@ powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 
 ## 论文与演示
 
-- 论文 Markdown 稿：`docs/thesis/`（含图表占位清单）
+- 论文定稿：`docs/thesis/论文定稿.md` / `论文定稿.docx`（9 张实拍插图、15 个表格）
+- 分章源文件：`docs/thesis/00-摘要.md` ~ `07-总结与展望.md`
+- 答辩 PPT：`docs/答辩PPT.pptx`（18 页），大纲见 `docs/答辩PPT大纲.md`
 - 答辩演示脚本：`docs/答辩演示脚本.md`
+
+## 重新生成论文与 PPT
+
+```powershell
+python scripts/build-thesis.py        # 合并分章
+python scripts/build-thesis-docx.py   # 生成 docx
+python scripts/build-ppt.py           # 生成 pptx
+```
 
 ## 测试
 

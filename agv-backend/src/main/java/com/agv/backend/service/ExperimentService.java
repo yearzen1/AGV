@@ -91,7 +91,7 @@ public class ExperimentService {
         ExperimentMetric metric = new ExperimentMetric();
         metric.setExperimentId(saved.getId());
         metric.setMakespan(result.makespan());
-        metric.setTotalPathLen(result.totalPathLen());
+        metric.setTotalPathLen(Math.round(result.totalPathLen() * 10.0) / 10.0);
         metric.setTotalWaitTick(result.totalWaitTick());
         metric.setConflictCount(result.conflictCount());
         metricRepository.save(metric);

@@ -84,7 +84,7 @@ function renderChart() {
         name: item.name,
         type: 'bar',
         barMaxWidth: 42,
-        data: results.value.map((r) => Number(r[item.key] ?? 0)),
+        data: results.value.map((r) => Number(Number(r[item.key] ?? 0).toFixed(1))),
         itemStyle: { color: ['#1f3b73', '#409eff', '#e6a23c', '#f56c6c'][index] },
         label: { show: true, position: 'top', fontSize: 11 }
       }))
@@ -95,6 +95,11 @@ function renderChart() {
 
 function resizeChart() {
   chart?.resize()
+}
+
+function formatTime(value: string) {
+  if (!value) return ''
+  return value.replace('T', ' ').slice(0, 19)
 }
 
 onMounted(async () => {
@@ -145,7 +150,8 @@ onBeforeUnmount(() => {
         <el-table-column prop="agvCount" label="AGV" width="80" />
         <el-table-column prop="seed" label="种子" width="120" />
         <el-table-column prop="makespan" label="完成时间(tick)" width="140" />
-        <el-table-column prop="totalPathLen" label="总路径长(m)" width="140" />
+        <el-table-column prop="totalPathLen" label="总路径长(m)" width="140"
+          :formatter="(row: ExperimentReport) => Number(row.totalPathLen ?? 0).toFixed(1)" />
         <el-table-column prop="totalWaitTick" label="总等待(tick)" width="140" />
         <el-table-column prop="conflictCount" label="冲突次数" width="110" />
         <el-table-column prop="status" label="状态" width="110" />
@@ -162,10 +168,12 @@ onBeforeUnmount(() => {
         <el-table-column prop="agvCount" label="AGV" width="80" />
         <el-table-column prop="seed" label="种子" width="120" />
         <el-table-column prop="makespan" label="完成时间" width="110" />
-        <el-table-column prop="totalPathLen" label="总路径长" width="110" />
+        <el-table-column prop="totalPathLen" label="总路径长" width="110"
+          :formatter="(row: ExperimentReport) => Number(row.totalPathLen ?? 0).toFixed(1)" />
         <el-table-column prop="totalWaitTick" label="总等待" width="100" />
         <el-table-column prop="conflictCount" label="冲突" width="80" />
-        <el-table-column prop="createTime" label="时间" min-width="170" />
+        <el-table-column prop="createTime" label="时间" min-width="170"
+          :formatter="(row: ExperimentReport) => formatTime(row.createTime)" />
       </el-table>
     </div>
   </div>

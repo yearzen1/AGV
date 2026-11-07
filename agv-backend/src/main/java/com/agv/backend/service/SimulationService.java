@@ -264,7 +264,6 @@ public class SimulationService {
         }
         return payload;
     }
-
     @PreDestroy
     public void shutdown() {
         stopScheduler();

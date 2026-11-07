@@ -157,7 +157,9 @@ public final class SimulationEngine {
         while (!finished && guard++ < config.maxTicks()) {
             step();
         }
-        return new SimulationResult(makespan, totalPathLen, totalWaitTicks,
+        // 路径长由逐 tick 累加得到，避免把浮点尾差带进报表
+        double roundedLength = Math.round(totalPathLen * 10.0) / 10.0;
+        return new SimulationResult(makespan, roundedLength, totalWaitTicks,
                 conflictCount, completedTasks, finished, tick);
     }
 
