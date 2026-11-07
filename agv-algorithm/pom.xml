@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.agv</groupId>
+        <artifactId>agv-sim</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>agv-algorithm</artifactId>
+    <name>agv-algorithm</name>
+    <description>纯 Java 算法包：路网建模、A*、时间窗冲突、调度策略、仿真引擎。零 Spring 依赖。</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>
