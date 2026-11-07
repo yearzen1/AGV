@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: agv-backend
+  profiles:
+    active: dev
+
+server:
+  port: 8080
+
+agv:
+  jwt:
+    secret: ${AGV_JWT_SECRET:agv-sim-secret-key-change-me-in-production-2026-11}
+    expire-hours: 12
