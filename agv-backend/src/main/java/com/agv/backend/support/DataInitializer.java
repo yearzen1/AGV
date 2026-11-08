@@ -88,11 +88,24 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedTemplates() {
-        if (mapRepository.count() > 0) {
-            return;
+        upsertTemplate("标准车间（双充电位）", RoadNetTemplates.STANDARD_WORKSHOP);
+        upsertTemplate("直线车间（快速上手）", RoadNetTemplates.LINE_WORKSHOP);
+    }
+
+    /** 模板按名称幂等更新：已有库也会同步到最新的标准布局。 */
+    private void upsertTemplate(String name, String json) {
+        for (WarehouseMap map : mapRepository.findAllByOrderByIdAsc()) {
+            if (name.equals(map.getName()) && Boolean.TRUE.equals(map.getIsTemplate())) {
+                if (!json.equals(map.getRoadnetJson())) {
+                    map.setRoadnetJson(json);
+                    mapRepository.save(map);
+                    log.info("更新预置模板 {}", name);
+                }
+                return;
+            }
         }
-        mapRepository.save(template("标准车间（双充电位）", RoadNetTemplates.STANDARD_WORKSHOP));
-        mapRepository.save(template("直线车间（快速上手）", RoadNetTemplates.LINE_WORKSHOP));
+        mapRepository.save(template(name, json));
+        log.info("初始化预置模板 {}", name);
     }
 
     private WarehouseMap template(String name, String json) {

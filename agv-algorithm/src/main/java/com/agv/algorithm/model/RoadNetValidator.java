@@ -23,6 +23,7 @@ public final class RoadNetValidator {
     public static final String NO_CHARGER = "NO_CHARGER";
     public static final String NOT_CONNECTED = "NOT_CONNECTED";
     public static final String DEAD_END = "DEAD_END";
+    public static final String BUFFER_NOT_LEAF = "BUFFER_NOT_LEAF";
     public static final String INVALID_NUMBER = "INVALID_NUMBER";
     public static final String DUP_EDGE_PAIR = "DUP_EDGE_PAIR";
     public static final String SELF_LOOP = "SELF_LOOP";
@@ -120,6 +121,20 @@ public final class RoadNetValidator {
         for (NetNode node : nodes) {
             if (net.arcsFrom(node.id()).isEmpty() && !net.arcsTo(node.id()).isEmpty()) {
                 errors.add(ValidationError.node(DEAD_END, "节点只进不出（死胡同）：" + node.id(), node.id()));
+            }
+        }
+
+        // 7.5 缓存位应在支路末端，不能串在主通道
+        for (NetNode node : nodes) {
+            if (node.type() != NodeType.BUFFER) {
+                continue;
+            }
+            long degree = edges.stream()
+                    .filter(edge -> edge.from().equals(node.id()) || edge.to().equals(node.id()))
+                    .count();
+            if (degree != 1) {
+                errors.add(ValidationError.node(BUFFER_NOT_LEAF,
+                        "缓存位应位于支路末端，只连接一条路段：" + node.id(), node.id()));
             }
         }
 

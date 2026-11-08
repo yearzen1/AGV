@@ -98,6 +98,22 @@ class RoadNetValidatorTest {
     }
 
     @Test
+    @DisplayName("缓存位串在主通道上：拦截")
+    void rejectsBufferOnThroughPath() {
+        ValidationResult result = RoadNetValidator.validate(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("J1", NodeType.JUNCTION, 5, 0),
+                        node("B1", NodeType.BUFFER, 7, 0),
+                        node("W1", NodeType.WORKSTATION, 10, 0)),
+                List.of(twoWay("E1", "CH1", "J1", 5),
+                        twoWay("E2", "J1", "B1", 2),
+                        twoWay("E3", "B1", "W1", 3)));
+
+        assertFalse(result.valid());
+        assertTrue(hasCode(result, RoadNetValidator.BUFFER_NOT_LEAF));
+    }
+
+    @Test
     @DisplayName("端点不存在：拦截")
     void rejectsMissingEndpoint() {
         ValidationResult result = RoadNetValidator.validate(
