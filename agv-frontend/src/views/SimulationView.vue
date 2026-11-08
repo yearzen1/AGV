@@ -182,6 +182,10 @@ async function changeSpeed(value: number) {
   await setSimSpeed(value)
 }
 
+function onSpeedChange(value: string | number | boolean | undefined) {
+  void changeSpeed(Number(value))
+}
+
 function statusText(value: string) {
   return (
     {
@@ -237,7 +241,7 @@ onMounted(async () => {
       <el-button :disabled="!running || paused" @click="pause">暂停</el-button>
       <el-button :disabled="!running || !paused" @click="resume">继续</el-button>
       <el-button :disabled="!running" @click="reset">重置</el-button>
-      <el-radio-group :model-value="speed" size="small" @change="(v) => changeSpeed(Number(v))">
+      <el-radio-group :model-value="speed" size="small" @change="onSpeedChange">
         <el-radio-button :value="0.5">0.5x</el-radio-button>
         <el-radio-button :value="1">1x</el-radio-button>
         <el-radio-button :value="2">2x</el-radio-button>
