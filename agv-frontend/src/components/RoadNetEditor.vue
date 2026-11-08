@@ -264,6 +264,7 @@ defineExpose({ getPayload, setPayload })
           ref="svgRef"
           :viewBox="`0 0 ${WIDTH * SCALE} ${HEIGHT * SCALE}`"
           class="canvas"
+          :class="{ 'is-drawing': tool !== 'select', 'is-dragging': !!dragging }"
           @click="onCanvasClick"
           @mousemove="onCanvasMouseMove"
           @mouseup="onCanvasMouseUp"
@@ -445,12 +446,24 @@ defineExpose({ getPayload, setPayload })
   width: 100%;
   height: 100%;
   display: block;
-  cursor: crosshair;
+  cursor: default;
   user-select: none;
 }
 
+.canvas.is-drawing {
+  cursor: crosshair;
+}
+
+.canvas.is-dragging {
+  cursor: grabbing;
+}
+
 .node-dot {
-  cursor: pointer;
+  cursor: grab;
+}
+
+.canvas.is-dragging .node-dot {
+  cursor: grabbing;
 }
 
 .edge-line {
