@@ -24,7 +24,7 @@ const MIN_SIZE = 10
 const MAX_SIZE = 200
 const HISTORY_LIMIT = 60
 
-type Tool = 'select' | 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION' | 'connect'
+type Tool = 'select' | 'pan' | 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION' | 'connect'
 
 const NODE_TOOLS: Tool[] = ['WORKSTATION', 'CHARGER', 'BUFFER', 'JUNCTION']
 
@@ -139,11 +139,25 @@ const stats = computed(() => ({
 const transform = computed(() => `translate(${view.tx} ${view.ty}) scale(${view.scale})`)
 const zoomPercent = computed(() => Math.round(view.scale * 100))
 const canvasClass = computed(() => ({
-  'is-drawing': tool.value !== 'select',
+  'is-drawing': tool.value !== 'select' && tool.value !== 'pan',
+  'is-pan-tool': tool.value === 'pan',
+  'is-readonly': !editable.value,
   'is-dragging': !!dragState.value,
   'is-panning': panning.value,
   'can-pan': spacePressed.value
 }))
+
+const tickStep = 10
+const xTicks = computed(() => {
+  const result: number[] = []
+  for (let value = 0; value <= mapWidth.value; value += tickStep) result.push(value)
+  return result
+})
+const yTicks = computed(() => {
+  const result: number[] = []
+  for (let value = 0; value <= mapHeight.value; value += tickStep) result.push(value)
+  return result
+})
 
 const scaleBarMeters = computed(() => (view.scale >= 1.2 ? 5 : 10))
 const scaleBarPx = computed(() => scaleBarMeters.value * SCALE * view.scale)
@@ -474,6 +488,33 @@ function resetView() {
   view.ty = 0
 }
 
+function panBy(dx: number, dy: number) {
+  view.tx += dx
+  view.ty += dy
+}
+
+let panHoldTimer: number | undefined
+
+function startPanRepeat(dx: number, dy: number) {
+  panBy(dx, dy)
+  window.clearInterval(panHoldTimer)
+  panHoldTimer = window.setInterval(() => panBy(dx, dy), 90)
+}
+
+function stopPanRepeat() {
+  window.clearInterval(panHoldTimer)
+  panHoldTimer = undefined
+}
+
+let previewNoticeAt = 0
+
+function notifyPreviewReadonly() {
+  const now = Date.now()
+  if (now - previewNoticeAt < 2000) return
+  previewNoticeAt = now
+  ElMessage.info('预览模式：点右上角「编辑」后可拖动')
+}
+
 function fitNodes(list: NetNode[]) {
   if (list.length === 0) {
     resetView()
@@ -615,12 +656,17 @@ function onCanvasClick(event: MouseEvent) {
   }
   if (!editable.value) return
   const type = tool.value
-  if (type === 'select' || type === 'connect') {
+  if (type === 'select' || type === 'connect' || type === 'pan') {
     if (type === 'connect' && !connectFrom.value) clearSelection()
     return
   }
   const point = toWorld(event)
-  if (point.x < 0 || point.y < 0 || point.x > mapWidth.value || point.y > mapHeight.value) return
+  if (point.x < 0 || point.y < 0 || point.x > mapWidth.value || point.y > mapHeight.value) {
+    ElMessage.warning(
+      `超出画布范围（当前 ${mapWidth.value}×${mapHeight.value} 米），请先调整画布尺寸`
+    )
+    return
+  }
   nodes.value.push({
     id: nextNodeId(type),
     x: point.x,
@@ -692,7 +738,10 @@ function onNodeMouseDown(event: MouseEvent, node: NetNode) {
     selectedEdgeIds.value = []
   }
   if (!isSelectedNode(node.id)) return
-  if (!editable.value) return
+  if (!editable.value) {
+    notifyPreviewReadonly()
+    return
+  }
   beginDrag(event, movingNodeIds())
 }
 
@@ -708,7 +757,10 @@ function onEdgeMouseDown(event: MouseEvent, edge: NetEdge) {
     selectedNodeIds.value = []
   }
   if (!isSelectedEdge(edge.id)) return
-  if (!editable.value) return
+  if (!editable.value) {
+    notifyPreviewReadonly()
+    return
+  }
   beginDrag(event, movingNodeIds())
 }
 
@@ -793,7 +845,8 @@ function updateDrag(event: MouseEvent) {
 
 function onCanvasMouseDown(event: MouseEvent) {
   suppressClick.value = false
-  const isPanTrigger = event.button === 1 || (event.button === 0 && spacePressed.value)
+  const isPanTrigger =
+    event.button === 1 || (event.button === 0 && (spacePressed.value || tool.value === 'pan'))
   if (isPanTrigger) {
     event.preventDefault()
     panState.value = {
@@ -1208,6 +1261,7 @@ function applyMapSize() {
   })
   refreshAllEdgeLengths()
   guides.value = {}
+  resetView()
 }
 
 function onNodeEnter(event: MouseEvent, node: NetNode) {
@@ -1477,6 +1531,15 @@ function onKeyDown(event: KeyboardEvent) {
     emit('save')
     return
   }
+  if (event.key.startsWith('Arrow') && (selectedNodeIds.value.length === 0 || !editable.value)) {
+    event.preventDefault()
+    const step = event.shiftKey ? 120 : 40
+    if (event.key === 'ArrowLeft') panBy(-step, 0)
+    else if (event.key === 'ArrowRight') panBy(step, 0)
+    else if (event.key === 'ArrowUp') panBy(0, -step)
+    else if (event.key === 'ArrowDown') panBy(0, step)
+    return
+  }
   if (!editable.value) return
   if (modifier && event.key.toLowerCase() === 'z') {
     event.preventDefault()
@@ -1610,6 +1673,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', onWindowClick)
   document.removeEventListener('fullscreenchange', onFullscreenChange)
   window.clearTimeout(historyTimer)
+  window.clearInterval(panHoldTimer)
 })
 
 defineExpose({
@@ -1634,6 +1698,7 @@ defineExpose({
       <template v-if="editable">
         <el-radio-group v-model="tool" size="small">
           <el-radio-button value="select">选择/拖动</el-radio-button>
+          <el-radio-button value="pan">平移</el-radio-button>
           <el-radio-button value="connect">连路段</el-radio-button>
         </el-radio-group>
         <el-divider direction="vertical" />
@@ -1681,7 +1746,8 @@ defineExpose({
         </el-button>
         <el-divider direction="vertical" />
       </template>
-      <el-tag v-else type="info" size="small">预览模式</el-tag>
+      <el-tag v-else type="info" size="small">预览模式 · 点「编辑」可修改</el-tag>
+      <el-tag type="info" size="small">范围 {{ mapWidth }}×{{ mapHeight }} m</el-tag>
 
       <el-button size="small" @click="selectAll">全选</el-button>
       <el-button size="small" :disabled="selectedCount === 0" @click="clearSelection">
@@ -1733,6 +1799,44 @@ defineExpose({
         <el-button size="small" title="缩小" @click="zoomOut">−</el-button>
         <el-button size="small" title="重置为 100%" @click="resetView">{{ zoomPercent }}%</el-button>
         <el-button size="small" title="放大" @click="zoomIn">+</el-button>
+      </el-button-group>
+      <el-button-group class="pan-buttons">
+        <el-button
+          size="small"
+          title="向左移动"
+          @mousedown.prevent="startPanRepeat(-80, 0)"
+          @mouseup="stopPanRepeat"
+          @mouseleave="stopPanRepeat"
+        >
+          ←
+        </el-button>
+        <el-button
+          size="small"
+          title="向右移动"
+          @mousedown.prevent="startPanRepeat(80, 0)"
+          @mouseup="stopPanRepeat"
+          @mouseleave="stopPanRepeat"
+        >
+          →
+        </el-button>
+        <el-button
+          size="small"
+          title="向上移动"
+          @mousedown.prevent="startPanRepeat(0, -80)"
+          @mouseup="stopPanRepeat"
+          @mouseleave="stopPanRepeat"
+        >
+          ↑
+        </el-button>
+        <el-button
+          size="small"
+          title="向下移动"
+          @mousedown.prevent="startPanRepeat(0, 80)"
+          @mouseup="stopPanRepeat"
+          @mouseleave="stopPanRepeat"
+        >
+          ↓
+        </el-button>
       </el-button-group>
       <el-button size="small" @click="fitView">适应窗口</el-button>
       <el-button size="small" :disabled="selectedCount === 0" @click="fitSelection">
@@ -1843,6 +1947,36 @@ defineExpose({
               :height="mapHeight * SCALE"
               :fill="showGrid ? 'url(#grid)' : '#fbfdff'"
             />
+            <rect
+              class="map-border"
+              x="1"
+              y="1"
+              :width="mapWidth * SCALE - 2"
+              :height="mapHeight * SCALE - 2"
+              vector-effect="non-scaling-stroke"
+              pointer-events="none"
+            />
+            <g class="map-ticks" pointer-events="none">
+              <g v-for="tick in xTicks" :key="`tx-${tick}`">
+                <line :x1="tick * SCALE" y1="0" :x2="tick * SCALE" y2="8" />
+                <text
+                  :x="tick * SCALE"
+                  y="19"
+                  :text-anchor="tick === 0 ? 'start' : tick === mapWidth ? 'end' : 'middle'"
+                >
+                  {{ tick }}
+                </text>
+              </g>
+              <g v-for="tick in yTicks" :key="`ty-${tick}`">
+                <line x1="0" :y1="tick * SCALE" x2="8" :y2="tick * SCALE" />
+                <text
+                  x="11"
+                  :y="Math.min(tick * SCALE + 4, mapHeight * SCALE - 3)"
+                >
+                  {{ tick }}
+                </text>
+              </g>
+            </g>
 
             <g v-if="showTasks && taskFlows.length > 0">
               <path
@@ -2345,6 +2479,20 @@ defineExpose({
   cursor: grab;
 }
 
+.canvas.is-pan-tool {
+  cursor: grab;
+}
+
+.canvas.is-pan-tool .node-dot,
+.canvas.is-pan-tool .edge-hit {
+  cursor: grab;
+}
+
+.canvas.is-readonly .node-dot,
+.canvas.is-readonly .edge-hit {
+  cursor: pointer;
+}
+
 .canvas.is-panning,
 .canvas.is-dragging {
   cursor: grabbing;
@@ -2377,6 +2525,23 @@ defineExpose({
   stroke-width: 1;
   stroke-dasharray: 4 3;
   pointer-events: none;
+}
+
+.map-border {
+  fill: none;
+  stroke: #7f9cc0;
+  stroke-width: 1.5;
+}
+
+.map-ticks line {
+  stroke: #c5d3e4;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.map-ticks text {
+  font-size: 9px;
+  fill: #8fa3bd;
 }
 
 .task-flow {
