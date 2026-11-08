@@ -1,10 +1,10 @@
-"""把 docs/thesis 下的分章 Markdown 合并成单一论文定稿，并补齐图、参考文献与目录。"""
+"""把 paper/thesis 下的分章 Markdown 合并成单一论文定稿，并补齐图、参考文献与目录。"""
 from pathlib import Path
 import re
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
-THESIS = ROOT / "docs" / "thesis"
+THESIS = ROOT / "paper" / "thesis"
 
 ORDER = [
     "00-摘要.md",
@@ -31,7 +31,7 @@ COVER = f"""# {TITLE}
 | 指导教师 | |
 | 完成日期 | 2027 年 1 月 |
 
-> 本文档由 `docs/thesis/` 下各章合并生成，插图位于 `docs/thesis/figures/`。
+> 本文档由 `paper/thesis/` 下各章合并生成，插图位于 `paper/thesis/figures/`。
 """
 
 FIGURE_REPLACEMENTS = {

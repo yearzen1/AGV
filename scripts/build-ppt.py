@@ -10,8 +10,8 @@ from pptx.oxml.ns import qn
 from pptx.util import Inches, Pt
 
 ROOT = Path(__file__).resolve().parent.parent
-FIG = ROOT / "docs" / "thesis" / "figures"
-OUT = ROOT / "docs" / "答辩PPT.pptx"
+FIG = ROOT / "paper" / "thesis" / "figures"
+OUT = ROOT / "paper" / "答辩PPT.pptx"
 
 PRIMARY = RGBColor(0x1F, 0x3B, 0x73)
 ACCENT = RGBColor(0x40, 0x9E, 0xFF)

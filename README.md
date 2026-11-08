@@ -105,7 +105,7 @@ WS     /ws/sim                  仿真帧通道（当前为 echo 骨架）
 | P3 联调（实时推送、暂停调速、事件日志） | 已完成 |
 | P4 调度对比（双算法 + 指标报表 + 历史回看） | 已完成 |
 | P5 管理模块与演示数据 | 已完成 |
-| 论文初稿（摘要 + 7 章） | 已完成，见 `docs/thesis/` |
+| 论文初稿（摘要 + 7 章） | 已完成，见 `paper/thesis/` |
 
 详细排期见 [specs/毕设实施计划.md](specs/毕设实施计划.md) 与 [specs/时间安排表.md](specs/时间安排表.md)；
 执行结果与证据见时间安排表第六节。
@@ -118,10 +118,10 @@ powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 
 ## 论文与演示
 
-- 论文定稿：`docs/thesis/论文定稿.md` / `论文定稿.docx`（9 张实拍插图、15 个表格）
-- 分章源文件：`docs/thesis/00-摘要.md` ~ `07-总结与展望.md`
-- 答辩 PPT：`docs/答辩PPT.pptx`（18 页），大纲见 `docs/答辩PPT大纲.md`
-- 答辩演示脚本：`docs/答辩演示脚本.md`
+- 论文定稿：`paper/thesis/论文定稿.md` / `论文定稿.docx`（9 张实拍插图、15 个表格）
+- 分章源文件：`paper/thesis/00-摘要.md` ~ `07-总结与展望.md`
+- 答辩 PPT：`paper/答辩PPT.pptx`（18 页），大纲见 `paper/答辩PPT大纲.md`
+- 答辩演示脚本：`paper/答辩演示脚本.md`
 
 ## 重新生成论文与 PPT
 

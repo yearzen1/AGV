@@ -5,7 +5,7 @@ import path from 'node:path'
 const CDP = 'http://127.0.0.1:9222'
 const BASE = 'http://localhost:5173'
 const API = 'http://localhost:8080'
-const OUT = path.resolve('docs/thesis/figures')
+const OUT = path.resolve('paper/thesis/figures')
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 

@@ -9,7 +9,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 
 ROOT = Path(__file__).resolve().parent.parent
-THESIS = ROOT / "docs" / "thesis"
+THESIS = ROOT / "paper" / "thesis"
 MD = THESIS / "论文定稿.md"
 TEMP = THESIS / ".论文定稿-排版.md"
 REF = THESIS / "reference.docx"
