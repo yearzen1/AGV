@@ -137,6 +137,17 @@ class ApiSmokeTest {
                 .andExpect(jsonPath("$.data.length()").value(2));
     }
 
+    @Test
+    @DisplayName("不存在的接口路径返回 404 业务码，而不是 500")
+    void unknownPathReturns404() throws Exception {
+        String token = login("dispatcher", "dispatcher123");
+
+        mockMvc.perform(get("/api/task-set/list").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(4040))
+                .andExpect(jsonPath("$.message").value("接口不存在：/api/task-set/list"));
+    }
+
     private String login(String username, String password) throws Exception {
         String body = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
