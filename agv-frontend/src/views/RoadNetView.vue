@@ -44,6 +44,7 @@ async function open(id: number) {
     name.value = summary?.name ?? `路网 ${id}`
     isTemplate.value = !!summary?.isTemplate
     payload.value = detail
+    editorRef.value?.setPayload(detail)
     errors.value = []
   } catch (error: any) {
     ElMessage.error(error.message || '读取路网失败')
@@ -56,10 +57,12 @@ function createNew() {
   currentId.value = null
   name.value = '新路网'
   isTemplate.value = false
-  payload.value = {
+  const next: RoadNetPayload = {
     nodes: [{ id: 'CH1', x: 4, y: 4, type: 'CHARGER' }],
     edges: []
   }
+  payload.value = next
+  editorRef.value?.setPayload(next)
   errors.value = []
 }
 
@@ -126,7 +129,9 @@ async function remove(id: number) {
     ElMessage.success('已删除')
     if (currentId.value === id) {
       currentId.value = null
-      payload.value = { nodes: [], edges: [] }
+      const empty: RoadNetPayload = { nodes: [], edges: [] }
+      payload.value = empty
+      editorRef.value?.setPayload(empty)
     }
     await loadList()
   } catch (error: any) {
