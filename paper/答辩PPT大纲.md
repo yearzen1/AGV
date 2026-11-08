@@ -1,6 +1,6 @@
 # 答辩 PPT 大纲
 
-> 成品：`paper/答辩PPT.pptx`（18 页，16:9）
+> 成品：运行 `python scripts/build-ppt.py` 生成 `paper/答辩PPT.pptx`（生成产物，不入库）
 > 建议时长：8–10 分钟主讲 + 5 分钟提问。每页讲稿要点见下。
 
 ## 第 1 页　封面

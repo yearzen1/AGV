@@ -71,6 +71,20 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 `sys_user`、`sys_dict`、`warehouse_map`、`task_set`、`experiment`、`experiment_metric`。
 （`sim_event` 为可选降级项，默认不建，事件只走 WebSocket。）
 
+## 部署与安全
+
+仓库里的默认配置只用于本地演示，公网部署前必须处理：
+
+- **JWT 密钥**：`application.yml` 里的默认值仅供开发使用。部署时设置长度为 32 字节以上的随机值：
+
+  ```powershell
+  $env:AGV_JWT_SECRET="用随机生成的至少32字节字符串"
+  ```
+
+- **演示账号**：`admin/admin123`、`dispatcher/dispatcher123` 会在首次启动时自动初始化。部署前必须修改密码，或移除 `DataInitializer` 中的初始化逻辑。
+- **H2 控制台**：`dev` profile 下 `/h2-console` 免鉴权，H2 用户 `sa` 密码为空。不要用 `dev` profile 公网启动；生产使用 `mysql` profile。
+- **端口**：公网只暴露前端或反向代理，不要把 `8080` 直接暴露出去。
+
 ## 接口约定
 
 - 统一返回 `{ code, message, data }`，`code = 0` 表示成功。
@@ -120,18 +134,21 @@ powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 
 ## 论文与演示
 
-- 论文定稿：`paper/thesis/论文定稿.md` / `论文定稿.docx`（9 张实拍插图、15 个表格）
+- 论文定稿：`paper/thesis/论文定稿.md`（9 张插图已入库）；`论文定稿.docx` 为本地生成产物，不入库
 - 分章源文件：`paper/thesis/00-摘要.md` ~ `07-总结与展望.md`
-- 答辩 PPT：`paper/答辩PPT.pptx`（18 页），大纲见 `paper/答辩PPT大纲.md`
+- 答辩 PPT：运行 `python scripts/build-ppt.py` 生成 `paper/答辩PPT.pptx`（生成产物，不入库），大纲见 `paper/答辩PPT大纲.md`
 - 答辩演示脚本：`paper/答辩演示脚本.md`
 
 ## 重新生成论文与 PPT
 
 ```powershell
-python scripts/build-thesis.py        # 合并分章
+node scripts/capture-figures.mjs      # 先启动前后端与无头 Edge，重拍 9 张插图
+python scripts/build-thesis.py        # 合并分章 -> 论文定稿.md
 python scripts/build-thesis-docx.py   # 生成 docx
 python scripts/build-ppt.py           # 生成 pptx
 ```
+
+> `论文定稿.docx`、`reference.docx`、`答辩PPT.pptx` 是生成产物，已在 `.gitignore` 中忽略；9 张 PNG 插图保留入库，GitHub 上可直接查看论文。
 
 ## 测试
 

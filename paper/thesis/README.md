@@ -5,9 +5,9 @@
 | 文件 | 说明 |
 |---|---|
 | [论文定稿.md](论文定稿.md) | **合并定稿**：封面 + 摘要 + 目录 + 第 1–7 章 + 参考文献 + 致谢，9 张插图已嵌入 |
-| [论文定稿.docx](论文定稿.docx) | 由定稿 Markdown 经 pandoc 转换，含分页、宋体小四正文、黑体标题、15 个表格 |
+| `论文定稿.docx` | 由定稿 Markdown 经 pandoc 转换，含分页、宋体小四正文、黑体标题、15 个表格；本地生成，不入库 |
 | `00-摘要.md` ~ `07-总结与展望.md` | 分章源文件，便于单独修改后重新合并 |
-| `figures/` | 论文插图（Edge 无头模式实拍 + 自绘图表） |
+| `figures/` | 论文插图（Edge 无头模式实拍 + 自绘图表），已入库，供 GitHub 渲染 |
 
 ## 重新生成
 
@@ -16,6 +16,8 @@ python scripts/build-thesis.py        # 合并分章 -> 论文定稿.md
 python scripts/build-thesis-docx.py   # 生成 reference.docx 并转出 论文定稿.docx
 python scripts/capture-figures.mjs    # 需要先启动前后端与无头 Edge，重新截图
 ```
+
+> `论文定稿.docx` 和 `reference.docx` 是生成产物，已在 `.gitignore` 中忽略；`论文定稿.md` 与 `figures/*.png` 保留入库。
 
 ## 插图清单
 
