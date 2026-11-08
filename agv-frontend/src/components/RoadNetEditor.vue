@@ -2402,6 +2402,9 @@ defineExpose({
   flex-direction: column;
   gap: 12px;
   height: 100%;
+  --cursor-grab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%23ffffff' stroke-width='5'%3E%3Cpath d='M18 11V6a2 2 0 0 0-4 0v5'/%3E%3Cpath d='M14 10V4a2 2 0 0 0-4 0v6'/%3E%3Cpath d='M10 10.5V6a2 2 0 0 0-4 0v8'/%3E%3Cpath d='M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/%3E%3C/g%3E%3Cg stroke='%23303133' stroke-width='2.4'%3E%3Cpath d='M18 11V6a2 2 0 0 0-4 0v5'/%3E%3Cpath d='M14 10V4a2 2 0 0 0-4 0v6'/%3E%3Cpath d='M10 10.5V6a2 2 0 0 0-4 0v8'/%3E%3Cpath d='M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/%3E%3C/g%3E%3C/svg%3E") 16 16, grab;
+  --cursor-grabbing: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%23ffffff' stroke-width='5'%3E%3Cpath d='M8 12V9a2 2 0 0 1 4 0v3'/%3E%3Cpath d='M12 12V8a2 2 0 0 1 4 0v4'/%3E%3Cpath d='M16 12V9a2 2 0 0 1 4 0v7a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.9-2.55l-2.2-3.1a2 2 0 0 1 3.2-2.4L11 16'/%3E%3C/g%3E%3Cg stroke='%23303133' stroke-width='2.4'%3E%3Cpath d='M8 12V9a2 2 0 0 1 4 0v3'/%3E%3Cpath d='M12 12V8a2 2 0 0 1 4 0v4'/%3E%3Cpath d='M16 12V9a2 2 0 0 1 4 0v7a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.9-2.55l-2.2-3.1a2 2 0 0 1 3.2-2.4L11 16'/%3E%3C/g%3E%3C/svg%3E") 16 16, grabbing;
+  --cursor-pointer: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M9 4 L25 18 L18 19 L21 28 L17 30 L13 21 L9 25 Z' fill='%23303133' stroke='%23ffffff' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E") 9 4, pointer;
 }
 
 .toolbar {
@@ -2476,40 +2479,45 @@ defineExpose({
 }
 
 .canvas.can-pan {
-  cursor: grab;
+  cursor: var(--cursor-grab);
 }
 
 .canvas.is-pan-tool {
-  cursor: grab;
+  cursor: var(--cursor-grab);
 }
 
 .canvas.is-pan-tool .node-dot,
 .canvas.is-pan-tool .edge-hit {
-  cursor: grab;
+  cursor: var(--cursor-grab);
 }
 
 .canvas.is-readonly .node-dot,
 .canvas.is-readonly .edge-hit {
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
+}
+
+.canvas.is-readonly.is-pan-tool .node-dot,
+.canvas.is-readonly.is-pan-tool .edge-hit {
+  cursor: var(--cursor-grab);
 }
 
 .canvas.is-panning,
 .canvas.is-dragging {
-  cursor: grabbing;
+  cursor: var(--cursor-grabbing);
 }
 
 .node-dot {
-  cursor: grab;
+  cursor: var(--cursor-grab);
 }
 
 .canvas.is-dragging .node-dot {
-  cursor: grabbing;
+  cursor: var(--cursor-grabbing);
 }
 
 .edge-hit {
   stroke: rgba(0, 0, 0, 0.001);
   stroke-width: 14;
-  cursor: pointer;
+  cursor: var(--cursor-pointer);
 }
 
 .marquee {
