@@ -448,8 +448,15 @@ interface RenderLane {
   y1: number
   x2: number
   y2: number
-  markerStart?: string
-  markerEnd?: string
+}
+
+interface RenderArrow {
+  key: string
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  markerEnd: string
 }
 
 function edgeLanes(edge: NetEdge): RenderLane[] {
@@ -460,20 +467,9 @@ function edgeLanes(edge: NetEdge): RenderLane[] {
   const y1 = px(from.y)
   const x2 = px(to.x)
   const y2 = px(to.y)
-  const marker = edgeMarker(edge)
 
   if (edge.direction === 'ONE_WAY' || edge.laneMode !== 'DUAL') {
-    return [
-      {
-        key: 'single',
-        x1,
-        y1,
-        x2,
-        y2,
-        markerStart: edge.direction === 'TWO_WAY' ? marker : undefined,
-        markerEnd: marker
-      }
-    ]
+    return [{ key: 'single', x1, y1, x2, y2 }]
   }
 
   const dx = x2 - x1
@@ -482,22 +478,65 @@ function edgeLanes(edge: NetEdge): RenderLane[] {
   const ox = (-dy / length) * LANE_OFFSET_PX
   const oy = (dx / length) * LANE_OFFSET_PX
   return [
-    {
-      key: 'forward',
-      x1: x1 + ox,
-      y1: y1 + oy,
-      x2: x2 + ox,
-      y2: y2 + oy,
-      markerEnd: marker
-    },
-    {
-      key: 'reverse',
-      x1: x2 - ox,
-      y1: y2 - oy,
-      x2: x1 - ox,
-      y2: y1 - oy,
-      markerEnd: marker
+    { key: 'forward', x1: x1 + ox, y1: y1 + oy, x2: x2 + ox, y2: y2 + oy },
+    { key: 'reverse', x1: x2 - ox, y1: y2 - oy, x2: x1 - ox, y2: y1 - oy }
+  ]
+}
+
+/** 箭头画在路段上，而不是端点，避免被节点圆点遮住。 */
+function arrowAt(
+  key: string,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  t: number,
+  markerEnd: string
+): RenderArrow {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const length = Math.hypot(dx, dy) || 1
+  const ux = dx / length
+  const uy = dy / length
+  const half = Math.min(6, length * 0.2)
+  const cx = x1 + dx * t
+  const cy = y1 + dy * t
+  return {
+    key,
+    x1: cx - ux * half,
+    y1: cy - uy * half,
+    x2: cx + ux * half,
+    y2: cy + uy * half,
+    markerEnd
+  }
+}
+
+function edgeArrows(edge: NetEdge): RenderArrow[] {
+  const from = nodeMap.value.get(edge.from)
+  const to = nodeMap.value.get(edge.to)
+  if (!from || !to) return []
+  const x1 = px(from.x)
+  const y1 = px(from.y)
+  const x2 = px(to.x)
+  const y2 = px(to.y)
+  const marker = edgeMarker(edge)
+
+  if (edge.direction === 'ONE_WAY' || edge.laneMode !== 'DUAL') {
+    const arrows = [arrowAt('forward', x1, y1, x2, y2, 1 / 3, marker)]
+    if (edge.direction === 'TWO_WAY') {
+      arrows.push(arrowAt('reverse', x2, y2, x1, y1, 1 / 3, marker))
     }
+    return arrows
+  }
+
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const length = Math.hypot(dx, dy) || 1
+  const ox = (-dy / length) * LANE_OFFSET_PX
+  const oy = (dx / length) * LANE_OFFSET_PX
+  return [
+    arrowAt('forward', x1 + ox, y1 + oy, x2 + ox, y2 + oy, 1 / 3, marker),
+    arrowAt('reverse', x2 - ox, y2 - oy, x1 - ox, y1 - oy, 1 / 3, marker)
   ]
 }
 
@@ -1183,15 +1222,18 @@ function onEdgeLaneChange(edge: NetEdge) {
   }
 }
 
+function reverseEdge(edge: NetEdge) {
+  if (!editable.value || edge.direction !== 'ONE_WAY') return
+  const from = edge.from
+  edge.from = edge.to
+  edge.to = from
+}
+
 function reverseSelectedEdges() {
   if (!editable.value) return
   edges.value
     .filter((edge) => selectedEdgeIds.value.includes(edge.id) && edge.direction === 'ONE_WAY')
-    .forEach((edge) => {
-      const from = edge.from
-      edge.from = edge.to
-      edge.to = from
-    })
+    .forEach((edge) => reverseEdge(edge))
 }
 
 function splitEdgeAt(edge: NetEdge, point: { x: number; y: number }) {
@@ -1835,7 +1877,12 @@ defineExpose({
         >
           合并
         </el-button>
-        <el-button size="small" :disabled="!hasSelectedOneWay" @click="reverseSelectedEdges">
+        <el-button
+          size="small"
+          :disabled="!hasSelectedOneWay"
+          title="仅单向路段可反转"
+          @click="reverseSelectedEdges"
+        >
           反转
         </el-button>
         <el-divider direction="vertical" />
@@ -1994,8 +2041,9 @@ defineExpose({
               viewBox="0 0 10 10"
               refX="9"
               refY="5"
-              markerWidth="6"
-              markerHeight="6"
+              markerUnits="userSpaceOnUse"
+              markerWidth="12"
+              markerHeight="12"
               orient="auto-start-reverse"
             >
               <path d="M0,0 L10,5 L0,10 z" fill="#8fa3bd" />
@@ -2005,8 +2053,9 @@ defineExpose({
               viewBox="0 0 10 10"
               refX="9"
               refY="5"
-              markerWidth="6"
-              markerHeight="6"
+              markerUnits="userSpaceOnUse"
+              markerWidth="12"
+              markerHeight="12"
               orient="auto-start-reverse"
             >
               <path d="M0,0 L10,5 L0,10 z" fill="#1f3b73" />
@@ -2016,8 +2065,9 @@ defineExpose({
               viewBox="0 0 10 10"
               refX="9"
               refY="5"
-              markerWidth="6"
-              markerHeight="6"
+              markerUnits="userSpaceOnUse"
+              markerWidth="12"
+              markerHeight="12"
               orient="auto-start-reverse"
             >
               <path d="M0,0 L10,5 L0,10 z" fill="#f56c6c" />
@@ -2105,8 +2155,18 @@ defineExpose({
                 :y2="lane.y2"
                 :stroke="edgeStroke(edge)"
                 :stroke-width="isSelectedEdge(edge.id) ? 4 : 3"
-                :marker-start="lane.markerStart"
-                :marker-end="lane.markerEnd"
+                pointer-events="none"
+              />
+              <line
+                v-for="arrow in edgeArrows(edge)"
+                :key="arrow.key"
+                :x1="arrow.x1"
+                :y1="arrow.y1"
+                :x2="arrow.x2"
+                :y2="arrow.y2"
+                :stroke="edgeStroke(edge)"
+                :stroke-width="isSelectedEdge(edge.id) ? 4 : 3"
+                :marker-end="arrow.markerEnd"
                 pointer-events="none"
               />
               <line
@@ -2356,6 +2416,24 @@ defineExpose({
                   <el-option label="双向" value="TWO_WAY" />
                   <el-option label="单向" value="ONE_WAY" />
                 </el-select>
+              </el-form-item>
+              <el-form-item label="朝向">
+                <div class="orient-row">
+                  <span class="orient-text">
+                    {{
+                      selectedEdge.direction === 'ONE_WAY'
+                        ? `${selectedEdge.from} → ${selectedEdge.to}`
+                        : '双向无固定朝向'
+                    }}
+                  </span>
+                  <el-button
+                    size="small"
+                    :disabled="selectedEdge.direction !== 'ONE_WAY'"
+                    @click="reverseEdge(selectedEdge)"
+                  >
+                    交换
+                  </el-button>
+                </div>
               </el-form-item>
               <el-form-item label="车道">
                 <el-select
@@ -2865,6 +2943,20 @@ defineExpose({
   font-size: 13px;
   padding: 4px 0;
   color: #606266;
+}
+
+.orient-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.orient-text {
+  font-size: 12px;
+  color: #303133;
+  white-space: nowrap;
 }
 
 .error-row {
