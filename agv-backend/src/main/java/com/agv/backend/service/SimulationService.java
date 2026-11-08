@@ -160,21 +160,31 @@ public class SimulationService {
         if (current == null || current.finished()) {
             return;
         }
+
+        SimFrame frame;
         try {
-            SimFrame frame = current.step();
+            frame = current.step();
+        } catch (RuntimeException ex) {
+            log.error("仿真推进失败", ex);
+            status = "FAILED";
+            stopScheduler();
+            return;
+        }
+
+        // 推送失败属于传输层问题，不能影响仿真本身
+        try {
             Map<String, Object> message = new LinkedHashMap<>();
             message.put("type", "frame");
             message.put("frame", frame);
             message.put("speed", speed);
             message.put("paused", paused);
             socketHandler.broadcast(message);
-            if (frame.finished()) {
-                finish(current);
-            }
         } catch (RuntimeException ex) {
-            log.error("仿真推进失败", ex);
-            status = "FAILED";
-            stopScheduler();
+            log.warn("帧推送失败，已忽略本次推送：{}", ex.getMessage());
+        }
+
+        if (frame.finished()) {
+            finish(current);
         }
     }
 
