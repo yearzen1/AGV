@@ -1,33 +1,69 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { NetEdge, NetNode, RoadNetPayload, ValidationError } from '@/api/roadnet'
 
 const props = defineProps<{
   initial: RoadNetPayload
   errors?: ValidationError[]
+  readonly?: boolean
+  tasks?: { id: number; from: string; to: string }[]
+  name?: string
+}>()
+
+const emit = defineEmits<{
+  (e: 'change'): void
+  (e: 'save'): void
 }>()
 
 const SCALE = 20 // 1 米 = 20 像素
-const WIDTH = 50 // 米
-const HEIGHT = 34 // 米
 const SNAP = 0.5 // 米
 const MIN_SCALE = 0.4
 const MAX_SCALE = 4
+const MIN_SIZE = 10
+const MAX_SIZE = 200
+const HISTORY_LIMIT = 60
 
-const nodes = ref<NetNode[]>(props.initial.nodes.map((n) => ({ ...n })))
-const edges = ref<NetEdge[]>(props.initial.edges.map((e) => ({ ...e })))
+type Tool = 'select' | 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION' | 'connect'
+
+const NODE_TOOLS: Tool[] = ['WORKSTATION', 'CHARGER', 'BUFFER', 'JUNCTION']
+
+const TYPE_LABEL: Record<string, string> = {
+  WORKSTATION: '工位',
+  CHARGER: '充电位',
+  BUFFER: '缓存位',
+  JUNCTION: '路口'
+}
+
+const TYPE_COLOR: Record<string, string> = {
+  WORKSTATION: '#409eff',
+  CHARGER: '#67c23a',
+  BUFFER: '#e6a23c',
+  JUNCTION: '#909399'
+}
+
+const PREFIX: Record<string, string> = {
+  WORKSTATION: 'W',
+  CHARGER: 'CH',
+  BUFFER: 'B',
+  JUNCTION: 'J'
+}
+
+const mapWidth = ref(50)
+const mapHeight = ref(34)
+const nodes = ref<NetNode[]>([])
+const edges = ref<NetEdge[]>([])
 
 const svgRef = ref<SVGSVGElement | null>(null)
 const contentRef = ref<SVGGElement | null>(null)
+const canvasWrap = ref<HTMLDivElement | null>(null)
+const miniRef = ref<SVGSVGElement | null>(null)
 
-type Tool = 'select' | 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION' | 'connect'
 const tool = ref<Tool>('select')
-
 const selectedNodeIds = ref<string[]>([])
 const selectedEdgeIds = ref<string[]>([])
 const connectFrom = ref<string | null>(null)
 
-/** 视图变换：内容像素 * scale + (tx, ty)，只影响显示，不影响导出的坐标 */
 const view = reactive({ scale: 1, tx: 0, ty: 0 })
 const spacePressed = ref(false)
 const panning = ref(false)
@@ -37,19 +73,36 @@ const suppressClick = ref(false)
 const marquee = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
 const marqueeAdditive = ref(false)
 
-const dragState = ref<{
-  start: { x: number; y: number }
-  base: Map<string, { x: number; y: number }>
-  moved: boolean
+const miniDragging = ref(false)
+const isFullscreen = ref(false)
+
+const showNodeLabels = ref(true)
+const showEdgeLabels = ref(true)
+const showGrid = ref(true)
+const showTasks = ref(true)
+
+const cursorWorld = ref<{ x: number; y: number } | null>(null)
+const hover = ref<{ kind: 'node' | 'edge'; id: string; x: number; y: number } | null>(null)
+const guides = ref<{ x?: number; y?: number }>({})
+
+const searchQuery = ref('')
+const searchIndex = ref(0)
+const helpVisible = ref(false)
+
+const contextMenu = ref<{
+  x: number
+  y: number
+  kind: 'canvas' | 'node' | 'edge'
+  id?: string
+  world?: { x: number; y: number }
 } | null>(null)
 
-const panState = ref<{
-  start: { x: number; y: number }
-  tx: number
-  ty: number
-  moved: boolean
-} | null>(null)
+const batchNodeType = ref('WORKSTATION')
+const batchEdgeDirection = ref<'ONE_WAY' | 'TWO_WAY'>('TWO_WAY')
+const batchEdgeSpeed = ref(1)
+const batchEdgeCapacity = ref(1)
 
+const editable = computed(() => !props.readonly)
 const errors = computed(() => props.errors ?? [])
 const errorNodeIds = computed(
   () => new Set(errors.value.map((e) => e.nodeId).filter(Boolean) as string[])
@@ -66,7 +119,15 @@ const selectedEdge = computed(() => {
   if (selectedEdgeIds.value.length !== 1 || selectedNodeIds.value.length !== 0) return null
   return edges.value.find((e) => e.id === selectedEdgeIds.value[0]) ?? null
 })
+const selectedNodes = computed(() =>
+  nodes.value.filter((n) => selectedNodeIds.value.includes(n.id))
+)
 const selectedCount = computed(() => selectedNodeIds.value.length + selectedEdgeIds.value.length)
+const hasSelectedOneWay = computed(() =>
+  edges.value.some((e) => selectedEdgeIds.value.includes(e.id) && e.direction === 'ONE_WAY')
+)
+
+const nodeMap = computed(() => new Map(nodes.value.map((n) => [n.id, n])))
 
 const stats = computed(() => ({
   nodes: nodes.value.length,
@@ -74,8 +135,6 @@ const stats = computed(() => ({
   length: edges.value.reduce((sum, e) => sum + (Number(e.length) || 0), 0),
   chargers: nodes.value.filter((n) => n.type === 'CHARGER').length
 }))
-
-const nodeMap = computed(() => new Map(nodes.value.map((n) => [n.id, n])))
 
 const transform = computed(() => `translate(${view.tx} ${view.ty}) scale(${view.scale})`)
 const zoomPercent = computed(() => Math.round(view.scale * 100))
@@ -85,6 +144,9 @@ const canvasClass = computed(() => ({
   'is-panning': panning.value,
   'can-pan': spacePressed.value
 }))
+
+const scaleBarMeters = computed(() => (view.scale >= 1.2 ? 5 : 10))
+const scaleBarPx = computed(() => scaleBarMeters.value * SCALE * view.scale)
 
 const marqueeBox = computed(() => {
   const m = marquee.value
@@ -97,33 +159,259 @@ const marqueeBox = computed(() => {
   }
 })
 
-const PREFIX: Record<string, string> = {
-  WORKSTATION: 'W',
-  CHARGER: 'CH',
-  BUFFER: 'B',
-  JUNCTION: 'J'
+const hoverInfo = computed(() => {
+  if (!hover.value) return null
+  if (hover.value.kind === 'node') {
+    const node = nodeMap.value.get(hover.value.id)
+    if (!node) return null
+    return {
+      title: `${node.id} · ${TYPE_LABEL[node.type] ?? node.type}`,
+      rows: [`坐标：X ${node.x.toFixed(1)} m，Y ${node.y.toFixed(1)} m`]
+    }
+  }
+  const edge = edges.value.find((e) => e.id === hover.value!.id)
+  if (!edge) return null
+  return {
+    title: `${edge.id} · ${edge.from} → ${edge.to}`,
+    rows: [
+      `长度：${edge.length.toFixed(1)} m`,
+      `方向：${edge.direction === 'ONE_WAY' ? '单向' : '双向'}`,
+      `速度：${edge.speed} · 容量：${edge.capacity}`
+    ]
+  }
+})
+
+const searchResults = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase()
+  if (!query) return [] as { kind: 'node' | 'edge'; id: string }[]
+  const result: { kind: 'node' | 'edge'; id: string }[] = []
+  for (const node of nodes.value) {
+    if (node.id.toLowerCase().includes(query) || TYPE_LABEL[node.type]?.includes(query)) {
+      result.push({ kind: 'node', id: node.id })
+    }
+  }
+  for (const edge of edges.value) {
+    if (edge.id.toLowerCase().includes(query)) result.push({ kind: 'edge', id: edge.id })
+  }
+  return result
+})
+
+const miniWidth = 180
+const miniHeight = computed(() =>
+  Math.max(84, Math.round((miniWidth * mapHeight.value) / Math.max(mapWidth.value, 1)))
+)
+const miniScale = computed(() =>
+  Math.min(miniWidth / (mapWidth.value * SCALE), miniHeight.value / (mapHeight.value * SCALE))
+)
+const miniViewport = computed(() => {
+  const k = miniScale.value
+  const x = (-view.tx / view.scale) * k
+  const y = (-view.ty / view.scale) * k
+  const width = ((mapWidth.value * SCALE) / view.scale) * k
+  const height = ((mapHeight.value * SCALE) / view.scale) * k
+  return {
+    x: Math.max(0, Math.min(x, miniWidth)),
+    y: Math.max(0, Math.min(y, miniHeight.value)),
+    width: Math.max(2, Math.min(width, miniWidth)),
+    height: Math.max(2, Math.min(height, miniHeight.value))
+  }
+})
+
+const taskFlows = computed(() => {
+  if (!props.tasks?.length) return []
+  const result: { id: number; d: string; from: string; to: string }[] = []
+  props.tasks.forEach((task, index) => {
+    const from = nodeMap.value.get(task.from)
+    const to = nodeMap.value.get(task.to)
+    if (!from || !to) return
+    const x1 = from.x * SCALE
+    const y1 = from.y * SCALE
+    const x2 = to.x * SCALE
+    const y2 = to.y * SCALE
+    const dx = x2 - x1
+    const dy = y2 - y1
+    const len = Math.hypot(dx, dy) || 1
+    const offset = ((index % 5) - 2) * 7
+    const mx = (x1 + x2) / 2 + (-dy / len) * offset
+    const my = (y1 + y2) / 2 + (dx / len) * offset
+    result.push({ id: task.id, d: `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`, from: task.from, to: task.to })
+  })
+  return result
+})
+
+const taskBadges = computed(() => {
+  if (!props.tasks?.length) return []
+  const counts = new Map<string, { from: number; to: number }>()
+  for (const task of props.tasks) {
+    const from = counts.get(task.from) ?? { from: 0, to: 0 }
+    from.from += 1
+    counts.set(task.from, from)
+    const to = counts.get(task.to) ?? { from: 0, to: 0 }
+    to.to += 1
+    counts.set(task.to, to)
+  }
+  return [...counts.entries()]
+    .filter(([id]) => nodeMap.value.has(id))
+    .map(([id, count]) => {
+      const node = nodeMap.value.get(id)!
+      return { id, ...count, x: node.x * SCALE + 14, y: node.y * SCALE - 16 }
+    })
+})
+
+interface Snapshot {
+  nodes: NetNode[]
+  edges: NetEdge[]
+  width: number
+  height: number
+  nodeIds: string[]
+  edgeIds: string[]
 }
 
-const TYPE_LABEL: Record<string, string> = {
-  WORKSTATION: '工位',
-  CHARGER: '充电位',
-  BUFFER: '缓存位',
-  JUNCTION: '路口'
+const past = ref<Snapshot[]>([])
+const future = ref<Snapshot[]>([])
+let lastSnapshot: Snapshot = emptySnapshot()
+let historyLock = false
+let historyTimer: number | undefined
+let baseline = ''
+const canUndo = computed(() => past.value.length > 0)
+const canRedo = computed(() => future.value.length > 0)
+
+interface DragState {
+  start: { x: number; y: number }
+  base: Map<string, { x: number; y: number }>
+  before: Snapshot
+  moved: boolean
+  historyPushed: boolean
 }
 
-const TYPE_COLOR: Record<string, string> = {
-  WORKSTATION: '#409eff',
-  CHARGER: '#67c23a',
-  BUFFER: '#e6a23c',
-  JUNCTION: '#909399'
-}
+const dragState = ref<DragState | null>(null)
 
-function px(value: number) {
-  return value * SCALE
+const panState = ref<{
+  start: { x: number; y: number }
+  tx: number
+  ty: number
+  moved: boolean
+} | null>(null)
+
+const clipboard = ref<{ nodes: NetNode[]; edges: NetEdge[] } | null>(null)
+
+function emptySnapshot(): Snapshot {
+  return { nodes: [], edges: [], width: 50, height: 34, nodeIds: [], edgeIds: [] }
 }
 
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value))
+}
+
+function sizeValue(value: number | undefined, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? clamp(Math.round(parsed), MIN_SIZE, MAX_SIZE) : fallback
+}
+
+function cloneNodes(list: NetNode[]) {
+  return list.map((node) => ({ ...node }))
+}
+
+function cloneEdges(list: NetEdge[]) {
+  return list.map((edge) => ({ ...edge }))
+}
+
+function capture(): Snapshot {
+  return {
+    nodes: cloneNodes(nodes.value),
+    edges: cloneEdges(edges.value),
+    width: mapWidth.value,
+    height: mapHeight.value,
+    nodeIds: [...selectedNodeIds.value],
+    edgeIds: [...selectedEdgeIds.value]
+  }
+}
+
+function signature(snapshot = capture()) {
+  return JSON.stringify({
+    nodes: snapshot.nodes,
+    edges: snapshot.edges,
+    width: snapshot.width,
+    height: snapshot.height
+  })
+}
+
+function applySnapshot(snapshot: Snapshot) {
+  window.clearTimeout(historyTimer)
+  historyLock = true
+  nodes.value = cloneNodes(snapshot.nodes)
+  edges.value = cloneEdges(snapshot.edges)
+  mapWidth.value = snapshot.width
+  mapHeight.value = snapshot.height
+  selectedNodeIds.value = [...snapshot.nodeIds]
+  selectedEdgeIds.value = [...snapshot.edgeIds]
+  connectFrom.value = null
+  guides.value = {}
+  lastSnapshot = capture()
+  nextTick(() => {
+    historyLock = false
+  })
+}
+
+function commitHistory() {
+  window.clearTimeout(historyTimer)
+  const next = capture()
+  if (signature(next) === signature(lastSnapshot)) return
+  past.value.push(lastSnapshot)
+  if (past.value.length > HISTORY_LIMIT) past.value.shift()
+  future.value = []
+  lastSnapshot = next
+}
+
+function flushHistory() {
+  commitHistory()
+}
+
+function pauseHistory() {
+  flushHistory()
+  historyLock = true
+}
+
+function resumeHistory() {
+  historyLock = false
+  lastSnapshot = capture()
+}
+
+function undo() {
+  if (!editable.value) return
+  commitHistory()
+  if (past.value.length === 0) return
+  window.clearTimeout(historyTimer)
+  const target = past.value.pop()!
+  future.value.push(capture())
+  applySnapshot(target)
+}
+
+function redo() {
+  if (!editable.value || future.value.length === 0) return
+  window.clearTimeout(historyTimer)
+  const target = future.value.pop()!
+  past.value.push(capture())
+  applySnapshot(target)
+}
+
+function refreshEdgeLengths(nodeIds: Set<string>) {
+  for (const edge of edges.value) {
+    if (!nodeIds.has(edge.from) && !nodeIds.has(edge.to)) continue
+    const from = nodeMap.value.get(edge.from)
+    const to = nodeMap.value.get(edge.to)
+    if (from && to) {
+      edge.length = Math.max(0.1, Math.round(Math.hypot(to.x - from.x, to.y - from.y) * 10) / 10)
+    }
+  }
+}
+
+function refreshAllEdgeLengths() {
+  refreshEdgeLengths(new Set(nodes.value.map((node) => node.id)))
+}
+
+function px(value: number) {
+  return value * SCALE
 }
 
 function isEditableTarget(target: EventTarget | null) {
@@ -131,36 +419,6 @@ function isEditableTarget(target: EventTarget | null) {
   if (!el) return false
   const tag = el.tagName
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
-}
-
-function isSelectedNode(id: string) {
-  return selectedNodeIds.value.includes(id)
-}
-
-function isSelectedEdge(id: string) {
-  return selectedEdgeIds.value.includes(id)
-}
-
-function clearSelection() {
-  selectedNodeIds.value = []
-  selectedEdgeIds.value = []
-}
-
-function selectAll() {
-  selectedNodeIds.value = nodes.value.map((n) => n.id)
-  selectedEdgeIds.value = edges.value.map((e) => e.id)
-}
-
-function toggleNodeSelection(id: string) {
-  selectedNodeIds.value = isSelectedNode(id)
-    ? selectedNodeIds.value.filter((item) => item !== id)
-    : [...selectedNodeIds.value, id]
-}
-
-function toggleEdgeSelection(id: string) {
-  selectedEdgeIds.value = isSelectedEdge(id)
-    ? selectedEdgeIds.value.filter((item) => item !== id)
-    : [...selectedEdgeIds.value, id]
 }
 
 function clientToView(event: MouseEvent) {
@@ -194,7 +452,7 @@ function toWorld(event: MouseEvent) {
 function setScale(next: number, anchor?: { x: number; y: number }) {
   const scale = clamp(next, MIN_SCALE, MAX_SCALE)
   if (Math.abs(scale - view.scale) < 1e-6) return
-  const point = anchor ?? { x: (WIDTH * SCALE) / 2, y: (HEIGHT * SCALE) / 2 }
+  const point = anchor ?? { x: (mapWidth.value * SCALE) / 2, y: (mapHeight.value * SCALE) / 2 }
   const contentX = (point.x - view.tx) / view.scale
   const contentY = (point.y - view.ty) / view.scale
   view.scale = scale
@@ -216,20 +474,20 @@ function resetView() {
   view.ty = 0
 }
 
-function fitView() {
-  if (nodes.value.length === 0) {
+function fitNodes(list: NetNode[]) {
+  if (list.length === 0) {
     resetView()
     return
   }
-  const xs = nodes.value.map((n) => n.x * SCALE)
-  const ys = nodes.value.map((n) => n.y * SCALE)
+  const xs = list.map((node) => node.x * SCALE)
+  const ys = list.map((node) => node.y * SCALE)
   const margin = 60
   const minX = Math.min(...xs) - margin
   const maxX = Math.max(...xs) + margin
   const minY = Math.min(...ys) - margin
   const maxY = Math.max(...ys) + margin
-  const viewWidth = WIDTH * SCALE
-  const viewHeight = HEIGHT * SCALE
+  const viewWidth = mapWidth.value * SCALE
+  const viewHeight = mapHeight.value * SCALE
   const scale = clamp(
     Math.min(viewWidth / Math.max(maxX - minX, 1), viewHeight / Math.max(maxY - minY, 1)),
     MIN_SCALE,
@@ -240,6 +498,56 @@ function fitView() {
   view.ty = viewHeight / 2 - ((minY + maxY) / 2) * scale
 }
 
+function fitView() {
+  fitNodes(nodes.value)
+}
+
+function fitSelection() {
+  const ids = new Set(selectedNodeIds.value)
+  for (const edge of edges.value) {
+    if (selectedEdgeIds.value.includes(edge.id)) {
+      ids.add(edge.from)
+      ids.add(edge.to)
+    }
+  }
+  fitNodes(nodes.value.filter((node) => ids.has(node.id)))
+}
+
+function errorNodes() {
+  const ids = new Set<string>()
+  for (const error of errors.value) {
+    if (error.nodeId) ids.add(error.nodeId)
+    if (error.edgeId) {
+      const edge = edges.value.find((item) => item.id === error.edgeId)
+      if (edge) {
+        ids.add(edge.from)
+        ids.add(edge.to)
+      }
+    }
+  }
+  return nodes.value.filter((node) => ids.has(node.id))
+}
+
+function fitError() {
+  fitNodes(errorNodes())
+}
+
+function focusError(error: ValidationError) {
+  const ids = new Set<string>()
+  if (error.nodeId) ids.add(error.nodeId)
+  if (error.edgeId) {
+    const edge = edges.value.find((item) => item.id === error.edgeId)
+    if (edge) {
+      ids.add(edge.from)
+      ids.add(edge.to)
+    }
+  }
+  if (ids.size === 0) return
+  fitNodes(nodes.value.filter((node) => ids.has(node.id)))
+  selectedNodeIds.value = [...ids]
+  selectedEdgeIds.value = error.edgeId ? [error.edgeId] : []
+}
+
 function onWheel(event: WheelEvent) {
   if (dragState.value || panState.value) return
   setScale(view.scale * (event.deltaY < 0 ? 1.1 : 1 / 1.1), clientToView(event))
@@ -248,54 +556,45 @@ function onWheel(event: WheelEvent) {
 function nextNodeId(type: string) {
   const prefix = PREFIX[type] ?? 'N'
   let index = 1
-  while (nodes.value.some((n) => n.id === `${prefix}${index}`)) {
-    index++
-  }
+  while (nodes.value.some((node) => node.id === `${prefix}${index}`)) index++
   return `${prefix}${index}`
 }
 
 function nextEdgeId() {
   let index = 1
-  while (edges.value.some((e) => e.id === `E${index}`)) {
-    index++
-  }
+  while (edges.value.some((edge) => edge.id === `E${index}`)) index++
   return `E${index}`
 }
 
-function refreshEdgeLengths(nodeIds: Set<string>) {
-  for (const edge of edges.value) {
-    if (!nodeIds.has(edge.from) && !nodeIds.has(edge.to)) continue
-    const a = nodeMap.value.get(edge.from)
-    const b = nodeMap.value.get(edge.to)
-    if (a && b) {
-      edge.length = Math.max(0.1, Math.round(Math.hypot(b.x - a.x, b.y - a.y) * 10) / 10)
-    }
-  }
+function isSelectedNode(id: string) {
+  return selectedNodeIds.value.includes(id)
 }
 
-function onCanvasClick(event: MouseEvent) {
-  if (suppressClick.value) {
-    suppressClick.value = false
-    return
-  }
-  const type = tool.value
-  if (type === 'select' || type === 'connect') {
-    if (type === 'connect' && !connectFrom.value) {
-      clearSelection()
-    }
-    return
-  }
-  const point = toWorld(event)
-  if (point.x < 0 || point.y < 0 || point.x > WIDTH || point.y > HEIGHT) return
-  const node: NetNode = {
-    id: nextNodeId(type),
-    x: point.x,
-    y: point.y,
-    type: type as NetNode['type']
-  }
-  nodes.value.push(node)
-  selectedNodeIds.value = [node.id]
+function isSelectedEdge(id: string) {
+  return selectedEdgeIds.value.includes(id)
+}
+
+function clearSelection() {
+  selectedNodeIds.value = []
   selectedEdgeIds.value = []
+  connectFrom.value = null
+}
+
+function selectAll() {
+  selectedNodeIds.value = nodes.value.map((node) => node.id)
+  selectedEdgeIds.value = edges.value.map((edge) => edge.id)
+}
+
+function toggleNodeSelection(id: string) {
+  selectedNodeIds.value = isSelectedNode(id)
+    ? selectedNodeIds.value.filter((item) => item !== id)
+    : [...selectedNodeIds.value, id]
+}
+
+function toggleEdgeSelection(id: string) {
+  selectedEdgeIds.value = isSelectedEdge(id)
+    ? selectedEdgeIds.value.filter((item) => item !== id)
+    : [...selectedEdgeIds.value, id]
 }
 
 function movingNodeIds() {
@@ -309,19 +608,41 @@ function movingNodeIds() {
   return [...ids]
 }
 
-function beginDrag(event: MouseEvent, nodeIds: string[]) {
-  if (nodeIds.length === 0) return
-  const base = new Map<string, { x: number; y: number }>()
-  for (const id of nodeIds) {
-    const node = nodes.value.find((n) => n.id === id)
-    if (node) base.set(id, { x: node.x, y: node.y })
+function onCanvasClick(event: MouseEvent) {
+  if (suppressClick.value) {
+    suppressClick.value = false
+    return
   }
-  if (base.size === 0) return
-  dragState.value = { start: toWorldRaw(event), base, moved: false }
+  if (!editable.value) return
+  const type = tool.value
+  if (type === 'select' || type === 'connect') {
+    if (type === 'connect' && !connectFrom.value) clearSelection()
+    return
+  }
+  const point = toWorld(event)
+  if (point.x < 0 || point.y < 0 || point.x > mapWidth.value || point.y > mapHeight.value) return
+  nodes.value.push({
+    id: nextNodeId(type),
+    x: point.x,
+    y: point.y,
+    type: type as NetNode['type']
+  })
+  selectedNodeIds.value = [nodes.value[nodes.value.length - 1].id]
+  selectedEdgeIds.value = []
+}
+
+function addNodeAt(type: Tool, point: { x: number; y: number }) {
+  if (!editable.value) return
+  const x = clamp(Math.round(point.x / SNAP) * SNAP, 0, mapWidth.value)
+  const y = clamp(Math.round(point.y / SNAP) * SNAP, 0, mapHeight.value)
+  const node: NetNode = { id: nextNodeId(type), x, y, type: type as NetNode['type'] }
+  nodes.value.push(node)
+  selectedNodeIds.value = [node.id]
+  selectedEdgeIds.value = []
 }
 
 function onNodeClick(event: MouseEvent, node: NetNode) {
-  if (tool.value !== 'connect') return
+  if (tool.value !== 'connect' || !editable.value) return
   event.stopPropagation()
   if (!connectFrom.value) {
     connectFrom.value = node.id
@@ -334,9 +655,9 @@ function onNodeClick(event: MouseEvent, node: NetNode) {
     return
   }
   const duplicate = edges.value.some(
-    (e) =>
-      (e.from === connectFrom.value && e.to === node.id) ||
-      (e.from === node.id && e.to === connectFrom.value)
+    (edge) =>
+      (edge.from === connectFrom.value && edge.to === node.id) ||
+      (edge.from === node.id && edge.to === connectFrom.value)
   )
   if (duplicate) {
     connectFrom.value = null
@@ -363,7 +684,7 @@ function onNodeMouseDown(event: MouseEvent, node: NetNode) {
   if (event.button === 1 || spacePressed.value) return
   if (tool.value !== 'select') return
   event.stopPropagation()
-  const additive = event.shiftKey || event.ctrlKey || event.metaKey
+  const additive = event.ctrlKey || event.metaKey
   if (additive) {
     toggleNodeSelection(node.id)
   } else if (!isSelectedNode(node.id)) {
@@ -371,6 +692,7 @@ function onNodeMouseDown(event: MouseEvent, node: NetNode) {
     selectedEdgeIds.value = []
   }
   if (!isSelectedNode(node.id)) return
+  if (!editable.value) return
   beginDrag(event, movingNodeIds())
 }
 
@@ -378,7 +700,7 @@ function onEdgeMouseDown(event: MouseEvent, edge: NetEdge) {
   if (event.button === 1 || spacePressed.value) return
   if (tool.value !== 'select') return
   event.stopPropagation()
-  const additive = event.shiftKey || event.ctrlKey || event.metaKey
+  const additive = event.ctrlKey || event.metaKey
   if (additive) {
     toggleEdgeSelection(edge.id)
   } else if (!isSelectedEdge(edge.id)) {
@@ -386,25 +708,81 @@ function onEdgeMouseDown(event: MouseEvent, edge: NetEdge) {
     selectedNodeIds.value = []
   }
   if (!isSelectedEdge(edge.id)) return
+  if (!editable.value) return
   beginDrag(event, movingNodeIds())
+}
+
+function beginDrag(event: MouseEvent, nodeIds: string[]) {
+  if (nodeIds.length === 0) return
+  const base = new Map<string, { x: number; y: number }>()
+  for (const id of nodeIds) {
+    const node = nodes.value.find((item) => item.id === id)
+    if (node) base.set(id, { x: node.x, y: node.y })
+  }
+  if (base.size === 0) return
+  pauseHistory()
+  dragState.value = {
+    start: toWorldRaw(event),
+    base,
+    before: lastSnapshot,
+    moved: false,
+    historyPushed: false
+  }
 }
 
 function updateDrag(event: MouseEvent) {
   const state = dragState.value
-  if (!state) return
+  if (!state || !editable.value) return
   const point = toWorldRaw(event)
   let dx = Math.round((point.x - state.start.x) / SNAP) * SNAP
   let dy = Math.round((point.y - state.start.y) / SNAP) * SNAP
 
-  const xs = [...state.base.values()].map((p) => p.x)
-  const ys = [...state.base.values()].map((p) => p.y)
-  dx = clamp(dx, -Math.min(...xs), WIDTH - Math.max(...xs))
-  dy = clamp(dy, -Math.min(...ys), HEIGHT - Math.max(...ys))
+  if (event.shiftKey) {
+    if (Math.abs(dx) >= Math.abs(dy)) dy = 0
+    else dx = 0
+  }
 
-  if (!state.moved && (dx !== 0 || dy !== 0)) state.moved = true
+  guides.value = {}
+  if (state.base.size === 1 && !event.shiftKey) {
+    const [id, origin] = [...state.base.entries()][0]
+    const threshold = 6 / (SCALE * view.scale)
+    const targetX = origin.x + dx
+    const targetY = origin.y + dy
+    for (const other of nodes.value) {
+      if (other.id === id) continue
+      if (Math.abs(other.x - targetX) <= threshold) {
+        dx = other.x - origin.x
+        guides.value.x = other.x * SCALE
+        break
+      }
+    }
+    for (const other of nodes.value) {
+      if (other.id === id) continue
+      if (Math.abs(other.y - targetY) <= threshold) {
+        dy = other.y - origin.y
+        guides.value.y = other.y * SCALE
+        break
+      }
+    }
+  }
+
+  const xs = [...state.base.values()].map((item) => item.x)
+  const ys = [...state.base.values()].map((item) => item.y)
+  dx = clamp(dx, -Math.min(...xs), mapWidth.value - Math.max(...xs))
+  dy = clamp(dy, -Math.min(...ys), mapHeight.value - Math.max(...ys))
+
+  if (!state.moved && (dx !== 0 || dy !== 0)) {
+    state.moved = true
+    if (!state.historyPushed) {
+      past.value.push(state.before)
+      if (past.value.length > HISTORY_LIMIT) past.value.shift()
+      future.value = []
+      state.historyPushed = true
+    }
+  }
 
   for (const [id, origin] of state.base) {
-    const node = nodes.value.find((n) => n.id === id)
+    const node = nodes.value.find((item) => item.id === id)
     if (node) {
       node.x = origin.x + dx
       node.y = origin.y + dy
@@ -430,7 +808,7 @@ function onCanvasMouseDown(event: MouseEvent) {
   if (tool.value !== 'select' || event.button !== 0) return
   const point = clientToView(event)
   marquee.value = { x1: point.x, y1: point.y, x2: point.x, y2: point.y }
-  marqueeAdditive.value = event.shiftKey || event.ctrlKey || event.metaKey
+  marqueeAdditive.value = event.ctrlKey || event.metaKey
 }
 
 function onCanvasMouseMove(event: MouseEvent) {
@@ -453,6 +831,16 @@ function onCanvasMouseMove(event: MouseEvent) {
     return
   }
   updateDrag(event)
+
+  const world = toWorldRaw(event)
+  cursorWorld.value =
+    world.x >= 0 && world.y >= 0 && world.x <= mapWidth.value && world.y <= mapHeight.value
+      ? world
+      : null
+  if (hover.value) {
+    hover.value.x = event.clientX
+    hover.value.y = event.clientY
+  }
 }
 
 function finalizeMarquee() {
@@ -466,12 +854,12 @@ function finalizeMarquee() {
   const x2 = (box.x + box.width - view.tx) / view.scale / SCALE
   const y2 = (box.y + box.height - view.ty) / view.scale / SCALE
   const nodeIds = nodes.value
-    .filter((n) => n.x >= x1 && n.x <= x2 && n.y >= y1 && n.y <= y2)
-    .map((n) => n.id)
+    .filter((node) => node.x >= x1 && node.x <= x2 && node.y >= y1 && node.y <= y2)
+    .map((node) => node.id)
   const nodeSet = new Set(nodeIds)
   const edgeIds = edges.value
-    .filter((e) => nodeSet.has(e.from) && nodeSet.has(e.to))
-    .map((e) => e.id)
+    .filter((edge) => nodeSet.has(edge.from) && nodeSet.has(edge.to))
+    .map((edge) => edge.id)
 
   if (marqueeAdditive.value) {
     selectedNodeIds.value = [...new Set([...selectedNodeIds.value, ...nodeIds])]
@@ -493,128 +881,882 @@ function onCanvasMouseUp() {
     finalizeMarquee()
     marquee.value = null
   }
-  dragState.value = null
+  if (dragState.value) {
+    if (dragState.value.moved) lastSnapshot = capture()
+    resumeHistory()
+    dragState.value = null
+  }
+  guides.value = {}
 }
 
 function onCanvasLeave() {
   hovering.value = false
+  hover.value = null
   onCanvasMouseUp()
 }
 
-function deleteSelected() {
-  if (selectedCount.value === 0) return
+async function deleteSelected() {
+  if (!editable.value || selectedCount.value === 0) return
+  if (selectedNodeIds.value.length > 0) {
+    try {
+      await ElMessageBox.confirm(
+        `将删除 ${selectedNodeIds.value.length} 个节点及其关联路段，确定继续吗？`,
+        '删除确认',
+        { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+  }
   const nodeIds = new Set(selectedNodeIds.value)
   const edgeIds = new Set(selectedEdgeIds.value)
-  nodes.value = nodes.value.filter((n) => !nodeIds.has(n.id))
+  nodes.value = nodes.value.filter((node) => !nodeIds.has(node.id))
   edges.value = edges.value.filter(
-    (e) => !edgeIds.has(e.id) && !nodeIds.has(e.from) && !nodeIds.has(e.to)
+    (edge) => !edgeIds.has(edge.id) && !nodeIds.has(edge.from) && !nodeIds.has(edge.to)
   )
   clearSelection()
 }
 
+function copySelection() {
+  if (selectedNodeIds.value.length === 0) {
+    ElMessage.info('请先选择节点')
+    return
+  }
+  const selectedNodesCopy = nodes.value
+    .filter((node) => selectedNodeIds.value.includes(node.id))
+    .map((node) => ({ ...node }))
+  const selectedEdgeCopy = edges.value
+    .filter(
+      (edge) =>
+        selectedNodeIds.value.includes(edge.from) && selectedNodeIds.value.includes(edge.to)
+    )
+    .map((edge) => ({ ...edge }))
+  clipboard.value = { nodes: selectedNodesCopy, edges: selectedEdgeCopy }
+  ElMessage.success(`已复制 ${selectedNodesCopy.length} 个节点`)
+}
+
+function pasteClipboard() {
+  if (!editable.value || !clipboard.value || clipboard.value.nodes.length === 0) return
+  const nodeIds = new Set(nodes.value.map((node) => node.id))
+  const edgeIds = new Set(edges.value.map((edge) => edge.id))
+  const makeNodeId = (type: string) => {
+    const prefix = PREFIX[type] ?? 'N'
+    let index = 1
+    while (nodeIds.has(`${prefix}${index}`)) index++
+    const id = `${prefix}${index}`
+    nodeIds.add(id)
+    return id
+  }
+  const makeEdgeId = () => {
+    let index = 1
+    while (edgeIds.has(`E${index}`)) index++
+    const id = `E${index}`
+    edgeIds.add(id)
+    return id
+  }
+  const idMap = new Map<string, string>()
+  const offsetX = Math.min(1, mapWidth.value)
+  const offsetY = Math.min(1, mapHeight.value)
+  const newNodes = clipboard.value.nodes.map((node) => {
+    const id = makeNodeId(node.type)
+    idMap.set(node.id, id)
+    return {
+      ...node,
+      id,
+      x: clamp(node.x + offsetX, 0, mapWidth.value),
+      y: clamp(node.y + offsetY, 0, mapHeight.value)
+    }
+  })
+  const newEdges = clipboard.value.edges
+    .filter((edge) => idMap.has(edge.from) && idMap.has(edge.to))
+    .map((edge) => ({
+      ...edge,
+      id: makeEdgeId(),
+      from: idMap.get(edge.from)!,
+      to: idMap.get(edge.to)!
+    }))
+  nodes.value.push(...newNodes)
+  edges.value.push(...newEdges)
+  selectedNodeIds.value = newNodes.map((node) => node.id)
+  selectedEdgeIds.value = newEdges.map((edge) => edge.id)
+}
+
+function duplicateSelection() {
+  copySelection()
+  pasteClipboard()
+}
+
+function handleAlign(command: string) {
+  if (!editable.value) return
+  const list = selectedNodes.value
+  if (list.length < 2) return
+  const xs = list.map((node) => node.x)
+  const ys = list.map((node) => node.y)
+  if (command === 'left') {
+    const value = Math.min(...xs)
+    list.forEach((node) => (node.x = value))
+  } else if (command === 'center-x') {
+    const value = (Math.min(...xs) + Math.max(...xs)) / 2
+    list.forEach((node) => (node.x = value))
+  } else if (command === 'right') {
+    const value = Math.max(...xs)
+    list.forEach((node) => (node.x = value))
+  } else if (command === 'top') {
+    const value = Math.min(...ys)
+    list.forEach((node) => (node.y = value))
+  } else if (command === 'middle-y') {
+    const value = (Math.min(...ys) + Math.max(...ys)) / 2
+    list.forEach((node) => (node.y = value))
+  } else if (command === 'bottom') {
+    const value = Math.max(...ys)
+    list.forEach((node) => (node.y = value))
+  } else if (command === 'distribute-x' && list.length >= 3) {
+    const sorted = [...list].sort((a, b) => a.x - b.x)
+    const step = (sorted[sorted.length - 1].x - sorted[0].x) / (sorted.length - 1)
+    sorted.forEach((node, index) => (node.x = Math.round((sorted[0].x + step * index) / SNAP) * SNAP))
+  } else if (command === 'distribute-y' && list.length >= 3) {
+    const sorted = [...list].sort((a, b) => a.y - b.y)
+    const step = (sorted[sorted.length - 1].y - sorted[0].y) / (sorted.length - 1)
+    sorted.forEach((node, index) => (node.y = Math.round((sorted[0].y + step * index) / SNAP) * SNAP))
+  }
+  refreshEdgeLengths(new Set(list.map((node) => node.id)))
+}
+
+function applyBatchNodeType() {
+  if (!editable.value) return
+  const type = batchNodeType.value as NetNode['type']
+  selectedNodes.value.forEach((node) => (node.type = type))
+}
+
+function applyBatchEdge() {
+  if (!editable.value) return
+  edges.value
+    .filter((edge) => selectedEdgeIds.value.includes(edge.id))
+    .forEach((edge) => {
+      edge.direction = batchEdgeDirection.value
+      edge.speed = batchEdgeSpeed.value
+      edge.capacity = batchEdgeCapacity.value
+    })
+}
+
+function reverseSelectedEdges() {
+  if (!editable.value) return
+  edges.value
+    .filter((edge) => selectedEdgeIds.value.includes(edge.id) && edge.direction === 'ONE_WAY')
+    .forEach((edge) => {
+      const from = edge.from
+      edge.from = edge.to
+      edge.to = from
+    })
+}
+
+function splitEdgeAt(edge: NetEdge, point: { x: number; y: number }) {
+  if (!editable.value) return
+  const from = nodeMap.value.get(edge.from)
+  const to = nodeMap.value.get(edge.to)
+  if (!from || !to) return
+  const vx = to.x - from.x
+  const vy = to.y - from.y
+  const lengthSquared = vx * vx + vy * vy
+  if (lengthSquared === 0) return
+  const t = clamp(((point.x - from.x) * vx + (point.y - from.y) * vy) / lengthSquared, 0.15, 0.85)
+  const x = clamp(Math.round((from.x + vx * t) / SNAP) * SNAP, 0, mapWidth.value)
+  const y = clamp(Math.round((from.y + vy * t) / SNAP) * SNAP, 0, mapHeight.value)
+  if (Math.hypot(x - from.x, y - from.y) < SNAP || Math.hypot(x - to.x, y - to.y) < SNAP) return
+
+  const node: NetNode = { id: nextNodeId('JUNCTION'), x, y, type: 'JUNCTION' }
+  const index = edges.value.findIndex((item) => item.id === edge.id)
+  if (index < 0) return
+  edges.value.splice(index, 1)
+  const first: NetEdge = {
+    ...edge,
+    id: nextEdgeId(),
+    from: edge.from,
+    to: node.id,
+    length: Math.max(0.1, Math.round(Math.hypot(x - from.x, y - from.y) * 10) / 10)
+  }
+  edges.value.push(first)
+  const second: NetEdge = {
+    ...edge,
+    id: nextEdgeId(),
+    from: node.id,
+    to: edge.to,
+    length: Math.max(0.1, Math.round(Math.hypot(to.x - x, to.y - y) * 10) / 10)
+  }
+  edges.value.push(second)
+  nodes.value.push(node)
+  selectedNodeIds.value = [node.id]
+  selectedEdgeIds.value = []
+}
+
+function onEdgeDoubleClick(event: MouseEvent, edge: NetEdge) {
+  if (!editable.value) return
+  event.stopPropagation()
+  splitEdgeAt(edge, toWorld(event))
+}
+
+function mergeSelectedEdges() {
+  if (!editable.value || selectedEdgeIds.value.length !== 2) return
+  const [first, second] = edges.value.filter((edge) => selectedEdgeIds.value.includes(edge.id))
+  if (!first || !second) return
+  const endpoints = [first.from, first.to]
+  const shared = endpoints.find((id) => id === second.from || id === second.to)
+  if (!shared) {
+    ElMessage.warning('两条路段没有共同端点')
+    return
+  }
+  const otherFirst = first.from === shared ? first.to : first.from
+  const otherSecond = second.from === shared ? second.to : second.from
+  if (otherFirst === otherSecond) return
+  const degree = edges.value.filter(
+    (edge) => edge.from === shared || edge.to === shared
+  ).length
+  if (degree !== 2) {
+    ElMessage.warning('中间节点还连接其他路段，不能合并')
+    return
+  }
+  const firstForward = first.to === shared
+  const secondForward = second.from === shared
+  const direction =
+    first.direction === 'ONE_WAY' && second.direction === 'ONE_WAY' && firstForward === secondForward
+      ? 'ONE_WAY'
+      : 'TWO_WAY'
+  const from = firstForward ? otherFirst : otherSecond
+  const to = firstForward ? otherSecond : otherFirst
+  const fromNode = nodeMap.value.get(from)
+  const toNode = nodeMap.value.get(to)
+  if (!fromNode || !toNode) return
+  const merged: NetEdge = {
+    id: nextEdgeId(),
+    from,
+    to,
+    length: Math.max(0.1, Math.round(Math.hypot(toNode.x - fromNode.x, toNode.y - fromNode.y) * 10) / 10),
+    direction,
+    speed: Math.min(first.speed, second.speed),
+    capacity: Math.min(first.capacity, second.capacity)
+  }
+  edges.value = edges.value.filter(
+    (edge) => !selectedEdgeIds.value.includes(edge.id)
+  )
+  nodes.value = nodes.value.filter((node) => node.id !== shared)
+  edges.value.push(merged)
+  selectedNodeIds.value = []
+  selectedEdgeIds.value = [merged.id]
+}
+
+function nudge(dx: number, dy: number) {
+  if (!editable.value || selectedNodeIds.value.length === 0) return
+  const list = selectedNodes.value
+  const xs = list.map((node) => node.x)
+  const ys = list.map((node) => node.y)
+  const deltaX = clamp(dx, -Math.min(...xs), mapWidth.value - Math.max(...xs))
+  const deltaY = clamp(dy, -Math.min(...ys), mapHeight.value - Math.max(...ys))
+  list.forEach((node) => {
+    node.x += deltaX
+    node.y += deltaY
+  })
+  refreshEdgeLengths(new Set(list.map((node) => node.id)))
+}
+
+function onNodeCoordChange(node: NetNode) {
+  node.x = clamp(Math.round(node.x / SNAP) * SNAP, 0, mapWidth.value)
+  node.y = clamp(Math.round(node.y / SNAP) * SNAP, 0, mapHeight.value)
+  refreshEdgeLengths(new Set([node.id]))
+}
+
+function onNodeIdChange(node: NetNode, original: string) {
+  const value = node.id.trim()
+  if (!value || nodes.value.some((item) => item.id === value && item !== node)) {
+    ElMessage.error('节点编号为空或重复，已还原')
+    node.id = original
+    return
+  }
+  if (value !== original) {
+    edges.value.forEach((edge) => {
+      if (edge.from === original) edge.from = value
+      if (edge.to === original) edge.to = value
+    })
+    selectedNodeIds.value = selectedNodeIds.value.map((id) => (id === original ? value : id))
+    if (connectFrom.value === original) connectFrom.value = value
+  }
+}
+
+function onEdgeIdChange(edge: NetEdge, original: string) {
+  const value = edge.id.trim()
+  if (!value || edges.value.some((item) => item.id === value && item !== edge)) {
+    ElMessage.error('路段编号为空或重复，已还原')
+    edge.id = original
+    return
+  }
+  if (value !== original) {
+    selectedEdgeIds.value = selectedEdgeIds.value.map((id) => (id === original ? value : id))
+  }
+}
+
+function onNodeIdOriginal(node: NetNode) {
+  idEditOriginal.value = node.id
+}
+
+const idEditOriginal = ref('')
+
+function applyMapSize() {
+  mapWidth.value = sizeValue(mapWidth.value, 50)
+  mapHeight.value = sizeValue(mapHeight.value, 34)
+  nodes.value.forEach((node) => {
+    node.x = clamp(node.x, 0, mapWidth.value)
+    node.y = clamp(node.y, 0, mapHeight.value)
+  })
+  refreshAllEdgeLengths()
+  guides.value = {}
+}
+
+function onNodeEnter(event: MouseEvent, node: NetNode) {
+  hover.value = { kind: 'node', id: node.id, x: event.clientX, y: event.clientY }
+}
+
+function onEdgeEnter(event: MouseEvent, edge: NetEdge) {
+  hover.value = { kind: 'edge', id: edge.id, x: event.clientX, y: event.clientY }
+}
+
+function clearHover() {
+  hover.value = null
+}
+
+function edgeStroke(edge: NetEdge) {
+  if (errorEdgeIds.value.has(edge.id)) return '#f56c6c'
+  if (isSelectedEdge(edge.id)) return '#1f3b73'
+  return '#8fa3bd'
+}
+
+function edgeMarker(edge: NetEdge) {
+  if (errorEdgeIds.value.has(edge.id)) return 'url(#arrow-error)'
+  if (isSelectedEdge(edge.id)) return 'url(#arrow-selected)'
+  return 'url(#arrow)'
+}
+
+function edgeMid(edge: NetEdge) {
+  const from = nodeMap.value.get(edge.from)
+  const to = nodeMap.value.get(edge.to)
+  if (!from || !to) return { x: 0, y: 0 }
+  return { x: ((from.x + to.x) / 2) * SCALE, y: ((from.y + to.y) / 2) * SCALE }
+}
+
+function nextSearch() {
+  const results = searchResults.value
+  if (results.length === 0) {
+    ElMessage.info('没有匹配的节点或路段')
+    return
+  }
+  const item = results[searchIndex.value % results.length]
+  searchIndex.value += 1
+  if (item.kind === 'node') {
+    selectedNodeIds.value = [item.id]
+    selectedEdgeIds.value = []
+    const node = nodeMap.value.get(item.id)
+    if (node) fitNodes([node])
+  } else {
+    selectedEdgeIds.value = [item.id]
+    selectedNodeIds.value = []
+    const edge = edges.value.find((entry) => entry.id === item.id)
+    if (edge) {
+      const from = nodeMap.value.get(edge.from)
+      const to = nodeMap.value.get(edge.to)
+      if (from && to) fitNodes([from, to])
+    }
+  }
+}
+
+function onCanvasContextMenu(event: MouseEvent) {
+  if (!editable.value) return
+  contextMenu.value = {
+    x: event.clientX,
+    y: event.clientY,
+    kind: 'canvas',
+    world: toWorld(event)
+  }
+}
+
+function onNodeContextMenu(event: MouseEvent, node: NetNode) {
+  if (!editable.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  selectedNodeIds.value = [node.id]
+  selectedEdgeIds.value = []
+  contextMenu.value = { x: event.clientX, y: event.clientY, kind: 'node', id: node.id }
+}
+
+function onEdgeContextMenu(event: MouseEvent, edge: NetEdge) {
+  if (!editable.value) return
+  event.preventDefault()
+  event.stopPropagation()
+  selectedEdgeIds.value = [edge.id]
+  selectedNodeIds.value = []
+  contextMenu.value = { x: event.clientX, y: event.clientY, kind: 'edge', id: edge.id }
+}
+
+function closeContextMenu() {
+  contextMenu.value = null
+}
+
+function contextAddNode(type: Tool) {
+  const world = contextMenu.value?.world
+  closeContextMenu()
+  if (world) addNodeAt(type, world)
+}
+
+function contextDelete() {
+  closeContextMenu()
+  void deleteSelected()
+}
+
+function contextSplit() {
+  const edgeId = contextMenu.value?.id
+  closeContextMenu()
+  const edge = edges.value.find((item) => item.id === edgeId)
+  if (!edge) return
+  const from = nodeMap.value.get(edge.from)
+  const to = nodeMap.value.get(edge.to)
+  if (!from || !to) return
+  splitEdgeAt(edge, { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 })
+}
+
+function contextReverse() {
+  closeContextMenu()
+  reverseSelectedEdges()
+}
+
+function onMiniPointer(event: MouseEvent) {
+  const svg = miniRef.value
+  if (!svg) return
+  const rect = svg.getBoundingClientRect()
+  const contentX = (event.clientX - rect.left) / miniScale.value
+  const contentY = (event.clientY - rect.top) / miniScale.value
+  view.tx = (mapWidth.value * SCALE) / 2 - contentX * view.scale
+  view.ty = (mapHeight.value * SCALE) / 2 - contentY * view.scale
+}
+
+function startMini(event: MouseEvent) {
+  miniDragging.value = true
+  onMiniPointer(event)
+}
+
+function moveMini(event: MouseEvent) {
+  if (miniDragging.value) onMiniPointer(event)
+}
+
+function endMini() {
+  miniDragging.value = false
+}
+
+async function toggleFullscreen() {
+  try {
+    if (!document.fullscreenElement) {
+      await canvasWrap.value?.requestFullscreen()
+    } else {
+      await document.exitFullscreen()
+    }
+  } catch {
+    ElMessage.warning('当前浏览器不支持全屏')
+  }
+}
+
+function onFullscreenChange() {
+  isFullscreen.value = !!document.fullscreenElement
+}
+
+function download(filename: string, blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+}
+
+function buildExportSvg() {
+  const svg = svgRef.value
+  if (!svg) return null
+  const clone = svg.cloneNode(true) as SVGSVGElement
+  clone.querySelectorAll('[data-export="ignore"]').forEach((element) => element.remove())
+  clone.querySelectorAll('.marquee, .guide').forEach((element) => element.remove())
+  const content = clone.querySelector('g[data-content="true"]')
+  content?.setAttribute('transform', 'translate(0 0) scale(1)')
+  const width = mapWidth.value * SCALE
+  const height = mapHeight.value * SCALE
+  clone.setAttribute('width', String(width))
+  clone.setAttribute('height', String(height))
+  clone.setAttribute('viewBox', `0 0 ${width} ${height}`)
+  clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+  background.setAttribute('width', String(width))
+  background.setAttribute('height', String(height))
+  background.setAttribute('fill', '#ffffff')
+  const contentNode = clone.querySelector('g[data-content="true"]')
+  if (contentNode?.parentNode) {
+    contentNode.parentNode.insertBefore(background, contentNode)
+  } else {
+    clone.insertBefore(background, clone.firstChild)
+  }
+  return { markup: new XMLSerializer().serializeToString(clone), width, height }
+}
+
+function safeName() {
+  return (props.name || 'roadnet').replace(/[\\/:*?"<>|]/g, '_')
+}
+
+function exportSvg() {
+  const result = buildExportSvg()
+  if (!result) return
+  download(`${safeName()}.svg`, new Blob([result.markup], { type: 'image/svg+xml;charset=utf-8' }))
+}
+
+async function exportPng() {
+  const result = buildExportSvg()
+  if (!result) return
+  const scale = 2
+  const image = new Image()
+  const url = URL.createObjectURL(
+    new Blob([result.markup], { type: 'image/svg+xml;charset=utf-8' })
+  )
+  try {
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve()
+      image.onerror = () => reject(new Error('导出图片失败'))
+      image.src = url
+    })
+    const canvas = document.createElement('canvas')
+    canvas.width = result.width * scale
+    canvas.height = result.height * scale
+    const context = canvas.getContext('2d')
+    if (!context) return
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    if (blob) download(`${safeName()}.png`, blob)
+  } catch (error) {
+    ElMessage.error(error instanceof Error ? error.message : '导出图片失败')
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+function handleExport(command: string) {
+  if (command === 'svg') exportSvg()
+  else if (command === 'png') void exportPng()
+}
+
 function onKeyDown(event: KeyboardEvent) {
-  if (!hovering.value || isEditableTarget(event.target)) return
+  if (isEditableTarget(event.target)) return
+  if (event.key === '?' && !editable.value) {
+    helpVisible.value = true
+    return
+  }
+  if (!hovering.value && !event.ctrlKey && !event.metaKey && event.key !== 'Escape') return
+  if (event.key === 'Escape') {
+    clearSelection()
+    closeContextMenu()
+    hover.value = null
+    return
+  }
   if (event.code === 'Space') {
     spacePressed.value = true
     event.preventDefault()
     return
   }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+  const modifier = event.ctrlKey || event.metaKey
+  if (modifier && event.key.toLowerCase() === 'a') {
     event.preventDefault()
     selectAll()
     return
   }
-  if (event.key === 'Escape') {
-    clearSelection()
-    connectFrom.value = null
+  if (modifier && event.key.toLowerCase() === 's') {
+    event.preventDefault()
+    emit('save')
+    return
+  }
+  if (!editable.value) return
+  if (modifier && event.key.toLowerCase() === 'z') {
+    event.preventDefault()
+    if (event.shiftKey) redo()
+    else undo()
+    return
+  }
+  if (modifier && event.key.toLowerCase() === 'y') {
+    event.preventDefault()
+    redo()
+    return
+  }
+  if (modifier && event.key.toLowerCase() === 'c') {
+    event.preventDefault()
+    copySelection()
+    return
+  }
+  if (modifier && event.key.toLowerCase() === 'v') {
+    event.preventDefault()
+    pasteClipboard()
+    return
+  }
+  if (modifier && event.key.toLowerCase() === 'd') {
+    event.preventDefault()
+    duplicateSelection()
+    return
+  }
+  if (event.key === '?' ) {
+    helpVisible.value = true
     return
   }
   if (event.key === 'Delete' || event.key === 'Backspace') {
     if (selectedCount.value > 0) {
       event.preventDefault()
-      deleteSelected()
+      void deleteSelected()
     }
+    return
+  }
+  if (event.key.startsWith('Arrow') && selectedNodeIds.value.length > 0) {
+    event.preventDefault()
+    const distance = event.shiftKey ? SNAP * 5 : SNAP
+    if (event.key === 'ArrowLeft') nudge(-distance, 0)
+    else if (event.key === 'ArrowRight') nudge(distance, 0)
+    else if (event.key === 'ArrowUp') nudge(0, -distance)
+    else if (event.key === 'ArrowDown') nudge(0, distance)
   }
 }
 
 function onKeyUp(event: KeyboardEvent) {
-  if (event.code === 'Space') {
-    spacePressed.value = false
+  if (event.code === 'Space') spacePressed.value = false
+}
+
+function onWindowClick() {
+  closeContextMenu()
+}
+
+function loadPayload(payload: RoadNetPayload, resetHistory = true) {
+  window.clearTimeout(historyTimer)
+  historyLock = true
+  mapWidth.value = sizeValue(payload.width, 50)
+  mapHeight.value = sizeValue(payload.height, 34)
+  nodes.value = cloneNodes(payload.nodes ?? [])
+  edges.value = cloneEdges(payload.edges ?? [])
+  nodes.value.forEach((node) => {
+    node.x = clamp(node.x, 0, mapWidth.value)
+    node.y = clamp(node.y, 0, mapHeight.value)
+  })
+  refreshAllEdgeLengths()
+  clearSelection()
+  resetView()
+  guides.value = {}
+  hover.value = null
+  if (resetHistory) {
+    past.value = []
+    future.value = []
+    lastSnapshot = capture()
+    baseline = signature()
+  }
+  nextTick(() => {
+    historyLock = false
+  })
+}
+
+function setPayload(payload: RoadNetPayload) {
+  loadPayload(payload, true)
+}
+
+function getPayload(): RoadNetPayload {
+  return {
+    nodes: cloneNodes(nodes.value),
+    edges: cloneEdges(edges.value),
+    width: mapWidth.value,
+    height: mapHeight.value
   }
 }
 
+function isDirty() {
+  return signature() !== baseline
+}
+
+function markSaved() {
+  baseline = signature()
+}
+
+function markDirty() {
+  baseline = '__dirty__'
+}
+
+watch(
+  [nodes, edges, mapWidth, mapHeight],
+  () => {
+    emit('change')
+    if (historyLock) return
+    window.clearTimeout(historyTimer)
+    historyTimer = window.setTimeout(commitHistory, 250)
+  },
+  { deep: true }
+)
+
 onMounted(() => {
+  loadPayload(props.initial, true)
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
+  window.addEventListener('click', onWindowClick)
+  document.addEventListener('fullscreenchange', onFullscreenChange)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('keyup', onKeyUp)
+  window.removeEventListener('click', onWindowClick)
+  document.removeEventListener('fullscreenchange', onFullscreenChange)
+  window.clearTimeout(historyTimer)
 })
 
-function edgeMid(edge: NetEdge) {
-  const a = nodeMap.value.get(edge.from)
-  const b = nodeMap.value.get(edge.to)
-  if (!a || !b) return { x: 0, y: 0 }
-  return { x: ((a.x + b.x) / 2) * SCALE, y: ((a.y + b.y) / 2) * SCALE }
-}
-
-function setPayload(payload: RoadNetPayload) {
-  nodes.value = payload.nodes.map((n) => ({ ...n }))
-  edges.value = payload.edges.map((e) => ({ ...e }))
-  clearSelection()
-  connectFrom.value = null
-  resetView()
-}
-
-function getPayload(): RoadNetPayload {
-  return {
-    nodes: nodes.value.map((n) => ({ ...n })),
-    edges: edges.value.map((e) => ({ ...e }))
-  }
-}
-
-defineExpose({ getPayload, setPayload })
+defineExpose({
+  getPayload,
+  setPayload,
+  isDirty,
+  markSaved,
+  markDirty,
+  focusError,
+  fitSelection,
+  fitError,
+  undo,
+  redo,
+  exportPng,
+  exportSvg
+})
 </script>
 
 <template>
   <div class="editor">
     <div class="toolbar">
-      <el-radio-group v-model="tool" size="small">
-        <el-radio-button value="select">选择/拖动</el-radio-button>
-        <el-radio-button value="connect">连路段</el-radio-button>
-      </el-radio-group>
-      <el-divider direction="vertical" />
-      <el-radio-group v-model="tool" size="small">
-        <el-radio-button value="WORKSTATION">工位</el-radio-button>
-        <el-radio-button value="CHARGER">充电位</el-radio-button>
-        <el-radio-button value="BUFFER">缓存位</el-radio-button>
-        <el-radio-button value="JUNCTION">路口</el-radio-button>
-      </el-radio-group>
-      <el-divider direction="vertical" />
-      <el-button size="small" :disabled="selectedCount === 0" @click="deleteSelected">
-        删除选中
-      </el-button>
+      <template v-if="editable">
+        <el-radio-group v-model="tool" size="small">
+          <el-radio-button value="select">选择/拖动</el-radio-button>
+          <el-radio-button value="connect">连路段</el-radio-button>
+        </el-radio-group>
+        <el-divider direction="vertical" />
+        <el-radio-group v-model="tool" size="small">
+          <el-radio-button v-for="type in NODE_TOOLS" :key="type" :value="type">
+            {{ TYPE_LABEL[type] }}
+          </el-radio-button>
+        </el-radio-group>
+        <el-divider direction="vertical" />
+        <el-button-group>
+          <el-button size="small" :disabled="!canUndo" @click="undo">撤销</el-button>
+          <el-button size="small" :disabled="!canRedo" @click="redo">重做</el-button>
+        </el-button-group>
+        <el-button size="small" :disabled="selectedCount === 0" @click="copySelection">
+          复制
+        </el-button>
+        <el-button size="small" :disabled="!clipboard" @click="pasteClipboard">粘贴</el-button>
+        <el-button size="small" :disabled="selectedCount === 0" @click="deleteSelected">
+          删除
+        </el-button>
+        <el-dropdown @command="handleAlign">
+          <el-button size="small" :disabled="selectedNodeIds.length < 2">对齐</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="left">左对齐</el-dropdown-item>
+              <el-dropdown-item command="center-x">水平居中</el-dropdown-item>
+              <el-dropdown-item command="right">右对齐</el-dropdown-item>
+              <el-dropdown-item command="top">顶对齐</el-dropdown-item>
+              <el-dropdown-item command="middle-y">垂直居中</el-dropdown-item>
+              <el-dropdown-item command="bottom">底对齐</el-dropdown-item>
+              <el-dropdown-item command="distribute-x" divided>水平等距</el-dropdown-item>
+              <el-dropdown-item command="distribute-y">垂直等距</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button
+          size="small"
+          :disabled="selectedEdgeIds.length !== 2"
+          @click="mergeSelectedEdges"
+        >
+          合并
+        </el-button>
+        <el-button size="small" :disabled="!hasSelectedOneWay" @click="reverseSelectedEdges">
+          反转
+        </el-button>
+        <el-divider direction="vertical" />
+      </template>
+      <el-tag v-else type="info" size="small">预览模式</el-tag>
+
       <el-button size="small" @click="selectAll">全选</el-button>
       <el-button size="small" :disabled="selectedCount === 0" @click="clearSelection">
         清空
       </el-button>
-      <el-divider direction="vertical" />
+
+      <el-input
+        v-model="searchQuery"
+        size="small"
+        placeholder="搜索编号"
+        clearable
+        style="width: 150px"
+        @keyup.enter="nextSearch"
+      >
+        <template #append>
+          <el-button @click="nextSearch">{{ searchResults.length }}</el-button>
+        </template>
+      </el-input>
+
+      <el-popover placement="bottom" trigger="click" width="180">
+        <template #reference>
+          <el-button size="small">显示</el-button>
+        </template>
+        <div class="popover-list">
+          <el-checkbox v-model="showNodeLabels">节点标签</el-checkbox>
+          <el-checkbox v-model="showEdgeLabels">路段标签</el-checkbox>
+          <el-checkbox v-model="showGrid">背景网格</el-checkbox>
+          <el-checkbox v-model="showTasks">任务流向</el-checkbox>
+        </div>
+      </el-popover>
+
+      <el-popover v-if="editable" placement="bottom" trigger="click" width="230">
+        <template #reference>
+          <el-button size="small">画布 {{ mapWidth }}×{{ mapHeight }}</el-button>
+        </template>
+        <div class="size-editor">
+          <label>
+            宽（米）
+            <el-input-number v-model="mapWidth" :min="10" :max="200" size="small" @change="applyMapSize" />
+          </label>
+          <label>
+            高（米）
+            <el-input-number v-model="mapHeight" :min="10" :max="200" size="small" @change="applyMapSize" />
+          </label>
+        </div>
+      </el-popover>
+
       <el-button-group>
         <el-button size="small" title="缩小" @click="zoomOut">−</el-button>
         <el-button size="small" title="重置为 100%" @click="resetView">{{ zoomPercent }}%</el-button>
         <el-button size="small" title="放大" @click="zoomIn">+</el-button>
       </el-button-group>
       <el-button size="small" @click="fitView">适应窗口</el-button>
-      <span class="hint">滚轮缩放 · 空格/中键拖动画布 · 拖空白框选</span>
+      <el-button size="small" :disabled="selectedCount === 0" @click="fitSelection">
+        适应选中
+      </el-button>
+      <el-button size="small" :disabled="errors.length === 0" @click="fitError">适应错误</el-button>
+      <el-dropdown @command="handleExport">
+        <el-button size="small">导出</el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="png">导出 PNG</el-dropdown-item>
+            <el-dropdown-item command="svg">导出 SVG</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+      <el-button size="small" @click="helpVisible = true">?</el-button>
+      <span class="hint">滚轮缩放 · 空格/中键平移 · 拖空白框选</span>
     </div>
 
     <div class="workspace">
-      <div class="canvas-wrap">
+      <div ref="canvasWrap" class="canvas-wrap">
         <svg
           ref="svgRef"
-          :viewBox="`0 0 ${WIDTH * SCALE} ${HEIGHT * SCALE}`"
+          :viewBox="`0 0 ${mapWidth * SCALE} ${mapHeight * SCALE}`"
           class="canvas"
           :class="canvasClass"
           @click="onCanvasClick"
@@ -624,9 +1766,15 @@ defineExpose({ getPayload, setPayload })
           @mouseup="onCanvasMouseUp"
           @mouseenter="hovering = true"
           @mouseleave="onCanvasLeave"
+          @contextmenu.prevent="onCanvasContextMenu"
         >
           <defs>
-            <pattern id="smallGrid" :width="SNAP * SCALE" :height="SNAP * SCALE" patternUnits="userSpaceOnUse">
+            <pattern
+              id="smallGrid"
+              :width="SNAP * SCALE"
+              :height="SNAP * SCALE"
+              patternUnits="userSpaceOnUse"
+            >
               <path
                 :d="`M ${SNAP * SCALE} 0 L 0 0 0 ${SNAP * SCALE}`"
                 fill="none"
@@ -643,10 +1791,81 @@ defineExpose({ getPayload, setPayload })
                 stroke-width="1"
               />
             </pattern>
+            <marker
+              id="arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" fill="#8fa3bd" />
+            </marker>
+            <marker
+              id="arrow-selected"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" fill="#1f3b73" />
+            </marker>
+            <marker
+              id="arrow-error"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" fill="#f56c6c" />
+            </marker>
+            <marker
+              id="task-arrow"
+              viewBox="0 0 10 10"
+              refX="9"
+              refY="5"
+              markerWidth="5"
+              markerHeight="5"
+              orient="auto-start-reverse"
+            >
+              <path d="M0,0 L10,5 L0,10 z" fill="#a06a1f" />
+            </marker>
           </defs>
 
-          <g ref="contentRef" :transform="transform">
-            <rect :width="WIDTH * SCALE" :height="HEIGHT * SCALE" fill="url(#grid)" />
+          <g ref="contentRef" data-content="true" :transform="transform">
+            <rect
+              :width="mapWidth * SCALE"
+              :height="mapHeight * SCALE"
+              :fill="showGrid ? 'url(#grid)' : '#fbfdff'"
+            />
+
+            <g v-if="showTasks && taskFlows.length > 0">
+              <path
+                v-for="flow in taskFlows"
+                :key="`task-${flow.id}`"
+                :d="flow.d"
+                class="task-flow"
+                marker-end="url(#task-arrow)"
+              />
+              <g v-for="badge in taskBadges" :key="`badge-${badge.id}`">
+                <rect
+                  :x="badge.x - 4"
+                  :y="badge.y - 10"
+                  width="42"
+                  height="16"
+                  rx="8"
+                  class="task-badge"
+                />
+                <text :x="badge.x + 17" :y="badge.y + 2" text-anchor="middle" class="task-badge-text">
+                  {{ badge.from }}/{{ badge.to }}
+                </text>
+              </g>
+            </g>
 
             <g v-for="edge in edges" :key="edge.id">
               <line
@@ -654,19 +1873,26 @@ defineExpose({ getPayload, setPayload })
                 :y1="px(nodeMap.get(edge.from)?.y ?? 0)"
                 :x2="px(nodeMap.get(edge.to)?.x ?? 0)"
                 :y2="px(nodeMap.get(edge.to)?.y ?? 0)"
-                :stroke="
-                  errorEdgeIds.has(edge.id)
-                    ? '#f56c6c'
-                    : isSelectedEdge(edge.id)
-                      ? '#1f3b73'
-                      : '#8fa3bd'
-                "
+                :stroke="edgeStroke(edge)"
                 :stroke-width="isSelectedEdge(edge.id) ? 4 : 3"
-                class="edge-line"
-                :class="{ selected: isSelectedEdge(edge.id) }"
+                :marker-end="edgeMarker(edge)"
+                :marker-start="edge.direction === 'TWO_WAY' ? edgeMarker(edge) : undefined"
+                pointer-events="none"
+              />
+              <line
+                :x1="px(nodeMap.get(edge.from)?.x ?? 0)"
+                :y1="px(nodeMap.get(edge.from)?.y ?? 0)"
+                :x2="px(nodeMap.get(edge.to)?.x ?? 0)"
+                :y2="px(nodeMap.get(edge.to)?.y ?? 0)"
+                class="edge-hit"
                 @mousedown="onEdgeMouseDown($event, edge)"
+                @dblclick="onEdgeDoubleClick($event, edge)"
+                @mouseenter="onEdgeEnter($event, edge)"
+                @mouseleave="clearHover"
+                @contextmenu.prevent.stop="onEdgeContextMenu($event, edge)"
               />
               <text
+                v-if="showEdgeLabels"
                 :x="edgeMid(edge).x"
                 :y="edgeMid(edge).y - 6"
                 text-anchor="middle"
@@ -696,8 +1922,12 @@ defineExpose({ getPayload, setPayload })
                 :class="{ selected: isSelectedNode(node.id) }"
                 @click="onNodeClick($event, node)"
                 @mousedown="onNodeMouseDown($event, node)"
+                @mouseenter="onNodeEnter($event, node)"
+                @mouseleave="clearHover"
+                @contextmenu.prevent.stop="onNodeContextMenu($event, node)"
               />
               <text
+                v-if="showNodeLabels"
                 :x="px(node.x) + 12"
                 :y="px(node.y) + 4"
                 font-size="11"
@@ -707,6 +1937,25 @@ defineExpose({ getPayload, setPayload })
                 {{ node.id }}
               </text>
             </g>
+
+            <line
+              v-if="guides.x !== undefined"
+              :x1="guides.x"
+              y1="0"
+              :x2="guides.x"
+              :y2="mapHeight * SCALE"
+              class="guide"
+              data-export="ignore"
+            />
+            <line
+              v-if="guides.y !== undefined"
+              x1="0"
+              :y1="guides.y"
+              :x2="mapWidth * SCALE"
+              :y2="guides.y"
+              class="guide"
+              data-export="ignore"
+            />
           </g>
 
           <rect
@@ -716,35 +1965,145 @@ defineExpose({ getPayload, setPayload })
             :width="marqueeBox.width"
             :height="marqueeBox.height"
             class="marquee"
+            data-export="ignore"
           />
         </svg>
+
+        <div class="map-legend">
+          <div class="legend-row">
+            <span class="dot" :style="{ background: TYPE_COLOR.WORKSTATION }"></span>工位
+          </div>
+          <div class="legend-row">
+            <span class="dot" :style="{ background: TYPE_COLOR.CHARGER }"></span>充电位
+          </div>
+          <div class="legend-row">
+            <span class="dot" :style="{ background: TYPE_COLOR.BUFFER }"></span>缓存位
+          </div>
+          <div class="legend-row">
+            <span class="dot" :style="{ background: TYPE_COLOR.JUNCTION }"></span>路口
+          </div>
+          <div class="legend-row">
+            <span class="legend-line"></span>双向
+          </div>
+          <div class="legend-row">
+            <span class="legend-line one-way"></span>单向
+          </div>
+          <div class="legend-row">
+            <span class="dot error"></span>校验错误
+          </div>
+          <div v-if="showTasks && tasks && tasks.length > 0" class="legend-row">
+            <span class="badge-sample">7/6</span>任务 发/收
+          </div>
+        </div>
+
+        <div class="scale-bar">
+          <div class="scale-line" :style="{ width: `${scaleBarPx}px` }"></div>
+          <span>{{ scaleBarMeters }} m</span>
+        </div>
+
+        <div class="coords">
+          {{ cursorWorld ? `X ${cursorWorld.x.toFixed(1)} m · Y ${cursorWorld.y.toFixed(1)} m` : '鼠标移入画布查看坐标' }}
+        </div>
+
+        <div
+          class="minimap"
+          @mousedown.prevent="startMini"
+          @mousemove="moveMini"
+          @mouseup="endMini"
+          @mouseleave="endMini"
+        >
+          <svg
+            ref="miniRef"
+            :width="miniWidth"
+            :height="miniHeight"
+            :viewBox="`0 0 ${miniWidth} ${miniHeight}`"
+          >
+            <rect :width="miniWidth" :height="miniHeight" fill="#f7fbff" />
+            <line
+              v-for="edge in edges"
+              :key="`mini-${edge.id}`"
+              :x1="(nodeMap.get(edge.from)?.x ?? 0) * SCALE * miniScale"
+              :y1="(nodeMap.get(edge.from)?.y ?? 0) * SCALE * miniScale"
+              :x2="(nodeMap.get(edge.to)?.x ?? 0) * SCALE * miniScale"
+              :y2="(nodeMap.get(edge.to)?.y ?? 0) * SCALE * miniScale"
+              stroke="#b6cbe8"
+              stroke-width="1"
+            />
+            <circle
+              v-for="node in nodes"
+              :key="`mini-${node.id}`"
+              :cx="node.x * SCALE * miniScale"
+              :cy="node.y * SCALE * miniScale"
+              r="1.8"
+              :fill="TYPE_COLOR[node.type]"
+            />
+            <rect
+              :x="miniViewport.x"
+              :y="miniViewport.y"
+              :width="miniViewport.width"
+              :height="miniViewport.height"
+              class="mini-viewport"
+            />
+          </svg>
+        </div>
+
+        <el-button class="fullscreen-btn" size="small" @click="toggleFullscreen">
+          {{ isFullscreen ? '退出全屏' : '全屏' }}
+        </el-button>
       </div>
 
       <div class="side">
         <div class="side-block">
           <div class="side-title">属性</div>
           <template v-if="selectedNode">
-            <el-form label-width="64px" size="small">
+            <el-form label-width="64px" size="small" :disabled="!editable">
               <el-form-item label="编号">
-                <el-input v-model="selectedNode.id" />
+                <el-input
+                  v-model="selectedNode.id"
+                  @focus="onNodeIdOriginal(selectedNode)"
+                  @change="onNodeIdChange(selectedNode, idEditOriginal)"
+                />
               </el-form-item>
               <el-form-item label="类型">
                 <el-select v-model="selectedNode.type" style="width: 100%">
-                  <el-option v-for="(label, key) in TYPE_LABEL" :key="key" :label="label" :value="key" />
+                  <el-option
+                    v-for="(label, key) in TYPE_LABEL"
+                    :key="key"
+                    :label="label"
+                    :value="key"
+                  />
                 </el-select>
               </el-form-item>
               <el-form-item label="X(m)">
-                <el-input-number v-model="selectedNode.x" :step="0.5" :min="0" style="width: 100%" />
+                <el-input-number
+                  v-model="selectedNode.x"
+                  :step="0.5"
+                  :min="0"
+                  :max="mapWidth"
+                  style="width: 100%"
+                  @change="onNodeCoordChange(selectedNode)"
+                />
               </el-form-item>
               <el-form-item label="Y(m)">
-                <el-input-number v-model="selectedNode.y" :step="0.5" :min="0" style="width: 100%" />
+                <el-input-number
+                  v-model="selectedNode.y"
+                  :step="0.5"
+                  :min="0"
+                  :max="mapHeight"
+                  style="width: 100%"
+                  @change="onNodeCoordChange(selectedNode)"
+                />
               </el-form-item>
             </el-form>
           </template>
           <template v-else-if="selectedEdge">
-            <el-form label-width="64px" size="small">
+            <el-form label-width="64px" size="small" :disabled="!editable">
               <el-form-item label="编号">
-                <el-input v-model="selectedEdge.id" />
+                <el-input
+                  v-model="selectedEdge.id"
+                  @focus="idEditOriginal = selectedEdge.id"
+                  @change="onEdgeIdChange(selectedEdge, idEditOriginal)"
+                />
               </el-form-item>
               <el-form-item label="方向">
                 <el-select v-model="selectedEdge.direction" style="width: 100%">
@@ -753,18 +2112,69 @@ defineExpose({ getPayload, setPayload })
                 </el-select>
               </el-form-item>
               <el-form-item label="长度(m)">
-                <el-input-number v-model="selectedEdge.length" :step="0.5" :min="0.1" style="width: 100%" />
+                <el-input-number
+                  :model-value="selectedEdge.length"
+                  :step="0.1"
+                  :min="0.1"
+                  disabled
+                  style="width: 100%"
+                />
               </el-form-item>
               <el-form-item label="速度">
-                <el-input-number v-model="selectedEdge.speed" :step="0.1" :min="0.1" style="width: 100%" />
+                <el-input-number
+                  v-model="selectedEdge.speed"
+                  :step="0.1"
+                  :min="0.1"
+                  style="width: 100%"
+                />
               </el-form-item>
               <el-form-item label="容量">
-                <el-input-number v-model="selectedEdge.capacity" :min="1" style="width: 100%" />
+                <el-input-number
+                  v-model="selectedEdge.capacity"
+                  :min="1"
+                  style="width: 100%"
+                />
               </el-form-item>
             </el-form>
           </template>
+          <template v-else-if="selectedNodeIds.length > 1">
+            <el-form label-width="64px" size="small" :disabled="!editable">
+              <el-form-item label="类型">
+                <el-select v-model="batchNodeType" style="width: 100%">
+                  <el-option
+                    v-for="(label, key) in TYPE_LABEL"
+                    :key="key"
+                    :label="label"
+                    :value="key"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-form>
+            <el-button size="small" type="primary" @click="applyBatchNodeType">
+              应用到 {{ selectedNodeIds.length }} 个节点
+            </el-button>
+          </template>
+          <template v-else-if="selectedEdgeIds.length > 1">
+            <el-form label-width="64px" size="small" :disabled="!editable">
+              <el-form-item label="方向">
+                <el-select v-model="batchEdgeDirection" style="width: 100%">
+                  <el-option label="双向" value="TWO_WAY" />
+                  <el-option label="单向" value="ONE_WAY" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="速度">
+                <el-input-number v-model="batchEdgeSpeed" :step="0.1" :min="0.1" style="width: 100%" />
+              </el-form-item>
+              <el-form-item label="容量">
+                <el-input-number v-model="batchEdgeCapacity" :min="1" style="width: 100%" />
+              </el-form-item>
+            </el-form>
+            <el-button size="small" type="primary" @click="applyBatchEdge">
+              应用到 {{ selectedEdgeIds.length }} 条路段
+            </el-button>
+          </template>
           <div v-else-if="selectedCount > 0" class="muted">
-            已选 {{ selectedNodeIds.length }} 个节点、{{ selectedEdgeIds.length }} 条路段，拖动任意选中元素可整体移动
+            已选 {{ selectedNodeIds.length }} 个节点、{{ selectedEdgeIds.length }} 条路段
           </div>
           <div v-else class="muted">选中节点或路段后可编辑属性</div>
         </div>
@@ -779,15 +2189,76 @@ defineExpose({ getPayload, setPayload })
         </div>
 
         <div class="side-block">
-          <div class="side-title">校验</div>
+          <div class="side-title">
+            校验
+            <el-tag v-if="errors.length > 0" type="danger" size="small">{{ errors.length }}</el-tag>
+          </div>
           <div v-if="errors.length === 0" class="muted">未发现问题</div>
-          <div v-for="(error, index) in errors" :key="index" class="error-row">
+          <div
+            v-for="(error, index) in errors"
+            :key="index"
+            class="error-row"
+            @click="focusError(error)"
+          >
             <el-tag size="small" type="danger">{{ error.code }}</el-tag>
             <span>{{ error.message }}</span>
           </div>
         </div>
       </div>
     </div>
+
+    <teleport to="body">
+      <div
+        v-if="hoverInfo && hover"
+        class="map-tooltip"
+        :style="{ left: `${hover.x + 14}px`, top: `${hover.y + 14}px` }"
+      >
+        <div class="tooltip-title">{{ hoverInfo.title }}</div>
+        <div v-for="row in hoverInfo.rows" :key="row" class="tooltip-row">{{ row }}</div>
+      </div>
+    </teleport>
+
+    <div
+      v-if="contextMenu"
+      class="context-menu"
+      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+      @click.stop
+    >
+      <template v-if="contextMenu.kind === 'canvas'">
+        <button v-for="type in NODE_TOOLS" :key="type" @click="contextAddNode(type)">
+          新建{{ TYPE_LABEL[type] }}
+        </button>
+      </template>
+      <template v-else-if="contextMenu.kind === 'edge'">
+        <button @click="contextSplit">拆分路段</button>
+        <button @click="contextReverse">反转方向</button>
+        <button @click="contextDelete">删除路段</button>
+      </template>
+      <template v-else>
+        <button @click="contextDelete">删除节点</button>
+        <button @click="fitSelection">适应选中</button>
+      </template>
+    </div>
+
+    <el-dialog v-model="helpVisible" title="快捷键与操作" width="560px">
+      <table class="help-table">
+        <tbody>
+          <tr><td>滚轮</td><td>以指针为中心缩放</td></tr>
+          <tr><td>`空格` + 左键 / 中键</td><td>平移画布</td></tr>
+          <tr><td>`Ctrl/Cmd+A`</td><td>全选</td></tr>
+          <tr><td>`Ctrl/Cmd+C` / `V` / `D`</td><td>复制 / 粘贴 / 再制</td></tr>
+          <tr><td>`Ctrl/Cmd+Z`</td><td>撤销</td></tr>
+          <tr><td>`Ctrl/Cmd+Shift+Z` / `Ctrl+Y`</td><td>重做</td></tr>
+          <tr><td>`Ctrl/Cmd+S`</td><td>保存</td></tr>
+          <tr><td>`Delete` / `Backspace`</td><td>删除选中</td></tr>
+          <tr><td>`Esc`</td><td>清空选择 / 关闭菜单</td></tr>
+          <tr><td>方向键</td><td>选中节点移动 0.5 米</td></tr>
+          <tr><td>`Shift` + 方向键</td><td>选中节点移动 2.5 米</td></tr>
+          <tr><td>`Shift` + 拖动</td><td>锁定水平 / 垂直</td></tr>
+          <tr><td>`?`</td><td>打开本帮助</td></tr>
+        </tbody>
+      </table>
+    </el-dialog>
   </div>
 </template>
 
@@ -811,6 +2282,27 @@ defineExpose({ getPayload, setPayload })
   color: #909399;
 }
 
+.popover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.size-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.size-editor label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: #606266;
+  gap: 8px;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 260px;
@@ -820,9 +2312,15 @@ defineExpose({ getPayload, setPayload })
 }
 
 .canvas-wrap {
+  position: relative;
   border: 1px solid #e4e9f0;
   border-radius: 8px;
   overflow: hidden;
+  background: #fbfdff;
+  min-height: 540px;
+}
+
+.canvas-wrap:fullscreen {
   background: #fbfdff;
 }
 
@@ -839,7 +2337,7 @@ defineExpose({ getPayload, setPayload })
 }
 
 .canvas.is-drawing .node-dot,
-.canvas.is-drawing .edge-line {
+.canvas.is-drawing .edge-hit {
   cursor: crosshair;
 }
 
@@ -847,10 +2345,7 @@ defineExpose({ getPayload, setPayload })
   cursor: grab;
 }
 
-.canvas.is-panning {
-  cursor: grabbing;
-}
-
+.canvas.is-panning,
 .canvas.is-dragging {
   cursor: grabbing;
 }
@@ -863,7 +2358,9 @@ defineExpose({ getPayload, setPayload })
   cursor: grabbing;
 }
 
-.edge-line {
+.edge-hit {
+  stroke: rgba(0, 0, 0, 0.001);
+  stroke-width: 14;
   cursor: pointer;
 }
 
@@ -873,6 +2370,147 @@ defineExpose({ getPayload, setPayload })
   stroke-width: 1;
   stroke-dasharray: 4 3;
   pointer-events: none;
+}
+
+.guide {
+  stroke: #e6a23c;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+.task-flow {
+  fill: none;
+  stroke: #e6a23c;
+  stroke-width: 1.4;
+  stroke-dasharray: 5 4;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.task-badge {
+  fill: #fdf6ec;
+  stroke: #e6a23c;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.task-badge-text {
+  font-size: 10px;
+  fill: #a06a1f;
+  pointer-events: none;
+}
+
+.map-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 38px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid #e4e9f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #606266;
+  pointer-events: none;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot.error {
+  background: #f56c6c;
+}
+
+.legend-line {
+  width: 18px;
+  height: 0;
+  border-top: 2px solid #8fa3bd;
+  display: inline-block;
+}
+
+.legend-line.one-way {
+  border-top: 2px dashed #8fa3bd;
+}
+
+.badge-sample {
+  font-size: 9px;
+  color: #a06a1f;
+  background: #fdf6ec;
+  border: 1px solid #e6a23c;
+  border-radius: 6px;
+  padding: 0 3px;
+  line-height: 12px;
+}
+
+.scale-bar {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #606266;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.scale-line {
+  height: 6px;
+  border-left: 1px solid #606266;
+  border-right: 1px solid #606266;
+  border-bottom: 1px solid #606266;
+}
+
+.coords {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  font-size: 11px;
+  color: #606266;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+.minimap {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  border: 1px solid #dbe4ef;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f7fbff;
+  cursor: crosshair;
+}
+
+.mini-viewport {
+  fill: rgba(31, 59, 115, 0.08);
+  stroke: #1f3b73;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.fullscreen-btn {
+  position: absolute;
+  right: 12px;
+  top: 136px;
 }
 
 .side {
@@ -893,6 +2531,9 @@ defineExpose({ getPayload, setPayload })
   font-weight: 600;
   margin-bottom: 10px;
   color: #1f3b73;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .stat-row {
@@ -911,5 +2552,83 @@ defineExpose({ getPayload, setPayload })
   color: #606266;
   padding: 4px 0;
   line-height: 1.4;
+  cursor: pointer;
+}
+
+.error-row:hover {
+  color: #1f3b73;
+}
+
+.muted {
+  font-size: 12px;
+  color: #909399;
+}
+
+.map-tooltip {
+  position: fixed;
+  z-index: 3000;
+  background: rgba(32, 41, 56, 0.94);
+  color: #fff;
+  border-radius: 6px;
+  padding: 6px 9px;
+  font-size: 12px;
+  pointer-events: none;
+  max-width: 260px;
+}
+
+.tooltip-title {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.tooltip-row {
+  color: #dbe4ef;
+}
+
+.context-menu {
+  position: fixed;
+  z-index: 3000;
+  background: #fff;
+  border: 1px solid #e4e9f0;
+  border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(31, 59, 115, 0.16);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  min-width: 128px;
+}
+
+.context-menu button {
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #303133;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.context-menu button:hover {
+  background: #f2f6fc;
+  color: #1f3b73;
+}
+
+.help-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.help-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f0f2f5;
+  color: #606266;
+}
+
+.help-table td:first-child {
+  width: 42%;
+  color: #303133;
+  font-weight: 600;
 }
 </style>

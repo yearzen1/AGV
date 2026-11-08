@@ -20,6 +20,8 @@ export interface NetEdge {
 export interface RoadNetPayload {
   nodes: NetNode[]
   edges: NetEdge[]
+  width?: number
+  height?: number
 }
 
 export interface RoadNetSummary {
