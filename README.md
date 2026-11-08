@@ -90,6 +90,20 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 - 统一返回 `{ code, message, data }`，`code = 0` 表示成功。
 - 鉴权：`Authorization: Bearer <token>`，登录接口 `POST /api/auth/login`。
 - 路网校验失败返回 `code = 4001`，`data` 是带 `nodeId` / `edgeId` 的错误明细，前端据此标红。
+- 不存在的路径返回 HTTP 404 与 `{ "code": 4040, "message": "接口不存在：<path>" }`，不会返回 500，也不会把异常堆栈暴露给调用方。
+- 任务集接口是 `/api/taskset`，不是 `/api/task-set`。
+
+### 错误码
+
+| code | HTTP | 含义 |
+|---|---|---|
+| 0 | 200 | 成功 |
+| 4000 | 400 | 参数校验失败 |
+| 4001 | 400 | 路网校验未通过，`data` 为逐条错误 |
+| 4010 | 401 | 未登录或令牌过期 |
+| 4030 | 403 | 无权限 |
+| 4040 | 404 | 资源或接口不存在 |
+| 5000 | 500 | 服务器内部错误 |
 
 主要端点：
 
