@@ -129,5 +129,6 @@ function logout() {
 
 .main {
   padding: 20px;
+  scrollbar-gutter: stable;
 }
 </style>

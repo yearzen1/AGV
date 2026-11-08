@@ -2347,205 +2347,209 @@ defineExpose({
       </div>
 
       <div class="side">
-        <div class="side-block">
-          <div class="side-title">属性</div>
-          <template v-if="selectedNode">
-            <el-form label-width="64px" size="small" :disabled="!editable">
-              <el-form-item label="编号">
-                <el-input
-                  v-model="selectedNode.id"
-                  @focus="onNodeIdOriginal(selectedNode)"
-                  @change="onNodeIdChange(selectedNode, idEditOriginal)"
-                />
-              </el-form-item>
-              <el-form-item label="类型">
-                <el-select v-model="selectedNode.type" style="width: 100%">
-                  <el-option
-                    v-for="(label, key) in TYPE_LABEL"
-                    :key="key"
-                    :label="label"
-                    :value="key"
+        <div class="side-inner">
+          <div class="side-block">
+            <div class="side-title">属性</div>
+            <template v-if="selectedNode">
+              <el-form label-width="64px" size="small" :disabled="!editable">
+                <el-form-item label="编号">
+                  <el-input
+                    v-model="selectedNode.id"
+                    @focus="onNodeIdOriginal(selectedNode)"
+                    @change="onNodeIdChange(selectedNode, idEditOriginal)"
                   />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="容量">
-                <el-input-number
-                  v-model="selectedNode.capacity"
-                  :min="1"
-                  :max="99"
-                  style="width: 100%"
-                />
-              </el-form-item>
-              <el-form-item label="X(m)">
-                <el-input-number
-                  v-model="selectedNode.x"
-                  :step="0.5"
-                  :min="0"
-                  :max="mapWidth"
-                  style="width: 100%"
-                  @change="onNodeCoordChange(selectedNode)"
-                />
-              </el-form-item>
-              <el-form-item label="Y(m)">
-                <el-input-number
-                  v-model="selectedNode.y"
-                  :step="0.5"
-                  :min="0"
-                  :max="mapHeight"
-                  style="width: 100%"
-                  @change="onNodeCoordChange(selectedNode)"
-                />
-              </el-form-item>
-            </el-form>
-          </template>
-          <template v-else-if="selectedEdge">
-            <el-form label-width="64px" size="small" :disabled="!editable">
-              <el-form-item label="编号">
-                <el-input
-                  v-model="selectedEdge.id"
-                  @focus="idEditOriginal = selectedEdge.id"
-                  @change="onEdgeIdChange(selectedEdge, idEditOriginal)"
-                />
-              </el-form-item>
-              <el-form-item label="方向">
-                <el-select
-                  v-model="selectedEdge.direction"
-                  style="width: 100%"
-                  @change="onEdgeDirectionChange(selectedEdge)"
-                >
-                  <el-option label="双向" value="TWO_WAY" />
-                  <el-option label="单向" value="ONE_WAY" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="朝向">
-                <div class="orient-row">
-                  <span class="orient-text">
-                    {{
-                      selectedEdge.direction === 'ONE_WAY'
-                        ? `${selectedEdge.from} → ${selectedEdge.to}`
-                        : '双向无固定朝向'
-                    }}
-                  </span>
-                  <el-button
-                    size="small"
-                    :disabled="selectedEdge.direction !== 'ONE_WAY'"
-                    @click="reverseEdge(selectedEdge)"
+                </el-form-item>
+                <el-form-item label="类型">
+                  <el-select v-model="selectedNode.type" style="width: 100%">
+                    <el-option
+                      v-for="(label, key) in TYPE_LABEL"
+                      :key="key"
+                      :label="label"
+                      :value="key"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="容量">
+                  <el-input-number
+                    v-model="selectedNode.capacity"
+                    :min="1"
+                    :max="99"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+                <el-form-item label="X(m)">
+                  <el-input-number
+                    v-model="selectedNode.x"
+                    :step="0.5"
+                    :min="0"
+                    :max="mapWidth"
+                    style="width: 100%"
+                    @change="onNodeCoordChange(selectedNode)"
+                  />
+                </el-form-item>
+                <el-form-item label="Y(m)">
+                  <el-input-number
+                    v-model="selectedNode.y"
+                    :step="0.5"
+                    :min="0"
+                    :max="mapHeight"
+                    style="width: 100%"
+                    @change="onNodeCoordChange(selectedNode)"
+                  />
+                </el-form-item>
+              </el-form>
+            </template>
+            <template v-else-if="selectedEdge">
+              <el-form label-width="64px" size="small" :disabled="!editable">
+                <el-form-item label="编号">
+                  <el-input
+                    v-model="selectedEdge.id"
+                    @focus="idEditOriginal = selectedEdge.id"
+                    @change="onEdgeIdChange(selectedEdge, idEditOriginal)"
+                  />
+                </el-form-item>
+                <el-form-item label="方向">
+                  <el-select
+                    v-model="selectedEdge.direction"
+                    style="width: 100%"
+                    @change="onEdgeDirectionChange(selectedEdge)"
                   >
-                    交换
-                  </el-button>
-                </div>
-              </el-form-item>
-              <el-form-item label="车道">
-                <el-select
-                  v-model="selectedEdge.laneMode"
-                  style="width: 100%"
-                  :disabled="selectedEdge.direction === 'ONE_WAY'"
-                  @change="onEdgeLaneChange(selectedEdge)"
-                >
-                  <el-option label="单车道" value="SINGLE" />
-                  <el-option label="双车道" value="DUAL" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="长度(m)">
-                <el-input-number
-                  :model-value="selectedEdge.length"
-                  :step="0.1"
-                  :min="0.1"
-                  disabled
-                  style="width: 100%"
-                />
-              </el-form-item>
-              <el-form-item label="速度">
-                <el-input-number
-                  v-model="selectedEdge.speed"
-                  :step="0.1"
-                  :min="0.1"
-                  style="width: 100%"
-                />
-              </el-form-item>
-              <el-form-item label="容量">
-                <el-input-number
-                  v-model="selectedEdge.capacity"
-                  :min="1"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-form>
-          </template>
-          <template v-else-if="selectedNodeIds.length > 1">
-            <el-form label-width="64px" size="small" :disabled="!editable">
-              <el-form-item label="类型">
-                <el-select v-model="batchNodeType" style="width: 100%">
-                  <el-option
-                    v-for="(label, key) in TYPE_LABEL"
-                    :key="key"
-                    :label="label"
-                    :value="key"
+                    <el-option label="双向" value="TWO_WAY" />
+                    <el-option label="单向" value="ONE_WAY" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="朝向">
+                  <div class="orient-row">
+                    <span class="orient-text">
+                      {{
+                        selectedEdge.direction === 'ONE_WAY'
+                          ? `${selectedEdge.from} → ${selectedEdge.to}`
+                          : '双向无固定朝向'
+                      }}
+                    </span>
+                    <el-button
+                      size="small"
+                      :disabled="selectedEdge.direction !== 'ONE_WAY'"
+                      @click="reverseEdge(selectedEdge)"
+                    >
+                      交换
+                    </el-button>
+                  </div>
+                </el-form-item>
+                <el-form-item label="车道">
+                  <el-select
+                    v-model="selectedEdge.laneMode"
+                    style="width: 100%"
+                    :disabled="selectedEdge.direction === 'ONE_WAY'"
+                    @change="onEdgeLaneChange(selectedEdge)"
+                  >
+                    <el-option label="单车道" value="SINGLE" />
+                    <el-option label="双车道" value="DUAL" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="长度(m)">
+                  <el-input-number
+                    :model-value="selectedEdge.length"
+                    :step="0.1"
+                    :min="0.1"
+                    disabled
+                    style="width: 100%"
                   />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="容量">
-                <el-input-number v-model="batchNodeCapacity" :min="1" :max="99" style="width: 100%" />
-              </el-form-item>
-            </el-form>
-            <el-button size="small" type="primary" @click="applyBatchNodeType">
-              应用到 {{ selectedNodeIds.length }} 个节点
-            </el-button>
-          </template>
-          <template v-else-if="selectedEdgeIds.length > 1">
-            <el-form label-width="64px" size="small" :disabled="!editable">
-              <el-form-item label="方向">
-                <el-select v-model="batchEdgeDirection" style="width: 100%">
-                  <el-option label="双向" value="TWO_WAY" />
-                  <el-option label="单向" value="ONE_WAY" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="车道">
-                <el-select v-model="batchEdgeLaneMode" style="width: 100%">
-                  <el-option label="单车道" value="SINGLE" />
-                  <el-option label="双车道" value="DUAL" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="速度">
-                <el-input-number v-model="batchEdgeSpeed" :step="0.1" :min="0.1" style="width: 100%" />
-              </el-form-item>
-              <el-form-item label="容量">
-                <el-input-number v-model="batchEdgeCapacity" :min="1" style="width: 100%" />
-              </el-form-item>
-            </el-form>
-            <el-button size="small" type="primary" @click="applyBatchEdge">
-              应用到 {{ selectedEdgeIds.length }} 条路段
-            </el-button>
-          </template>
-          <div v-else-if="selectedCount > 0" class="muted">
-            已选 {{ selectedNodeIds.length }} 个节点、{{ selectedEdgeIds.length }} 条路段
+                </el-form-item>
+                <el-form-item label="速度">
+                  <el-input-number
+                    v-model="selectedEdge.speed"
+                    :step="0.1"
+                    :min="0.1"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+                <el-form-item label="容量">
+                  <el-input-number
+                    v-model="selectedEdge.capacity"
+                    :min="1"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-form>
+            </template>
+            <template v-else-if="selectedNodeIds.length > 1">
+              <el-form label-width="64px" size="small" :disabled="!editable">
+                <el-form-item label="类型">
+                  <el-select v-model="batchNodeType" style="width: 100%">
+                    <el-option
+                      v-for="(label, key) in TYPE_LABEL"
+                      :key="key"
+                      :label="label"
+                      :value="key"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="容量">
+                  <el-input-number v-model="batchNodeCapacity" :min="1" :max="99" style="width: 100%" />
+                </el-form-item>
+              </el-form>
+              <el-button size="small" type="primary" @click="applyBatchNodeType">
+                应用到 {{ selectedNodeIds.length }} 个节点
+              </el-button>
+            </template>
+            <template v-else-if="selectedEdgeIds.length > 1">
+              <el-form label-width="64px" size="small" :disabled="!editable">
+                <el-form-item label="方向">
+                  <el-select v-model="batchEdgeDirection" style="width: 100%">
+                    <el-option label="双向" value="TWO_WAY" />
+                    <el-option label="单向" value="ONE_WAY" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="车道">
+                  <el-select v-model="batchEdgeLaneMode" style="width: 100%">
+                    <el-option label="单车道" value="SINGLE" />
+                    <el-option label="双车道" value="DUAL" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="速度">
+                  <el-input-number v-model="batchEdgeSpeed" :step="0.1" :min="0.1" style="width: 100%" />
+                </el-form-item>
+                <el-form-item label="容量">
+                  <el-input-number v-model="batchEdgeCapacity" :min="1" style="width: 100%" />
+                </el-form-item>
+              </el-form>
+              <el-button size="small" type="primary" @click="applyBatchEdge">
+                应用到 {{ selectedEdgeIds.length }} 条路段
+              </el-button>
+            </template>
+            <div v-else-if="selectedCount > 0" class="muted">
+              已选 {{ selectedNodeIds.length }} 个节点、{{ selectedEdgeIds.length }} 条路段
+            </div>
+            <div v-else class="muted">选中节点或路段后可编辑属性</div>
           </div>
-          <div v-else class="muted">选中节点或路段后可编辑属性</div>
-        </div>
 
-        <div class="side-block">
-          <div class="side-title">统计</div>
-          <div class="stat-row"><span>节点</span><b>{{ stats.nodes }}</b></div>
-          <div class="stat-row"><span>路段</span><b>{{ stats.edges }}</b></div>
-          <div class="stat-row"><span>总长度</span><b>{{ stats.length.toFixed(1) }} m</b></div>
-          <div class="stat-row"><span>充电位</span><b>{{ stats.chargers }}</b></div>
-          <div class="stat-row"><span>选中</span><b>{{ selectedCount }}</b></div>
-        </div>
-
-        <div class="side-block">
-          <div class="side-title">
-            校验
-            <el-tag v-if="errors.length > 0" type="danger" size="small">{{ errors.length }}</el-tag>
+          <div class="side-block">
+            <div class="side-title">统计</div>
+            <div class="stat-row"><span>节点</span><b>{{ stats.nodes }}</b></div>
+            <div class="stat-row"><span>路段</span><b>{{ stats.edges }}</b></div>
+            <div class="stat-row"><span>总长度</span><b>{{ stats.length.toFixed(1) }} m</b></div>
+            <div class="stat-row"><span>充电位</span><b>{{ stats.chargers }}</b></div>
+            <div class="stat-row"><span>选中</span><b>{{ selectedCount }}</b></div>
           </div>
-          <div v-if="errors.length === 0" class="muted">未发现问题</div>
-          <div
-            v-for="(error, index) in errors"
-            :key="index"
-            class="error-row"
-            @click="focusError(error)"
-          >
-            <el-tag size="small" type="danger">{{ error.code }}</el-tag>
-            <span>{{ error.message }}</span>
+
+          <div class="side-block">
+            <div class="side-title">
+              校验
+              <el-tag v-if="errors.length > 0" type="danger" size="small">{{ errors.length }}</el-tag>
+            </div>
+            <div v-if="errors.length === 0" class="muted">未发现问题</div>
+            <div v-else class="error-list">
+              <div
+                v-for="(error, index) in errors"
+                :key="index"
+                class="error-row"
+                @click="focusError(error)"
+              >
+                <el-tag size="small" type="danger">{{ error.code }}</el-tag>
+                <span>{{ error.message }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2915,9 +2919,19 @@ defineExpose({
 }
 
 .side {
+  position: relative;
+  min-height: 0;
+}
+
+.side-inner {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .side-block {
@@ -2957,6 +2971,13 @@ defineExpose({
   font-size: 12px;
   color: #303133;
   white-space: nowrap;
+}
+
+.error-list {
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .error-row {
