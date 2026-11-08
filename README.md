@@ -27,18 +27,20 @@ specs/           实施计划、时间安排、参考文献
 ## 快速开始
 
 ```bash
-# 1. 编译并跑全部测试
-mvn test
+# 1. 编译全部模块并安装到本地仓库（后端依赖 agv-algorithm，这一步不能省）
+mvn -DskipTests install
 
 # 2. 启动后端（默认 dev 环境，H2 文件库，免装 MySQL）
 cd agv-backend
 mvn spring-boot:run
 
-# 3. 启动前端
+# 3. 另开一个终端（回到项目根目录），启动前端
 cd agv-frontend
 npm install
 npm run dev
 ```
+
+> 零 Spring Boot / Vue 基础？跟着 [docs/tutorials/01-运行项目.md](docs/tutorials/01-运行项目.md) 走一遍即可。
 
 浏览器打开 <http://localhost:5173>。
 
