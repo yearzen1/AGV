@@ -14,17 +14,17 @@ public final class RoadNetTemplates {
     public static final String STANDARD_WORKSHOP = """
             {
               "nodes": [
-                {"id": "CH1", "x": 2,  "y": 2,  "type": "CHARGER"},
-                {"id": "CH2", "x": 18, "y": 2,  "type": "CHARGER"},
-                {"id": "J1",  "x": 2,  "y": 8,  "type": "JUNCTION"},
-                {"id": "J5",  "x": 6,  "y": 8,  "type": "JUNCTION"},
-                {"id": "J2",  "x": 10, "y": 8,  "type": "JUNCTION"},
-                {"id": "J3",  "x": 18, "y": 8,  "type": "JUNCTION"},
-                {"id": "J4",  "x": 10, "y": 2,  "type": "JUNCTION"},
-                {"id": "B1",  "x": 6,  "y": 6,  "type": "BUFFER"},
-                {"id": "W1",  "x": 2,  "y": 16, "type": "WORKSTATION"},
-                {"id": "W2",  "x": 10, "y": 16, "type": "WORKSTATION"},
-                {"id": "W3",  "x": 18, "y": 16, "type": "WORKSTATION"}
+                {"id": "CH1", "x": 2,  "y": 2,  "type": "CHARGER",   "capacity": 4},
+                {"id": "CH2", "x": 18, "y": 2,  "type": "CHARGER",   "capacity": 4},
+                {"id": "J1",  "x": 2,  "y": 8,  "type": "JUNCTION",  "capacity": 1},
+                {"id": "J5",  "x": 6,  "y": 8,  "type": "JUNCTION",  "capacity": 1},
+                {"id": "J2",  "x": 10, "y": 8,  "type": "JUNCTION",  "capacity": 1},
+                {"id": "J3",  "x": 18, "y": 8,  "type": "JUNCTION",  "capacity": 1},
+                {"id": "J4",  "x": 10, "y": 2,  "type": "JUNCTION",  "capacity": 1},
+                {"id": "B1",  "x": 6,  "y": 6,  "type": "BUFFER",    "capacity": 1},
+                {"id": "W1",  "x": 2,  "y": 16, "type": "WORKSTATION", "capacity": 1},
+                {"id": "W2",  "x": 10, "y": 16, "type": "WORKSTATION", "capacity": 1},
+                {"id": "W3",  "x": 18, "y": 16, "type": "WORKSTATION", "capacity": 1}
               ],
               "edges": [
                 {"id": "E1",  "from": "CH1", "to": "J1", "length": 6,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
@@ -47,14 +47,14 @@ public final class RoadNetTemplates {
     public static final String LINE_WORKSHOP = """
             {
               "nodes": [
-                {"id": "CH1", "x": 0,  "y": 0, "type": "CHARGER"},
-                {"id": "CH2", "x": 40, "y": 0, "type": "CHARGER"},
-                {"id": "J1",  "x": 10, "y": 0, "type": "JUNCTION"},
-                {"id": "J2",  "x": 20, "y": 0, "type": "JUNCTION"},
-                {"id": "J3",  "x": 30, "y": 0, "type": "JUNCTION"},
-                {"id": "W1",  "x": 10, "y": 8, "type": "WORKSTATION"},
-                {"id": "W2",  "x": 20, "y": 8, "type": "WORKSTATION"},
-                {"id": "W3",  "x": 30, "y": 8, "type": "WORKSTATION"}
+                {"id": "CH1", "x": 0,  "y": 0, "type": "CHARGER", "capacity": 4},
+                {"id": "CH2", "x": 40, "y": 0, "type": "CHARGER", "capacity": 4},
+                {"id": "J1",  "x": 10, "y": 0, "type": "JUNCTION", "capacity": 1},
+                {"id": "J2",  "x": 20, "y": 0, "type": "JUNCTION", "capacity": 1},
+                {"id": "J3",  "x": 30, "y": 0, "type": "JUNCTION", "capacity": 1},
+                {"id": "W1",  "x": 10, "y": 8, "type": "WORKSTATION", "capacity": 1},
+                {"id": "W2",  "x": 20, "y": 8, "type": "WORKSTATION", "capacity": 1},
+                {"id": "W3",  "x": 30, "y": 8, "type": "WORKSTATION", "capacity": 1}
               ],
               "edges": [
                 {"id": "E1", "from": "CH1", "to": "J1", "length": 10, "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},

@@ -26,7 +26,7 @@ class EngineScaleTest {
         RoadNet net = RoadNet.of(
                 payload.nodes().stream()
                         .map(n -> new com.agv.algorithm.model.NetNode(n.id(), n.x(), n.y(),
-                                com.agv.algorithm.model.NodeType.valueOf(n.type())))
+                                com.agv.algorithm.model.NodeType.valueOf(n.type()), n.capacity()))
                         .toList(),
                 payload.edges().stream()
                         .map(e -> new com.agv.algorithm.model.NetEdge(e.id(), e.from(), e.to(), e.length(),

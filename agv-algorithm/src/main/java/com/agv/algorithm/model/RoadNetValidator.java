@@ -60,6 +60,9 @@ public final class RoadNetValidator {
             if (!Double.isFinite(node.x()) || !Double.isFinite(node.y())) {
                 errors.add(ValidationError.node(INVALID_NUMBER, "节点坐标非法：" + node.id(), node.id()));
             }
+            if (node.capacity() < 1) {
+                errors.add(ValidationError.node(INVALID_NUMBER, "节点容量必须不小于 1：" + node.id(), node.id()));
+            }
         }
         for (NetEdge edge : edges) {
             if (!(edge.length() > 0) || !Double.isFinite(edge.length())) {

@@ -128,7 +128,8 @@ public class RoadNetService {
             if (dto.id() == null || dto.id().isBlank()) {
                 throw new BusinessException("节点编号不能为空");
             }
-            nodes.add(new NetNode(dto.id(), dto.x(), dto.y(), parseNodeType(dto.type(), dto.id())));
+            nodes.add(new NetNode(dto.id(), dto.x(), dto.y(),
+                    parseNodeType(dto.type(), dto.id()), dto.capacity()));
         }
         return nodes;
     }

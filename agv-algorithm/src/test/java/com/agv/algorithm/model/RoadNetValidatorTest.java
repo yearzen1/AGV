@@ -114,6 +114,18 @@ class RoadNetValidatorTest {
     }
 
     @Test
+    @DisplayName("节点容量小于 1：拦截")
+    void rejectsInvalidNodeCapacity() {
+        ValidationResult result = RoadNetValidator.validate(
+                List.of(new NetNode("CH1", 0, 0, NodeType.CHARGER, 0),
+                        node("W1", NodeType.WORKSTATION, 5, 0)),
+                List.of(twoWay("E1", "CH1", "W1", 5)));
+
+        assertFalse(result.valid());
+        assertTrue(hasCode(result, RoadNetValidator.INVALID_NUMBER));
+    }
+
+    @Test
     @DisplayName("端点不存在：拦截")
     void rejectsMissingEndpoint() {
         ValidationResult result = RoadNetValidator.validate(

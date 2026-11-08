@@ -98,6 +98,7 @@ const contextMenu = ref<{
 } | null>(null)
 
 const batchNodeType = ref('WORKSTATION')
+const batchNodeCapacity = ref(1)
 const batchEdgeDirection = ref<'ONE_WAY' | 'TWO_WAY'>('TWO_WAY')
 const batchEdgeSpeed = ref(1)
 const batchEdgeCapacity = ref(1)
@@ -181,7 +182,10 @@ const hoverInfo = computed(() => {
     if (!node) return null
     return {
       title: `${node.id} · ${TYPE_LABEL[node.type] ?? node.type}`,
-      rows: [`坐标：X ${node.x.toFixed(1)} m，Y ${node.y.toFixed(1)} m`]
+      rows: [
+        `坐标：X ${node.x.toFixed(1)} m，Y ${node.y.toFixed(1)} m`,
+        `容量：${node.capacity ?? 1} 辆`
+      ]
     }
   }
   const edge = edges.value.find((e) => e.id === hover.value!.id)
@@ -324,7 +328,10 @@ function sizeValue(value: number | undefined, fallback: number) {
 }
 
 function cloneNodes(list: NetNode[]) {
-  return list.map((node) => ({ ...node }))
+  return list.map((node) => ({
+    ...node,
+    capacity: typeof node.capacity === 'number' && node.capacity >= 1 ? node.capacity : 1
+  }))
 }
 
 function cloneEdges(list: NetEdge[]) {
@@ -737,7 +744,8 @@ function onCanvasClick(event: MouseEvent) {
     id: nextNodeId(type),
     x: point.x,
     y: point.y,
-    type: type as NetNode['type']
+    type: type as NetNode['type'],
+    capacity: 1
   })
   selectedNodeIds.value = [nodes.value[nodes.value.length - 1].id]
   selectedEdgeIds.value = []
@@ -747,7 +755,7 @@ function addNodeAt(type: Tool, point: { x: number; y: number }) {
   if (!editable.value) return
   const x = clamp(Math.round(point.x / SNAP) * SNAP, 0, mapWidth.value)
   const y = clamp(Math.round(point.y / SNAP) * SNAP, 0, mapHeight.value)
-  const node: NetNode = { id: nextNodeId(type), x, y, type: type as NetNode['type'] }
+  const node: NetNode = { id: nextNodeId(type), x, y, type: type as NetNode['type'], capacity: 1 }
   nodes.value.push(node)
   selectedNodeIds.value = [node.id]
   selectedEdgeIds.value = []
@@ -1145,7 +1153,10 @@ function handleAlign(command: string) {
 function applyBatchNodeType() {
   if (!editable.value) return
   const type = batchNodeType.value as NetNode['type']
-  selectedNodes.value.forEach((node) => (node.type = type))
+  selectedNodes.value.forEach((node) => {
+    node.type = type
+    node.capacity = Math.max(1, batchNodeCapacity.value)
+  })
 }
 
 function applyBatchEdge() {
@@ -1197,7 +1208,7 @@ function splitEdgeAt(edge: NetEdge, point: { x: number; y: number }) {
   const y = clamp(Math.round((from.y + vy * t) / SNAP) * SNAP, 0, mapHeight.value)
   if (Math.hypot(x - from.x, y - from.y) < SNAP || Math.hypot(x - to.x, y - to.y) < SNAP) return
 
-  const node: NetNode = { id: nextNodeId('JUNCTION'), x, y, type: 'JUNCTION' }
+  const node: NetNode = { id: nextNodeId('JUNCTION'), x, y, type: 'JUNCTION', capacity: 1 }
   const index = edges.value.findIndex((item) => item.id === edge.id)
   if (index < 0) return
   edges.value.splice(index, 1)
@@ -2297,6 +2308,14 @@ defineExpose({
                   />
                 </el-select>
               </el-form-item>
+              <el-form-item label="容量">
+                <el-input-number
+                  v-model="selectedNode.capacity"
+                  :min="1"
+                  :max="99"
+                  style="width: 100%"
+                />
+              </el-form-item>
               <el-form-item label="X(m)">
                 <el-input-number
                   v-model="selectedNode.x"
@@ -2386,6 +2405,9 @@ defineExpose({
                     :value="key"
                   />
                 </el-select>
+              </el-form-item>
+              <el-form-item label="容量">
+                <el-input-number v-model="batchNodeCapacity" :min="1" :max="99" style="width: 100%" />
               </el-form-item>
             </el-form>
             <el-button size="small" type="primary" @click="applyBatchNodeType">

@@ -5,6 +5,7 @@ export interface NetNode {
   x: number
   y: number
   type: 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION'
+  capacity?: number
 }
 
 export interface NetEdge {

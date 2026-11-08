@@ -37,13 +37,6 @@ public final class SimulationEngine {
 
     private static final double EPS = 1e-9;
 
-    /**
-     * 节点容量。路口是临界区，只允许一辆车；充电位/工位/缓存位保留 2，
-     * 用于装卸、充电排队等短暂共存。
-     */
-    private static final int JUNCTION_CAPACITY = 1;
-    private static final int NODE_CAPACITY = 2;
-
     /** 车辆离开路口后保留的清空 tick，避免车尾还在路口时后车压上来。 */
     private static final int NODE_CLEARANCE_TICKS = 2;
 
@@ -660,7 +653,7 @@ public final class SimulationEngine {
 
     private int nodeCapacity(String nodeId) {
         NetNode node = net.node(nodeId);
-        return node != null && node.type() == NodeType.JUNCTION ? JUNCTION_CAPACITY : NODE_CAPACITY;
+        return node == null ? 1 : Math.max(1, node.capacity());
     }
 
     private boolean isJunction(String nodeId) {
