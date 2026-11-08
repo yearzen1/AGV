@@ -12,7 +12,9 @@ package com.agv.algorithm.sim;
  * @param heading  朝向（度）
  * @param taskId   当前任务号；无任务为 -1
  * @param waitTicks 已连续等待的 tick 数
+ * @param nodeId   当前所在节点；在弧上时为出发节点
  */
 public record AgvSnapshot(String id, AgvStatus status, String arcId, double s,
-                          double x, double y, double heading, int taskId, int waitTicks) {
+                          double x, double y, double heading, int taskId, int waitTicks,
+                          String nodeId) {
 }

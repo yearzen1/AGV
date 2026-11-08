@@ -101,6 +101,7 @@ const batchNodeType = ref('WORKSTATION')
 const batchEdgeDirection = ref<'ONE_WAY' | 'TWO_WAY'>('TWO_WAY')
 const batchEdgeSpeed = ref(1)
 const batchEdgeCapacity = ref(1)
+const batchEdgeLaneMode = ref<'SINGLE' | 'DUAL'>('SINGLE')
 
 const editable = computed(() => !props.readonly)
 const errors = computed(() => props.errors ?? [])
@@ -327,7 +328,11 @@ function cloneNodes(list: NetNode[]) {
 }
 
 function cloneEdges(list: NetEdge[]) {
-  return list.map((edge) => ({ ...edge }))
+  return list.map((edge): NetEdge => {
+    const laneMode: NetEdge['laneMode'] =
+      edge.direction === 'TWO_WAY' && edge.laneMode === 'DUAL' ? 'DUAL' : 'SINGLE'
+    return { ...edge, laneMode }
+  })
 }
 
 function capture(): Snapshot {
@@ -426,6 +431,67 @@ function refreshAllEdgeLengths() {
 
 function px(value: number) {
   return value * SCALE
+}
+
+const LANE_OFFSET_PX = 5
+
+interface RenderLane {
+  key: string
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  markerStart?: string
+  markerEnd?: string
+}
+
+function edgeLanes(edge: NetEdge): RenderLane[] {
+  const from = nodeMap.value.get(edge.from)
+  const to = nodeMap.value.get(edge.to)
+  if (!from || !to) return []
+  const x1 = px(from.x)
+  const y1 = px(from.y)
+  const x2 = px(to.x)
+  const y2 = px(to.y)
+  const marker = edgeMarker(edge)
+
+  if (edge.direction === 'ONE_WAY' || edge.laneMode !== 'DUAL') {
+    return [
+      {
+        key: 'single',
+        x1,
+        y1,
+        x2,
+        y2,
+        markerStart: edge.direction === 'TWO_WAY' ? marker : undefined,
+        markerEnd: marker
+      }
+    ]
+  }
+
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const length = Math.hypot(dx, dy) || 1
+  const ox = (-dy / length) * LANE_OFFSET_PX
+  const oy = (dx / length) * LANE_OFFSET_PX
+  return [
+    {
+      key: 'forward',
+      x1: x1 + ox,
+      y1: y1 + oy,
+      x2: x2 + ox,
+      y2: y2 + oy,
+      markerEnd: marker
+    },
+    {
+      key: 'reverse',
+      x1: x2 - ox,
+      y1: y2 - oy,
+      x2: x1 - ox,
+      y2: y1 - oy,
+      markerEnd: marker
+    }
+  ]
 }
 
 function isEditableTarget(target: EventTarget | null) {
@@ -718,7 +784,8 @@ function onNodeClick(event: MouseEvent, node: NetNode) {
     length: length > 0 ? length : 1,
     direction: 'TWO_WAY',
     speed: 1,
-    capacity: 1
+    capacity: 1,
+    laneMode: 'SINGLE'
   }
   edges.value.push(edge)
   selectedEdgeIds.value = [edge.id]
@@ -1089,7 +1156,20 @@ function applyBatchEdge() {
       edge.direction = batchEdgeDirection.value
       edge.speed = batchEdgeSpeed.value
       edge.capacity = batchEdgeCapacity.value
+      edge.laneMode = edge.direction === 'TWO_WAY' ? batchEdgeLaneMode.value : 'SINGLE'
     })
+}
+
+function onEdgeDirectionChange(edge: NetEdge) {
+  if (edge.direction === 'ONE_WAY') {
+    edge.laneMode = 'SINGLE'
+  }
+}
+
+function onEdgeLaneChange(edge: NetEdge) {
+  if (edge.direction === 'ONE_WAY') {
+    edge.laneMode = 'SINGLE'
+  }
 }
 
 function reverseSelectedEdges() {
@@ -1179,6 +1259,8 @@ function mergeSelectedEdges() {
   const fromNode = nodeMap.value.get(from)
   const toNode = nodeMap.value.get(to)
   if (!fromNode || !toNode) return
+  const laneMode =
+    first.laneMode === 'DUAL' && second.laneMode === 'DUAL' ? 'DUAL' : 'SINGLE'
   const merged: NetEdge = {
     id: nextEdgeId(),
     from,
@@ -1186,7 +1268,8 @@ function mergeSelectedEdges() {
     length: Math.max(0.1, Math.round(Math.hypot(toNode.x - fromNode.x, toNode.y - fromNode.y) * 10) / 10),
     direction,
     speed: Math.min(first.speed, second.speed),
-    capacity: Math.min(first.capacity, second.capacity)
+    capacity: Math.min(first.capacity, second.capacity),
+    laneMode: direction === 'TWO_WAY' ? laneMode : 'SINGLE'
   }
   edges.value = edges.value.filter(
     (edge) => !selectedEdgeIds.value.includes(edge.id)
@@ -2003,14 +2086,16 @@ defineExpose({
 
             <g v-for="edge in edges" :key="edge.id">
               <line
-                :x1="px(nodeMap.get(edge.from)?.x ?? 0)"
-                :y1="px(nodeMap.get(edge.from)?.y ?? 0)"
-                :x2="px(nodeMap.get(edge.to)?.x ?? 0)"
-                :y2="px(nodeMap.get(edge.to)?.y ?? 0)"
+                v-for="lane in edgeLanes(edge)"
+                :key="lane.key"
+                :x1="lane.x1"
+                :y1="lane.y1"
+                :x2="lane.x2"
+                :y2="lane.y2"
                 :stroke="edgeStroke(edge)"
                 :stroke-width="isSelectedEdge(edge.id) ? 4 : 3"
-                :marker-end="edgeMarker(edge)"
-                :marker-start="edge.direction === 'TWO_WAY' ? edgeMarker(edge) : undefined"
+                :marker-start="lane.markerStart"
+                :marker-end="lane.markerEnd"
                 pointer-events="none"
               />
               <line
@@ -2117,10 +2202,13 @@ defineExpose({
             <span class="dot" :style="{ background: TYPE_COLOR.JUNCTION }"></span>路口
           </div>
           <div class="legend-row">
-            <span class="legend-line"></span>双向
+            <span class="legend-symbol">→</span>单车道单向
           </div>
           <div class="legend-row">
-            <span class="legend-line one-way"></span>单向
+            <span class="legend-symbol">↔</span>单车道双向
+          </div>
+          <div class="legend-row">
+            <span class="legend-symbol dual">＝</span>双车道双向
           </div>
           <div class="legend-row">
             <span class="dot error"></span>校验错误
@@ -2240,9 +2328,24 @@ defineExpose({
                 />
               </el-form-item>
               <el-form-item label="方向">
-                <el-select v-model="selectedEdge.direction" style="width: 100%">
+                <el-select
+                  v-model="selectedEdge.direction"
+                  style="width: 100%"
+                  @change="onEdgeDirectionChange(selectedEdge)"
+                >
                   <el-option label="双向" value="TWO_WAY" />
                   <el-option label="单向" value="ONE_WAY" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="车道">
+                <el-select
+                  v-model="selectedEdge.laneMode"
+                  style="width: 100%"
+                  :disabled="selectedEdge.direction === 'ONE_WAY'"
+                  @change="onEdgeLaneChange(selectedEdge)"
+                >
+                  <el-option label="单车道" value="SINGLE" />
+                  <el-option label="双车道" value="DUAL" />
                 </el-select>
               </el-form-item>
               <el-form-item label="长度(m)">
@@ -2294,6 +2397,12 @@ defineExpose({
                 <el-select v-model="batchEdgeDirection" style="width: 100%">
                   <el-option label="双向" value="TWO_WAY" />
                   <el-option label="单向" value="ONE_WAY" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="车道">
+                <el-select v-model="batchEdgeLaneMode" style="width: 100%">
+                  <el-option label="单车道" value="SINGLE" />
+                  <el-option label="双车道" value="DUAL" />
                 </el-select>
               </el-form-item>
               <el-form-item label="速度">
@@ -2616,6 +2725,18 @@ defineExpose({
 
 .legend-line.one-way {
   border-top: 2px dashed #8fa3bd;
+}
+
+.legend-symbol {
+  width: 18px;
+  text-align: center;
+  color: #5c7392;
+  font-weight: 700;
+  line-height: 12px;
+}
+
+.legend-symbol.dual {
+  letter-spacing: -1px;
 }
 
 .badge-sample {

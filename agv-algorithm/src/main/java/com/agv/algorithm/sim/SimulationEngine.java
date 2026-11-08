@@ -1,6 +1,7 @@
 package com.agv.algorithm.sim;
 
 import com.agv.algorithm.model.Arc;
+import com.agv.algorithm.model.NetEdge;
 import com.agv.algorithm.model.NetNode;
 import com.agv.algorithm.model.NodeType;
 import com.agv.algorithm.model.RoadNet;
@@ -37,10 +38,14 @@ public final class SimulationEngine {
     private static final double EPS = 1e-9;
 
     /**
-     * 节点容量。路口允许两车短暂共存（会车），否则双向车道会互相锁死。
-     * 路段仍然严格互斥，所以不会出现真正的碰撞。
+     * 节点容量。路口是临界区，只允许一辆车；充电位/工位/缓存位保留 2，
+     * 用于装卸、充电排队等短暂共存。
      */
+    private static final int JUNCTION_CAPACITY = 1;
     private static final int NODE_CAPACITY = 2;
+
+    /** 车辆离开路口后保留的清空 tick，避免车尾还在路口时后车压上来。 */
+    private static final int NODE_CLEARANCE_TICKS = 2;
 
     /** 任务全部完成后，回充宽限期（tick）。超时即收尾，保证仿真一定能结束。 */
     private static final long PARK_GRACE_TICKS = 400;
@@ -97,7 +102,7 @@ public final class SimulationEngine {
             String charger = chargers.get(i % chargers.size());
             Agv agv = new Agv("AGV-" + (i + 1), i + 1, charger);
             agvs.put(agv.id, agv);
-            if (reservations.canReserve(charger, 0, Interval.FOREVER, 1)) {
+            if (reservations.canReserve(charger, 0, Interval.FOREVER, nodeCapacity(charger))) {
                 reservations.reserve(agv.id, charger, 0, Interval.FOREVER);
             }
         }
@@ -356,17 +361,20 @@ public final class SimulationEngine {
         Arc next = agv.path.peek();
         long travel = travelTicks(next);
         long enter = tick;
-        long exit = tick + travel + 1;
+        long arrival = tick + travel;
+        long arcExit = arrival + 1;
         String destNode = next.to();
+        boolean dualLane = isDualLane(next);
         int capacity = capacityOf(next);
 
         String blockedReason = null;
-        String owner = edgeOwner.get(next.edgeId());
+        String owner = dualLane ? null : edgeOwner.get(next.edgeId());
         if (owner != null && !owner.equals(agv.id)) {
             blockedReason = "路段 " + next.edgeId() + " 已被 " + owner + " 占用（相向冲突）";
-        } else if (!reservations.canReserve(next.id(), enter, exit, capacity)) {
+        } else if (!reservations.canReserve(next.id(), enter, arcExit, capacity, agv.id)) {
             blockedReason = "弧 " + next.id() + " 容量已满（追尾冲突）";
-        } else if (!reservations.canReserve(destNode, exit, Interval.FOREVER, NODE_CAPACITY)) {
+        } else if (!reservations.canReserve(destNode, arrival, Interval.FOREVER,
+                nodeCapacity(destNode), agv.id)) {
             blockedReason = "节点 " + destNode + " 被占用（节点冲突）";
         }
 
@@ -376,20 +384,23 @@ public final class SimulationEngine {
                 events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_CONFLICT,
                         next.id(), blockedReason));
             }
-            // 等待期间释放节点：等待者不持有任何资源，持有资源的只可能是行驶中的车，
-            // 行驶中的车必然在有限时间内释放，因此不会形成互相等待的环。
-            reservations.release(agv.currentNode, agv.id);
+            // 路口是临界区：等待时保持占用，避免车还停在路口却把资源让给后车。
+            // 非路口节点仍释放，避免充电/装卸位形成资源等待环。
+            if (!isJunction(agv.currentNode)) {
+                reservations.release(agv.currentNode, agv.id);
+            }
             agv.status = AgvStatus.WAITING;
-            agv.waitTicks = 0;
             agv.wantedEdgeId = next.edgeId();
             agv.wantedNodeId = destNode;
             return false;
         }
 
-        reservations.release(agv.currentNode, agv.id);
-        reservations.reserve(agv.id, next.id(), enter, exit);
-        reservations.reserve(agv.id, destNode, exit, Interval.FOREVER);
-        edgeOwner.put(next.edgeId(), agv.id);
+        releaseCurrentNode(agv);
+        reservations.reserve(agv.id, next.id(), enter, arcExit);
+        reservations.reserve(agv.id, destNode, arrival, Interval.FOREVER);
+        if (!dualLane) {
+            edgeOwner.put(next.edgeId(), agv.id);
+        }
 
         agv.path.poll();
         agv.currentArc = next;
@@ -460,9 +471,11 @@ public final class SimulationEngine {
             }
             Arc next = agv.path.peek();
             Set<String> blockers = new HashSet<>();
-            String owner = edgeOwner.get(next.edgeId());
-            if (owner != null) {
-                blockers.add(owner);
+            if (!isDualLane(next)) {
+                String owner = edgeOwner.get(next.edgeId());
+                if (owner != null) {
+                    blockers.add(owner);
+                }
             }
             blockers.addAll(reservations.holdersAt(next.id(), tick));
             blockers.addAll(reservations.holdersAt(next.to(), tick));
@@ -492,6 +505,10 @@ public final class SimulationEngine {
             events.add(new SimEvent(tick, first.id, SimEvent.Type.DEADLOCK_BREAK,
                     wanted.id(), "检测到等待环，尝试倒车让行"));
             if (!tryRetreat(first, events)) {
+                // 兜底：倒车不可行时，最低优先级车逻辑上让出路口，打破资源环。
+                if (isJunction(first.currentNode)) {
+                    reservations.release(first.currentNode, first.id);
+                }
                 replanWithDetour(first, events);
             }
             return;
@@ -512,24 +529,28 @@ public final class SimulationEngine {
         if (reverse == null) {
             return false;
         }
-        String owner = edgeOwner.get(reverse.edgeId());
+        String owner = isDualLane(reverse) ? null : edgeOwner.get(reverse.edgeId());
         if (owner != null && !owner.equals(agv.id)) {
             return false;
         }
         long travel = travelTicks(reverse);
-        long exit = tick + travel + 1;
-        if (!reservations.canReserve(reverse.id(), tick, exit, capacityOf(reverse))) {
+        long arrival = tick + travel;
+        long arcExit = arrival + 1;
+        if (!reservations.canReserve(reverse.id(), tick, arcExit, capacityOf(reverse), agv.id)) {
             return false;
         }
-        if (!reservations.canReserve(reverse.to(), exit, Interval.FOREVER, 1)) {
+        if (!reservations.canReserve(reverse.to(), arrival, Interval.FOREVER,
+                nodeCapacity(reverse.to()), agv.id)) {
             return false;
         }
 
         String goal = currentGoal(agv);
-        reservations.release(agv.currentNode, agv.id);
-        reservations.reserve(agv.id, reverse.id(), tick, exit);
-        reservations.reserve(agv.id, reverse.to(), exit, Interval.FOREVER);
-        edgeOwner.put(reverse.edgeId(), agv.id);
+        releaseCurrentNode(agv);
+        reservations.reserve(agv.id, reverse.id(), tick, arcExit);
+        reservations.reserve(agv.id, reverse.to(), arrival, Interval.FOREVER);
+        if (!isDualLane(reverse)) {
+            edgeOwner.put(reverse.edgeId(), agv.id);
+        }
 
         agv.path.clear();
         agv.currentArc = reverse;
@@ -616,7 +637,7 @@ public final class SimulationEngine {
         return new AgvSnapshot(agv.id, agv.status,
                 agv.currentArc == null ? null : agv.currentArc.id(),
                 agv.s, x, y, heading,
-                agv.task == null ? -1 : agv.task.id(), agv.waitTicks);
+                agv.task == null ? -1 : agv.task.id(), agv.waitTicks, agv.currentNode);
     }
 
     private long travelTicks(Arc arc) {
@@ -625,8 +646,34 @@ public final class SimulationEngine {
     }
 
     private int capacityOf(Arc arc) {
-        var edge = net.edge(arc.edgeId());
-        return edge == null ? 1 : Math.max(1, edge.capacity());
+        NetEdge edge = net.edge(arc.edgeId());
+        if (edge == null) {
+            return 1;
+        }
+        return edge.isDualLane() ? Math.max(1, edge.capacity()) : 1;
+    }
+
+    private boolean isDualLane(Arc arc) {
+        NetEdge edge = net.edge(arc.edgeId());
+        return edge != null && edge.isDualLane();
+    }
+
+    private int nodeCapacity(String nodeId) {
+        NetNode node = net.node(nodeId);
+        return node != null && node.type() == NodeType.JUNCTION ? JUNCTION_CAPACITY : NODE_CAPACITY;
+    }
+
+    private boolean isJunction(String nodeId) {
+        NetNode node = net.node(nodeId);
+        return node != null && node.type() == NodeType.JUNCTION;
+    }
+
+    /** 离开当前节点：释放占用；路口额外保留短暂清空时间。 */
+    private void releaseCurrentNode(Agv agv) {
+        reservations.release(agv.currentNode, agv.id);
+        if (isJunction(agv.currentNode) && NODE_CLEARANCE_TICKS > 0) {
+            reservations.reserve(agv.id, agv.currentNode, tick, tick + NODE_CLEARANCE_TICKS);
+        }
     }
 
     /** 就近挑一个没人占的充电位，避免两台车抢同一个车位形成新的僵局。 */

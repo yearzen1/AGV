@@ -24,8 +24,19 @@ public final class ReservationTable {
      * @param capacity 资源容量；节点固定为 1
      */
     public boolean canReserve(String resourceId, long start, long end, int capacity) {
+        return canReserve(resourceId, start, end, capacity, null);
+    }
+
+    /**
+     * 同 {@link #canReserve(String, long, long, int)}，但忽略指定 AGV 自己的占用。
+     * 用于车辆离开节点后保留清空时间、又可能重新进入该节点的场景。
+     */
+    public boolean canReserve(String resourceId, long start, long end, int capacity, String ignoreAgvId) {
         int occupied = 0;
         for (Hold hold : holds.getOrDefault(resourceId, List.of())) {
+            if (ignoreAgvId != null && hold.agvId().equals(ignoreAgvId)) {
+                continue;
+            }
             if (hold.interval().overlaps(new Interval(start, end))) {
                 occupied++;
             }

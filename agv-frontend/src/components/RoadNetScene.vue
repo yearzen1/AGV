@@ -142,32 +142,44 @@ function rebuildRoadNet(net: RoadNetPayload | null) {
 
     const start = new THREE.Vector3(from.x, 0.06, from.y)
     const end = new THREE.Vector3(to.x, 0.06, to.y)
-
-    const geometry = new THREE.BufferGeometry().setFromPoints([start, end])
-    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x2f4a72 }))
-    netGroup.add(line)
-
-    // 双向边画两条平行细线，单向边只画一条
-    if (edge.direction === 'TWO_WAY') {
-      const dx = end.z - start.z
-      const dz = end.x - start.x
-      const length = Math.hypot(dx, dz) || 1
-      const offset = new THREE.Vector3(dx / length, 0, -dz / length).multiplyScalar(0.22)
-      const g2 = new THREE.BufferGeometry().setFromPoints([start.clone().add(offset), end.clone().add(offset)])
-      netGroup.add(new THREE.Line(g2, new THREE.LineBasicMaterial({ color: 0x2f4a72 })))
-    }
-
-    // 方向箭头
     const dirVec = end.clone().sub(start)
     const len = dirVec.length()
-    if (len > 0.01) {
+    if (len < 0.01) continue
+
+    const addLine = (a: THREE.Vector3, b: THREE.Vector3) => {
+      const geometry = new THREE.BufferGeometry().setFromPoints([a, b])
+      netGroup.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0x2f4a72 })))
+    }
+    const addArrow = (position: THREE.Vector3, direction: THREE.Vector3) => {
       const arrow = new THREE.Mesh(
         new THREE.ConeGeometry(0.32, 0.9, 10),
         new THREE.MeshStandardMaterial({ color: 0x3c5f92, metalness: 0.1, roughness: 0.8 })
       )
-      arrow.position.copy(start.clone().add(end).multiplyScalar(0.5))
-      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirVec.clone().normalize())
+      arrow.position.copy(position)
+      arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.clone().normalize())
       netGroup.add(arrow)
+    }
+
+    const dual = edge.direction === 'TWO_WAY' && edge.laneMode === 'DUAL'
+    if (dual) {
+      const nx = -dirVec.z / len
+      const nz = dirVec.x / len
+      const offset = new THREE.Vector3(nx, 0, nz).multiplyScalar(0.22)
+      addLine(start.clone().add(offset), end.clone().add(offset))
+      addLine(end.clone().sub(offset), start.clone().sub(offset))
+      const mid = start.clone().add(end).multiplyScalar(0.5)
+      addArrow(mid.clone().add(offset), dirVec)
+      addArrow(mid.clone().sub(offset), dirVec.clone().negate())
+    } else {
+      addLine(start, end)
+      const mid = start.clone().add(end).multiplyScalar(0.5)
+      if (edge.direction === 'ONE_WAY') {
+        addArrow(mid, dirVec)
+      } else {
+        // 单车道双向：一条线，两个方向各放一个锥，位置错开避免重叠
+        addArrow(start.clone().lerp(end, 1 / 3), dirVec)
+        addArrow(start.clone().lerp(end, 2 / 3), dirVec.clone().negate())
+      }
     }
   }
 

@@ -19,6 +19,7 @@ export interface AgvSnapshot {
   heading: number
   taskId: number
   waitTicks: number
+  nodeId?: string
 }
 
 export interface SimEvent {

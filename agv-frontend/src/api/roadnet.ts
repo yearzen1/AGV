@@ -15,6 +15,7 @@ export interface NetEdge {
   direction: 'ONE_WAY' | 'TWO_WAY'
   speed: number
   capacity: number
+  laneMode?: 'SINGLE' | 'DUAL'
 }
 
 export interface RoadNetPayload {

@@ -1,6 +1,7 @@
 package com.agv.backend.service;
 
 import com.agv.algorithm.model.EdgeDirection;
+import com.agv.algorithm.model.LaneMode;
 import com.agv.algorithm.model.NetEdge;
 import com.agv.algorithm.model.NetNode;
 import com.agv.algorithm.model.NodeType;
@@ -139,7 +140,8 @@ public class RoadNetService {
                 throw new BusinessException("路段编号不能为空");
             }
             edges.add(new NetEdge(dto.id(), dto.from(), dto.to(), dto.length(),
-                    parseDirection(dto.direction(), dto.id()), dto.speed(), dto.capacity()));
+                    parseDirection(dto.direction(), dto.id()), dto.speed(), dto.capacity(),
+                    parseLaneMode(dto.laneMode())));
         }
         return edges;
     }
@@ -158,6 +160,10 @@ public class RoadNetService {
         } catch (RuntimeException ex) {
             throw new BusinessException("路段 " + edgeId + " 的方向非法：" + direction);
         }
+    }
+
+    private LaneMode parseLaneMode(String laneMode) {
+        return "DUAL".equalsIgnoreCase(laneMode) ? LaneMode.DUAL : LaneMode.SINGLE;
     }
 
     private WarehouseMap requireMap(Long id) {

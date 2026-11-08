@@ -30,7 +30,10 @@ class EngineScaleTest {
                         .toList(),
                 payload.edges().stream()
                         .map(e -> new com.agv.algorithm.model.NetEdge(e.id(), e.from(), e.to(), e.length(),
-                                com.agv.algorithm.model.EdgeDirection.valueOf(e.direction()), e.speed(), e.capacity()))
+                                com.agv.algorithm.model.EdgeDirection.valueOf(e.direction()), e.speed(), e.capacity(),
+                                "DUAL".equalsIgnoreCase(e.laneMode())
+                                        ? com.agv.algorithm.model.LaneMode.DUAL
+                                        : com.agv.algorithm.model.LaneMode.SINGLE))
                         .toList());
 
         String[] stations = {"W1", "W2", "W3"};
