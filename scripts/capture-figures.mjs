@@ -177,10 +177,10 @@ async function main() {
 
   // 图 6-2 完成时间折线图（自绘 SVG）
   const data = [
-    { n: 2, nearest: 3948, greedy: 3320 },
-    { n: 3, nearest: 3114, greedy: 2968 },
-    { n: 5, nearest: 2476, greedy: 2478 },
-    { n: 8, nearest: 3018, greedy: 3061 }
+    { n: 2, nearest: 3948, greedy: 3338 },
+    { n: 3, nearest: 3310, greedy: 3492 },
+    { n: 5, nearest: 3293, greedy: 2972 },
+    { n: 8, nearest: 3695, greedy: 3653 }
   ]
   const W = 1680, H = 1050, L = 160, R = 120, T = 150, B = 150
   const maxY = 4000
