@@ -152,11 +152,12 @@ def main() -> int:
         chapters = chapters.replace(old, new)
 
     # 图 6-1 紧跟路网段落
-    roadnet_para = "容量为 1。\n\n**任务集**"
-    if roadnet_para in chapters:
+    roadnet_anchor = "**任务集**"
+    if roadnet_anchor in chapters:
         chapters = chapters.replace(
-            roadnet_para,
-            "容量为 1。\n\n![图 6-1　标准车间路网](figures/fig-6-1-roadnet.png)\n\n**任务集**",
+            roadnet_anchor,
+            "![图 6-1　标准车间路网](figures/fig-6-1-roadnet.png)\n\n" + roadnet_anchor,
+            1,
         )
     else:
         warnings.append("未找到图 6-1 插入点")

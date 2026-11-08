@@ -179,5 +179,7 @@ mvn test
 ```
 
 - `AStarPlannerTest`：直线路网、不可达、封锁绕行、转弯惩罚、与状态空间 Bellman-Ford 对拍
+- `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区
 - `RoadNetValidatorTest`：7 条校验规则
 - `ApiSmokeTest`：登录、401/403、路网校验拦截、模板校验
+- `SimSocketHandlerTest`：WebSocket 连接、echo 与广播
