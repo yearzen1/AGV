@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import type { NetEdge, NetNode, RoadNetPayload, ValidationError } from '@/api/roadnet'
 
 const props = defineProps<{
@@ -11,31 +11,62 @@ const SCALE = 20 // 1 米 = 20 像素
 const WIDTH = 50 // 米
 const HEIGHT = 34 // 米
 const SNAP = 0.5 // 米
+const MIN_SCALE = 0.4
+const MAX_SCALE = 4
 
 const nodes = ref<NetNode[]>(props.initial.nodes.map((n) => ({ ...n })))
 const edges = ref<NetEdge[]>(props.initial.edges.map((e) => ({ ...e })))
 
 const svgRef = ref<SVGSVGElement | null>(null)
-const tool = ref<'select' | 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION' | 'connect'>(
-  'select'
-)
-const selected = ref<{ kind: 'node' | 'edge'; id: string } | null>(null)
-const connectFrom = ref<string | null>(null)
-const dragging = ref<string | null>(null)
+const contentRef = ref<SVGGElement | null>(null)
 
+type Tool = 'select' | 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION' | 'connect'
+const tool = ref<Tool>('select')
+
+const selectedNodeIds = ref<string[]>([])
+const selectedEdgeIds = ref<string[]>([])
+const connectFrom = ref<string | null>(null)
+
+/** 视图变换：内容像素 * scale + (tx, ty)，只影响显示，不影响导出的坐标 */
+const view = reactive({ scale: 1, tx: 0, ty: 0 })
+const spacePressed = ref(false)
+const panning = ref(false)
+const hovering = ref(false)
+const suppressClick = ref(false)
+
+const marquee = ref<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+const marqueeAdditive = ref(false)
+
+const dragState = ref<{
+  start: { x: number; y: number }
+  base: Map<string, { x: number; y: number }>
+  moved: boolean
+} | null>(null)
+
+const panState = ref<{
+  start: { x: number; y: number }
+  tx: number
+  ty: number
+  moved: boolean
+} | null>(null)
+
+const errors = computed(() => props.errors ?? [])
 const errorNodeIds = computed(
-  () => new Set((props.errors ?? []).map((e) => e.nodeId).filter(Boolean) as string[])
+  () => new Set(errors.value.map((e) => e.nodeId).filter(Boolean) as string[])
 )
 const errorEdgeIds = computed(
-  () => new Set((props.errors ?? []).map((e) => e.edgeId).filter(Boolean) as string[])
+  () => new Set(errors.value.map((e) => e.edgeId).filter(Boolean) as string[])
 )
 
-const selectedNode = computed(() =>
-  selected.value?.kind === 'node' ? nodes.value.find((n) => n.id === selected.value!.id) ?? null : null
-)
-const selectedEdge = computed(() =>
-  selected.value?.kind === 'edge' ? edges.value.find((e) => e.id === selected.value!.id) ?? null : null
-)
+const selectedNode = computed(() => {
+  if (selectedNodeIds.value.length !== 1 || selectedEdgeIds.value.length !== 0) return null
+  return nodes.value.find((n) => n.id === selectedNodeIds.value[0]) ?? null
+})
+const selectedEdge = computed(() => {
+  if (selectedEdgeIds.value.length !== 1 || selectedNodeIds.value.length !== 0) return null
+  return edges.value.find((e) => e.id === selectedEdgeIds.value[0]) ?? null
+})
+const selectedCount = computed(() => selectedNodeIds.value.length + selectedEdgeIds.value.length)
 
 const stats = computed(() => ({
   nodes: nodes.value.length,
@@ -45,6 +76,26 @@ const stats = computed(() => ({
 }))
 
 const nodeMap = computed(() => new Map(nodes.value.map((n) => [n.id, n])))
+
+const transform = computed(() => `translate(${view.tx} ${view.ty}) scale(${view.scale})`)
+const zoomPercent = computed(() => Math.round(view.scale * 100))
+const canvasClass = computed(() => ({
+  'is-drawing': tool.value !== 'select',
+  'is-dragging': !!dragState.value,
+  'is-panning': panning.value,
+  'can-pan': spacePressed.value
+}))
+
+const marqueeBox = computed(() => {
+  const m = marquee.value
+  if (!m) return { x: 0, y: 0, width: 0, height: 0 }
+  return {
+    x: Math.min(m.x1, m.x2),
+    y: Math.min(m.y1, m.y2),
+    width: Math.abs(m.x2 - m.x1),
+    height: Math.abs(m.y2 - m.y1)
+  }
+})
 
 const PREFIX: Record<string, string> = {
   WORKSTATION: 'W',
@@ -71,6 +122,129 @@ function px(value: number) {
   return value * SCALE
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value))
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  const el = target as HTMLElement | null
+  if (!el) return false
+  const tag = el.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+}
+
+function isSelectedNode(id: string) {
+  return selectedNodeIds.value.includes(id)
+}
+
+function isSelectedEdge(id: string) {
+  return selectedEdgeIds.value.includes(id)
+}
+
+function clearSelection() {
+  selectedNodeIds.value = []
+  selectedEdgeIds.value = []
+}
+
+function selectAll() {
+  selectedNodeIds.value = nodes.value.map((n) => n.id)
+  selectedEdgeIds.value = edges.value.map((e) => e.id)
+}
+
+function toggleNodeSelection(id: string) {
+  selectedNodeIds.value = isSelectedNode(id)
+    ? selectedNodeIds.value.filter((item) => item !== id)
+    : [...selectedNodeIds.value, id]
+}
+
+function toggleEdgeSelection(id: string) {
+  selectedEdgeIds.value = isSelectedEdge(id)
+    ? selectedEdgeIds.value.filter((item) => item !== id)
+    : [...selectedEdgeIds.value, id]
+}
+
+function clientToView(event: MouseEvent) {
+  const svg = svgRef.value
+  if (!svg) return { x: 0, y: 0 }
+  const point = svg.createSVGPoint()
+  point.x = event.clientX
+  point.y = event.clientY
+  return point.matrixTransform(svg.getScreenCTM()!.inverse())
+}
+
+function toWorldRaw(event: MouseEvent) {
+  const svg = svgRef.value
+  const content = contentRef.value
+  if (!svg || !content) return { x: 0, y: 0 }
+  const point = svg.createSVGPoint()
+  point.x = event.clientX
+  point.y = event.clientY
+  const transformed = point.matrixTransform(content.getScreenCTM()!.inverse())
+  return { x: transformed.x / SCALE, y: transformed.y / SCALE }
+}
+
+function toWorld(event: MouseEvent) {
+  const point = toWorldRaw(event)
+  return {
+    x: Math.round(point.x / SNAP) * SNAP,
+    y: Math.round(point.y / SNAP) * SNAP
+  }
+}
+
+function setScale(next: number, anchor?: { x: number; y: number }) {
+  const scale = clamp(next, MIN_SCALE, MAX_SCALE)
+  if (Math.abs(scale - view.scale) < 1e-6) return
+  const point = anchor ?? { x: (WIDTH * SCALE) / 2, y: (HEIGHT * SCALE) / 2 }
+  const contentX = (point.x - view.tx) / view.scale
+  const contentY = (point.y - view.ty) / view.scale
+  view.scale = scale
+  view.tx = point.x - contentX * scale
+  view.ty = point.y - contentY * scale
+}
+
+function zoomIn() {
+  setScale(view.scale * 1.2)
+}
+
+function zoomOut() {
+  setScale(view.scale / 1.2)
+}
+
+function resetView() {
+  view.scale = 1
+  view.tx = 0
+  view.ty = 0
+}
+
+function fitView() {
+  if (nodes.value.length === 0) {
+    resetView()
+    return
+  }
+  const xs = nodes.value.map((n) => n.x * SCALE)
+  const ys = nodes.value.map((n) => n.y * SCALE)
+  const margin = 60
+  const minX = Math.min(...xs) - margin
+  const maxX = Math.max(...xs) + margin
+  const minY = Math.min(...ys) - margin
+  const maxY = Math.max(...ys) + margin
+  const viewWidth = WIDTH * SCALE
+  const viewHeight = HEIGHT * SCALE
+  const scale = clamp(
+    Math.min(viewWidth / Math.max(maxX - minX, 1), viewHeight / Math.max(maxY - minY, 1)),
+    MIN_SCALE,
+    MAX_SCALE
+  )
+  view.scale = scale
+  view.tx = viewWidth / 2 - ((minX + maxX) / 2) * scale
+  view.ty = viewHeight / 2 - ((minY + maxY) / 2) * scale
+}
+
+function onWheel(event: WheelEvent) {
+  if (dragState.value || panState.value) return
+  setScale(view.scale * (event.deltaY < 0 ? 1.1 : 1 / 1.1), clientToView(event))
+}
+
 function nextNodeId(type: string) {
   const prefix = PREFIX[type] ?? 'N'
   let index = 1
@@ -88,24 +262,26 @@ function nextEdgeId() {
   return `E${index}`
 }
 
-function toWorld(event: MouseEvent) {
-  const svg = svgRef.value
-  if (!svg) return { x: 0, y: 0 }
-  const point = svg.createSVGPoint()
-  point.x = event.clientX
-  point.y = event.clientY
-  const transformed = point.matrixTransform(svg.getScreenCTM()!.inverse())
-  return {
-    x: Math.round((transformed.x / SCALE) / SNAP) * SNAP,
-    y: Math.round((transformed.y / SCALE) / SNAP) * SNAP
+function refreshEdgeLengths(nodeIds: Set<string>) {
+  for (const edge of edges.value) {
+    if (!nodeIds.has(edge.from) && !nodeIds.has(edge.to)) continue
+    const a = nodeMap.value.get(edge.from)
+    const b = nodeMap.value.get(edge.to)
+    if (a && b) {
+      edge.length = Math.max(0.1, Math.round(Math.hypot(b.x - a.x, b.y - a.y) * 10) / 10)
+    }
   }
 }
 
 function onCanvasClick(event: MouseEvent) {
+  if (suppressClick.value) {
+    suppressClick.value = false
+    return
+  }
   const type = tool.value
   if (type === 'select' || type === 'connect') {
     if (type === 'connect' && !connectFrom.value) {
-      selected.value = null
+      clearSelection()
     }
     return
   }
@@ -118,96 +294,264 @@ function onCanvasClick(event: MouseEvent) {
     type: type as NetNode['type']
   }
   nodes.value.push(node)
-  selected.value = { kind: 'node', id: node.id }
+  selectedNodeIds.value = [node.id]
+  selectedEdgeIds.value = []
+}
+
+function movingNodeIds() {
+  const ids = new Set(selectedNodeIds.value)
+  for (const edge of edges.value) {
+    if (isSelectedEdge(edge.id)) {
+      ids.add(edge.from)
+      ids.add(edge.to)
+    }
+  }
+  return [...ids]
+}
+
+function beginDrag(event: MouseEvent, nodeIds: string[]) {
+  if (nodeIds.length === 0) return
+  const base = new Map<string, { x: number; y: number }>()
+  for (const id of nodeIds) {
+    const node = nodes.value.find((n) => n.id === id)
+    if (node) base.set(id, { x: node.x, y: node.y })
+  }
+  if (base.size === 0) return
+  dragState.value = { start: toWorldRaw(event), base, moved: false }
 }
 
 function onNodeClick(event: MouseEvent, node: NetNode) {
+  if (tool.value !== 'connect') return
   event.stopPropagation()
-  if (tool.value === 'connect') {
-    if (!connectFrom.value) {
-      connectFrom.value = node.id
-      selected.value = { kind: 'node', id: node.id }
-      return
-    }
-    if (connectFrom.value === node.id) {
-      connectFrom.value = null
-      return
-    }
-    const duplicate = edges.value.some(
-      (e) =>
-        (e.from === connectFrom.value && e.to === node.id) ||
-        (e.from === node.id && e.to === connectFrom.value)
-    )
-    if (duplicate) {
-      connectFrom.value = null
-      return
-    }
-    const from = nodeMap.value.get(connectFrom.value)!
-    const length = Math.round(Math.hypot(node.x - from.x, node.y - from.y) * 10) / 10
-    const edge: NetEdge = {
-      id: nextEdgeId(),
-      from: from.id,
-      to: node.id,
-      length: length > 0 ? length : 1,
-      direction: 'TWO_WAY',
-      speed: 1,
-      capacity: 1
-    }
-    edges.value.push(edge)
-    selected.value = { kind: 'edge', id: edge.id }
+  if (!connectFrom.value) {
+    connectFrom.value = node.id
+    selectedNodeIds.value = [node.id]
+    selectedEdgeIds.value = []
+    return
+  }
+  if (connectFrom.value === node.id) {
     connectFrom.value = null
     return
   }
-  selected.value = { kind: 'node', id: node.id }
+  const duplicate = edges.value.some(
+    (e) =>
+      (e.from === connectFrom.value && e.to === node.id) ||
+      (e.from === node.id && e.to === connectFrom.value)
+  )
+  if (duplicate) {
+    connectFrom.value = null
+    return
+  }
+  const from = nodeMap.value.get(connectFrom.value)!
+  const length = Math.round(Math.hypot(node.x - from.x, node.y - from.y) * 10) / 10
+  const edge: NetEdge = {
+    id: nextEdgeId(),
+    from: from.id,
+    to: node.id,
+    length: length > 0 ? length : 1,
+    direction: 'TWO_WAY',
+    speed: 1,
+    capacity: 1
+  }
+  edges.value.push(edge)
+  selectedEdgeIds.value = [edge.id]
+  selectedNodeIds.value = []
+  connectFrom.value = null
 }
 
 function onNodeMouseDown(event: MouseEvent, node: NetNode) {
+  if (event.button === 1 || spacePressed.value) return
   if (tool.value !== 'select') return
   event.stopPropagation()
-  selected.value = { kind: 'node', id: node.id }
-  dragging.value = node.id
-  const svg = svgRef.value
-  if (svg) svg.setPointerCapture((event as PointerEvent).pointerId)
+  const additive = event.shiftKey || event.ctrlKey || event.metaKey
+  if (additive) {
+    toggleNodeSelection(node.id)
+  } else if (!isSelectedNode(node.id)) {
+    selectedNodeIds.value = [node.id]
+    selectedEdgeIds.value = []
+  }
+  if (!isSelectedNode(node.id)) return
+  beginDrag(event, movingNodeIds())
+}
+
+function onEdgeMouseDown(event: MouseEvent, edge: NetEdge) {
+  if (event.button === 1 || spacePressed.value) return
+  if (tool.value !== 'select') return
+  event.stopPropagation()
+  const additive = event.shiftKey || event.ctrlKey || event.metaKey
+  if (additive) {
+    toggleEdgeSelection(edge.id)
+  } else if (!isSelectedEdge(edge.id)) {
+    selectedEdgeIds.value = [edge.id]
+    selectedNodeIds.value = []
+  }
+  if (!isSelectedEdge(edge.id)) return
+  beginDrag(event, movingNodeIds())
+}
+
+function updateDrag(event: MouseEvent) {
+  const state = dragState.value
+  if (!state) return
+  const point = toWorldRaw(event)
+  let dx = Math.round((point.x - state.start.x) / SNAP) * SNAP
+  let dy = Math.round((point.y - state.start.y) / SNAP) * SNAP
+
+  const xs = [...state.base.values()].map((p) => p.x)
+  const ys = [...state.base.values()].map((p) => p.y)
+  dx = clamp(dx, -Math.min(...xs), WIDTH - Math.max(...xs))
+  dy = clamp(dy, -Math.min(...ys), HEIGHT - Math.max(...ys))
+
+  if (!state.moved && (dx !== 0 || dy !== 0)) state.moved = true
+
+  for (const [id, origin] of state.base) {
+    const node = nodes.value.find((n) => n.id === id)
+    if (node) {
+      node.x = origin.x + dx
+      node.y = origin.y + dy
+    }
+  }
+  refreshEdgeLengths(new Set(state.base.keys()))
+}
+
+function onCanvasMouseDown(event: MouseEvent) {
+  suppressClick.value = false
+  const isPanTrigger = event.button === 1 || (event.button === 0 && spacePressed.value)
+  if (isPanTrigger) {
+    event.preventDefault()
+    panState.value = {
+      start: clientToView(event),
+      tx: view.tx,
+      ty: view.ty,
+      moved: false
+    }
+    panning.value = true
+    return
+  }
+  if (tool.value !== 'select' || event.button !== 0) return
+  const point = clientToView(event)
+  marquee.value = { x1: point.x, y1: point.y, x2: point.x, y2: point.y }
+  marqueeAdditive.value = event.shiftKey || event.ctrlKey || event.metaKey
 }
 
 function onCanvasMouseMove(event: MouseEvent) {
-  if (!dragging.value) return
-  const point = toWorld(event)
-  const node = nodes.value.find((n) => n.id === dragging.value)
-  if (!node) return
-  node.x = Math.max(0, Math.min(WIDTH, point.x))
-  node.y = Math.max(0, Math.min(HEIGHT, point.y))
-  for (const edge of edges.value) {
-    if (edge.from === node.id || edge.to === node.id) {
-      const a = nodeMap.value.get(edge.from)
-      const b = nodeMap.value.get(edge.to)
-      if (a && b) {
-        edge.length = Math.max(0.1, Math.round(Math.hypot(b.x - a.x, b.y - a.y) * 10) / 10)
-      }
+  if (panState.value) {
+    const point = clientToView(event)
+    view.tx = panState.value.tx + (point.x - panState.value.start.x)
+    view.ty = panState.value.ty + (point.y - panState.value.start.y)
+    if (
+      Math.abs(point.x - panState.value.start.x) > 2 ||
+      Math.abs(point.y - panState.value.start.y) > 2
+    ) {
+      panState.value.moved = true
+    }
+    return
+  }
+  if (marquee.value) {
+    const point = clientToView(event)
+    marquee.value.x2 = point.x
+    marquee.value.y2 = point.y
+    return
+  }
+  updateDrag(event)
+}
+
+function finalizeMarquee() {
+  const box = marqueeBox.value
+  if (box.width < 3 && box.height < 3) {
+    if (!marqueeAdditive.value) clearSelection()
+    return
+  }
+  const x1 = (box.x - view.tx) / view.scale / SCALE
+  const y1 = (box.y - view.ty) / view.scale / SCALE
+  const x2 = (box.x + box.width - view.tx) / view.scale / SCALE
+  const y2 = (box.y + box.height - view.ty) / view.scale / SCALE
+  const nodeIds = nodes.value
+    .filter((n) => n.x >= x1 && n.x <= x2 && n.y >= y1 && n.y <= y2)
+    .map((n) => n.id)
+  const nodeSet = new Set(nodeIds)
+  const edgeIds = edges.value
+    .filter((e) => nodeSet.has(e.from) && nodeSet.has(e.to))
+    .map((e) => e.id)
+
+  if (marqueeAdditive.value) {
+    selectedNodeIds.value = [...new Set([...selectedNodeIds.value, ...nodeIds])]
+    selectedEdgeIds.value = [...new Set([...selectedEdgeIds.value, ...edgeIds])]
+  } else {
+    selectedNodeIds.value = nodeIds
+    selectedEdgeIds.value = edgeIds
+  }
+  suppressClick.value = true
+}
+
+function onCanvasMouseUp() {
+  if (panState.value) {
+    if (panState.value.moved) suppressClick.value = true
+    panState.value = null
+    panning.value = false
+  }
+  if (marquee.value) {
+    finalizeMarquee()
+    marquee.value = null
+  }
+  dragState.value = null
+}
+
+function onCanvasLeave() {
+  hovering.value = false
+  onCanvasMouseUp()
+}
+
+function deleteSelected() {
+  if (selectedCount.value === 0) return
+  const nodeIds = new Set(selectedNodeIds.value)
+  const edgeIds = new Set(selectedEdgeIds.value)
+  nodes.value = nodes.value.filter((n) => !nodeIds.has(n.id))
+  edges.value = edges.value.filter(
+    (e) => !edgeIds.has(e.id) && !nodeIds.has(e.from) && !nodeIds.has(e.to)
+  )
+  clearSelection()
+}
+
+function onKeyDown(event: KeyboardEvent) {
+  if (!hovering.value || isEditableTarget(event.target)) return
+  if (event.code === 'Space') {
+    spacePressed.value = true
+    event.preventDefault()
+    return
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a') {
+    event.preventDefault()
+    selectAll()
+    return
+  }
+  if (event.key === 'Escape') {
+    clearSelection()
+    connectFrom.value = null
+    return
+  }
+  if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (selectedCount.value > 0) {
+      event.preventDefault()
+      deleteSelected()
     }
   }
 }
 
-function onCanvasMouseUp() {
-  dragging.value = null
-}
-
-function selectEdge(event: MouseEvent, edge: NetEdge) {
-  event.stopPropagation()
-  selected.value = { kind: 'edge', id: edge.id }
-}
-
-function deleteSelected() {
-  if (!selected.value) return
-  if (selected.value.kind === 'node') {
-    const id = selected.value.id
-    nodes.value = nodes.value.filter((n) => n.id !== id)
-    edges.value = edges.value.filter((e) => e.from !== id && e.to !== id)
-  } else {
-    edges.value = edges.value.filter((e) => e.id !== selected.value!.id)
+function onKeyUp(event: KeyboardEvent) {
+  if (event.code === 'Space') {
+    spacePressed.value = false
   }
-  selected.value = null
 }
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('keyup', onKeyUp)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeyDown)
+  window.removeEventListener('keyup', onKeyUp)
+})
 
 function edgeMid(edge: NetEdge) {
   const a = nodeMap.value.get(edge.from)
@@ -216,18 +560,12 @@ function edgeMid(edge: NetEdge) {
   return { x: ((a.x + b.x) / 2) * SCALE, y: ((a.y + b.y) / 2) * SCALE }
 }
 
-function edgeAngle(edge: NetEdge) {
-  const a = nodeMap.value.get(edge.from)
-  const b = nodeMap.value.get(edge.to)
-  if (!a || !b) return 0
-  return (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI
-}
-
 function setPayload(payload: RoadNetPayload) {
   nodes.value = payload.nodes.map((n) => ({ ...n }))
   edges.value = payload.edges.map((e) => ({ ...e }))
-  selected.value = null
+  clearSelection()
   connectFrom.value = null
+  resetView()
 }
 
 function getPayload(): RoadNetPayload {
@@ -255,7 +593,21 @@ defineExpose({ getPayload, setPayload })
         <el-radio-button value="JUNCTION">路口</el-radio-button>
       </el-radio-group>
       <el-divider direction="vertical" />
-      <el-button size="small" :disabled="!selected" @click="deleteSelected">删除选中</el-button>
+      <el-button size="small" :disabled="selectedCount === 0" @click="deleteSelected">
+        删除选中
+      </el-button>
+      <el-button size="small" @click="selectAll">全选</el-button>
+      <el-button size="small" :disabled="selectedCount === 0" @click="clearSelection">
+        清空
+      </el-button>
+      <el-divider direction="vertical" />
+      <el-button-group>
+        <el-button size="small" title="缩小" @click="zoomOut">−</el-button>
+        <el-button size="small" title="重置为 100%" @click="resetView">{{ zoomPercent }}%</el-button>
+        <el-button size="small" title="放大" @click="zoomIn">+</el-button>
+      </el-button-group>
+      <el-button size="small" @click="fitView">适应窗口</el-button>
+      <span class="hint">滚轮缩放 · 空格/中键拖动画布 · 拖空白框选</span>
     </div>
 
     <div class="workspace">
@@ -264,11 +616,14 @@ defineExpose({ getPayload, setPayload })
           ref="svgRef"
           :viewBox="`0 0 ${WIDTH * SCALE} ${HEIGHT * SCALE}`"
           class="canvas"
-          :class="{ 'is-drawing': tool !== 'select', 'is-dragging': !!dragging }"
+          :class="canvasClass"
           @click="onCanvasClick"
+          @wheel.prevent="onWheel"
+          @mousedown="onCanvasMouseDown"
           @mousemove="onCanvasMouseMove"
           @mouseup="onCanvasMouseUp"
-          @mouseleave="onCanvasMouseUp"
+          @mouseenter="hovering = true"
+          @mouseleave="onCanvasLeave"
         >
           <defs>
             <pattern id="smallGrid" :width="SNAP * SCALE" :height="SNAP * SCALE" patternUnits="userSpaceOnUse">
@@ -290,58 +645,78 @@ defineExpose({ getPayload, setPayload })
             </pattern>
           </defs>
 
-          <rect :width="WIDTH * SCALE" :height="HEIGHT * SCALE" fill="url(#grid)" />
+          <g ref="contentRef" :transform="transform">
+            <rect :width="WIDTH * SCALE" :height="HEIGHT * SCALE" fill="url(#grid)" />
 
-          <g v-for="edge in edges" :key="edge.id">
-            <line
-              :x1="px(nodeMap.get(edge.from)?.x ?? 0)"
-              :y1="px(nodeMap.get(edge.from)?.y ?? 0)"
-              :x2="px(nodeMap.get(edge.to)?.x ?? 0)"
-              :y2="px(nodeMap.get(edge.to)?.y ?? 0)"
-              :stroke="errorEdgeIds.has(edge.id) ? '#f56c6c' : selected?.kind === 'edge' && selected.id === edge.id ? '#1f3b73' : '#8fa3bd'"
-              :stroke-width="selected?.kind === 'edge' && selected.id === edge.id ? 4 : 3"
-              class="edge-line"
-              @click="selectEdge($event, edge)"
-            />
-            <text
-              :x="edgeMid(edge).x"
-              :y="edgeMid(edge).y - 6"
-              text-anchor="middle"
-              font-size="10"
-              fill="#7a8aa3"
-            >
-              {{ edge.id }} · {{ edge.length }}m
-            </text>
+            <g v-for="edge in edges" :key="edge.id">
+              <line
+                :x1="px(nodeMap.get(edge.from)?.x ?? 0)"
+                :y1="px(nodeMap.get(edge.from)?.y ?? 0)"
+                :x2="px(nodeMap.get(edge.to)?.x ?? 0)"
+                :y2="px(nodeMap.get(edge.to)?.y ?? 0)"
+                :stroke="
+                  errorEdgeIds.has(edge.id)
+                    ? '#f56c6c'
+                    : isSelectedEdge(edge.id)
+                      ? '#1f3b73'
+                      : '#8fa3bd'
+                "
+                :stroke-width="isSelectedEdge(edge.id) ? 4 : 3"
+                class="edge-line"
+                :class="{ selected: isSelectedEdge(edge.id) }"
+                @mousedown="onEdgeMouseDown($event, edge)"
+              />
+              <text
+                :x="edgeMid(edge).x"
+                :y="edgeMid(edge).y - 6"
+                text-anchor="middle"
+                font-size="10"
+                fill="#7a8aa3"
+                pointer-events="none"
+              >
+                {{ edge.id }} · {{ edge.length }}m
+              </text>
+            </g>
+
+            <g v-for="node in nodes" :key="node.id">
+              <circle
+                :cx="px(node.x)"
+                :cy="px(node.y)"
+                r="9"
+                :fill="errorNodeIds.has(node.id) ? '#f56c6c' : TYPE_COLOR[node.type]"
+                :stroke="
+                  connectFrom === node.id
+                    ? '#ffd666'
+                    : isSelectedNode(node.id)
+                      ? '#1f3b73'
+                      : '#ffffff'
+                "
+                :stroke-width="connectFrom === node.id || isSelectedNode(node.id) ? 4 : 2"
+                class="node-dot"
+                :class="{ selected: isSelectedNode(node.id) }"
+                @click="onNodeClick($event, node)"
+                @mousedown="onNodeMouseDown($event, node)"
+              />
+              <text
+                :x="px(node.x) + 12"
+                :y="px(node.y) + 4"
+                font-size="11"
+                fill="#606266"
+                pointer-events="none"
+              >
+                {{ node.id }}
+              </text>
+            </g>
           </g>
 
-          <g v-for="node in nodes" :key="node.id">
-            <circle
-              :cx="px(node.x)"
-              :cy="px(node.y)"
-              r="9"
-              :fill="errorNodeIds.has(node.id) ? '#f56c6c' : TYPE_COLOR[node.type]"
-              :stroke="
-                connectFrom === node.id
-                  ? '#ffd666'
-                  : selected?.kind === 'node' && selected.id === node.id
-                    ? '#1f3b73'
-                    : '#ffffff'
-              "
-              :stroke-width="connectFrom === node.id || (selected?.kind === 'node' && selected.id === node.id) ? 4 : 2"
-              class="node-dot"
-              @click="onNodeClick($event, node)"
-              @mousedown="onNodeMouseDown($event, node)"
-            />
-            <text
-              :x="px(node.x) + 12"
-              :y="px(node.y) + 4"
-              font-size="11"
-              fill="#606266"
-              pointer-events="none"
-            >
-              {{ node.id }}
-            </text>
-          </g>
+          <rect
+            v-if="marquee"
+            :x="marqueeBox.x"
+            :y="marqueeBox.y"
+            :width="marqueeBox.width"
+            :height="marqueeBox.height"
+            class="marquee"
+          />
         </svg>
       </div>
 
@@ -388,6 +763,9 @@ defineExpose({ getPayload, setPayload })
               </el-form-item>
             </el-form>
           </template>
+          <div v-else-if="selectedCount > 0" class="muted">
+            已选 {{ selectedNodeIds.length }} 个节点、{{ selectedEdgeIds.length }} 条路段，拖动任意选中元素可整体移动
+          </div>
           <div v-else class="muted">选中节点或路段后可编辑属性</div>
         </div>
 
@@ -397,12 +775,13 @@ defineExpose({ getPayload, setPayload })
           <div class="stat-row"><span>路段</span><b>{{ stats.edges }}</b></div>
           <div class="stat-row"><span>总长度</span><b>{{ stats.length.toFixed(1) }} m</b></div>
           <div class="stat-row"><span>充电位</span><b>{{ stats.chargers }}</b></div>
+          <div class="stat-row"><span>选中</span><b>{{ selectedCount }}</b></div>
         </div>
 
         <div class="side-block">
           <div class="side-title">校验</div>
-          <div v-if="!props.errors || props.errors.length === 0" class="muted">未发现问题</div>
-          <div v-for="(error, index) in props.errors" :key="index" class="error-row">
+          <div v-if="errors.length === 0" class="muted">未发现问题</div>
+          <div v-for="(error, index) in errors" :key="index" class="error-row">
             <el-tag size="small" type="danger">{{ error.code }}</el-tag>
             <span>{{ error.message }}</span>
           </div>
@@ -425,6 +804,11 @@ defineExpose({ getPayload, setPayload })
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.hint {
+  font-size: 12px;
+  color: #909399;
 }
 
 .workspace {
@@ -454,6 +838,19 @@ defineExpose({ getPayload, setPayload })
   cursor: crosshair;
 }
 
+.canvas.is-drawing .node-dot,
+.canvas.is-drawing .edge-line {
+  cursor: crosshair;
+}
+
+.canvas.can-pan {
+  cursor: grab;
+}
+
+.canvas.is-panning {
+  cursor: grabbing;
+}
+
 .canvas.is-dragging {
   cursor: grabbing;
 }
@@ -468,6 +865,14 @@ defineExpose({ getPayload, setPayload })
 
 .edge-line {
   cursor: pointer;
+}
+
+.marquee {
+  fill: rgba(31, 59, 115, 0.08);
+  stroke: #1f3b73;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
 }
 
 .side {
