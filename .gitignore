@@ -30,3 +30,9 @@ application-local.yml
 # 构建产物
 *.jar
 *.war
+
+# 论文/PPT 生成产物（PNG 插图保留入库）
+paper/thesis/论文定稿.docx
+paper/thesis/reference.docx
+paper/thesis/.论文定稿-排版.md
+paper/答辩PPT.pptx
