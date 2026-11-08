@@ -121,8 +121,16 @@ POST   /api/roadnet/validate    仅校验不落库
 GET    /api/dict/{dictType}     下拉字典（algorithm / metric）
 GET    /api/admin/users         用户管理（仅管理员）
 GET    /api/admin/dict          字典管理（仅管理员）
-WS     /ws/sim                  仿真帧通道（当前为 echo 骨架）
+WS     /ws/sim                  仿真帧通道（推送帧与状态，支持 echo 自检）
 ```
+
+### 实时推送（WebSocket）
+
+- 连接 `/ws/sim` 后，服务端先回一条 `{"type":"connected"}`；发送任意文本会收到 `{"type":"echo"}`，用于连通性自检。
+- 仿真运行期间，每个 tick 推送 `{"type":"frame","frame":{...},"speed":1.0,"paused":false}`；控制类操作推送 `{"type":"status",...}`。
+- 每个会话的发送由 Spring 的 `ConcurrentWebSocketSessionDecorator` 串行化，避免同一连接上并发写导致 `TEXT_PARTIAL_WRITING`。
+- 单个会话发送失败只移除该会话并记一条警告，**不会中断仿真**，也不会把仿真状态置为失败。
+- 事件不落库，只在帧里推送；实验结束后仅保存四项汇总指标。
 
 ## 进度
 
