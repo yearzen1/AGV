@@ -43,7 +43,7 @@ function fill(username: string, password: string) {
 
       <el-form label-position="top" @submit.prevent="submit">
         <el-form-item label="用户名">
-          <el-input v-model="form.username" size="large" placeholder="请输入用户名" />
+          <el-input v-model="form.username" size="large" placeholder="请输入用户名" @keyup.enter="submit" />
         </el-form-item>
         <el-form-item label="密码">
           <el-input
