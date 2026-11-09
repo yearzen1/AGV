@@ -154,6 +154,8 @@ WS     /ws/sim                  仿真帧通道（推送帧与状态，支持 ec
 powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 ```
 
+首次运行会先 `mvn install` 算法包，再打开后端（8080）与前端（5173）两个窗口。脚本以 **UTF-8 with BOM** 保存，`powershell.exe`（5.1）与 `pwsh`（7）下中文提示都正常；新增 `.ps1` 时请保留 BOM，否则 5.1 会按 GBK 解码而乱码。
+
 ## 论文与演示
 
 - 论文定稿：`paper/thesis/论文定稿.md`（9 张插图已入库）；`论文定稿.docx` 为本地生成产物，不入库
