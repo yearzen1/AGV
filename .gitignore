@@ -23,6 +23,7 @@ Thumbs.db
 data/
 logs/
 *.log
+.playwright-mcp
 
 # 本地配置（含数据库密码，不入库）
 application-local.yml
