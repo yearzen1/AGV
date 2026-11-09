@@ -138,6 +138,39 @@ class ApiSmokeTest {
     }
 
     @Test
+    @DisplayName("重新开始或重置仿真时，旧实验标记为已中断")
+    void interruptedSimulationIsMarkedAborted() throws Exception {
+        String token = login("admin", "admin123");
+        String startBody = """
+                {"mapId":1,"taskSetId":1,"algorithm":"nearest","agvCount":3,"seed":20261107}
+                """;
+
+        mockMvc.perform(post("/api/sim/start")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(startBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("RUNNING"));
+
+        mockMvc.perform(post("/api/sim/start")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(startBody))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("RUNNING"));
+
+        mockMvc.perform(post("/api/sim/reset").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.status").value("IDLE"));
+
+        mockMvc.perform(get("/api/experiment/list").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].status").value("ABORTED"))
+                .andExpect(jsonPath("$.data[1].status").value("ABORTED"));
+    }
+
+    @Test
     @DisplayName("不存在的接口路径返回 404 业务码，而不是 500")
     void unknownPathReturns404() throws Exception {
         String token = login("dispatcher", "dispatcher123");
