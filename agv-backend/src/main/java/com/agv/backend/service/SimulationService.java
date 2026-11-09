@@ -13,6 +13,7 @@ import com.agv.backend.repository.ExperimentMetricRepository;
 import com.agv.backend.repository.ExperimentRepository;
 import com.agv.backend.security.CurrentUser;
 import com.agv.backend.ws.SimSocketHandler;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,6 +75,7 @@ public class SimulationService {
     public Map<String, Object> start(StartSimRequest request) {
         synchronized (lock) {
             stopInternal();
+            abortExperiment("ABORTED");
             RoadNet net = roadNetService.toModel(roadNetService.detail(request.mapId()));
             List<Task> tasks = loadTasks(request.taskSetId());
             long actualSeed = request.seed() == null ? System.currentTimeMillis() : request.seed();
@@ -115,7 +117,9 @@ public class SimulationService {
     public Map<String, Object> reset() {
         synchronized (lock) {
             stopInternal();
+            abortExperiment("ABORTED");
             status = "IDLE";
+            experimentId = null;
             broadcastStatus("reset");
             return statusPayload();
         }
@@ -168,6 +172,7 @@ public class SimulationService {
             log.error("仿真推进失败", ex);
             status = "FAILED";
             stopScheduler();
+            abortExperiment("FAILED");
             return;
         }
 
@@ -221,6 +226,45 @@ public class SimulationService {
         experiment.setStatus(state);
         experiment.setCreateUser(currentUser.id());
         return experimentRepository.save(experiment);
+    }
+
+    /**
+     * 被新仿真替换、手动重置或推进失败时，把仍处于 RUNNING 的实验落一个终态，
+     * 避免历史列表里出现永远「运行中」的僵尸记录。
+     */
+    private void abortExperiment(String state) {
+        Long id = experimentId;
+        if (id == null) return;
+        try {
+            experimentRepository.findById(id).ifPresent(experiment -> {
+                if ("RUNNING".equals(experiment.getStatus())) {
+                    experiment.setStatus(state);
+                    experimentRepository.save(experiment);
+                }
+            });
+        } catch (RuntimeException ex) {
+            log.warn("实验状态更新失败：{}", ex.getMessage());
+        }
+    }
+
+    /**
+     * 后端重启会丢失内存中的仿真线程；把上次进程遗留的 RUNNING 实验补成终态，
+     * 否则历史列表里会永远显示「运行中」。
+     */
+    @PostConstruct
+    void recoverStaleExperiments() {
+        try {
+            List<Experiment> stale = experimentRepository.findByStatus("RUNNING");
+            for (Experiment experiment : stale) {
+                experiment.setStatus("ABORTED");
+            }
+            if (!stale.isEmpty()) {
+                experimentRepository.saveAll(stale);
+                log.info("已将 {} 条遗留的 RUNNING 实验标记为 ABORTED", stale.size());
+            }
+        } catch (RuntimeException ex) {
+            log.warn("遗留实验状态恢复失败：{}", ex.getMessage());
+        }
     }
 
     private List<Task> loadTasks(Long id) {
