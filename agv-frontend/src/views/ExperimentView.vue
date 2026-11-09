@@ -10,6 +10,7 @@ import {
   type ExperimentReport,
   type TaskSetSummary
 } from '@/api/sim'
+import { formatDateTime, formatMetric, taskSetLabel } from '@/utils/format'
 
 const maps = ref<RoadNetSummary[]>([])
 const taskSets = ref<TaskSetSummary[]>([])
@@ -93,13 +94,23 @@ function renderChart() {
   )
 }
 
-function resizeChart() {
-  chart?.resize()
+const statusMeta: Record<string, { label: string; type: 'success' | 'info' | 'warning' | 'danger' }> = {
+  RUNNING: { label: '运行中', type: 'warning' },
+  FINISHED: { label: '已完成', type: 'success' },
+  FAILED: { label: '失败', type: 'danger' },
+  ABORTED: { label: '已中断', type: 'info' }
 }
 
-function formatTime(value: string) {
-  if (!value) return ''
-  return value.replace('T', ' ').slice(0, 19)
+function statusLabel(value: string) {
+  return statusMeta[value]?.label ?? value
+}
+
+function statusTagType(value: string) {
+  return statusMeta[value]?.type ?? 'info'
+}
+
+function resizeChart() {
+  chart?.resize()
 }
 
 onMounted(async () => {
@@ -127,7 +138,7 @@ onBeforeUnmount(() => {
           <el-option
             v-for="set in taskSets"
             :key="set.id"
-            :label="`${set.name}（${set.taskCount} 单）`"
+            :label="taskSetLabel(set.name, set.taskCount)"
             :value="set.id"
           />
         </el-select>
@@ -149,12 +160,19 @@ onBeforeUnmount(() => {
         <el-table-column prop="algorithmName" label="调度算法" width="140" />
         <el-table-column prop="agvCount" label="AGV" width="80" />
         <el-table-column prop="seed" label="种子" width="120" />
-        <el-table-column prop="makespan" label="完成时间(tick)" width="140" />
+        <el-table-column prop="makespan" label="完成时间(tick)" width="140"
+          :formatter="(row: ExperimentReport) => formatMetric(row.makespan)" />
         <el-table-column prop="totalPathLen" label="总路径长(m)" width="140"
-          :formatter="(row: ExperimentReport) => Number(row.totalPathLen ?? 0).toFixed(1)" />
-        <el-table-column prop="totalWaitTick" label="总等待(tick)" width="140" />
-        <el-table-column prop="conflictCount" label="冲突次数" width="110" />
-        <el-table-column prop="status" label="状态" width="110" />
+          :formatter="(row: ExperimentReport) => formatMetric(row.totalPathLen, 1)" />
+        <el-table-column prop="totalWaitTick" label="总等待(tick)" width="140"
+          :formatter="(row: ExperimentReport) => formatMetric(row.totalWaitTick)" />
+        <el-table-column prop="conflictCount" label="冲突次数" width="110"
+          :formatter="(row: ExperimentReport) => formatMetric(row.conflictCount)" />
+        <el-table-column prop="status" label="状态" width="110">
+          <template #default="{ row }">
+            <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
       </el-table>
     </div>
 
@@ -167,13 +185,21 @@ onBeforeUnmount(() => {
         <el-table-column prop="taskSetId" label="任务集" width="90" />
         <el-table-column prop="agvCount" label="AGV" width="80" />
         <el-table-column prop="seed" label="种子" width="120" />
-        <el-table-column prop="makespan" label="完成时间" width="110" />
+        <el-table-column prop="status" label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="makespan" label="完成时间" width="110"
+          :formatter="(row: ExperimentReport) => formatMetric(row.makespan)" />
         <el-table-column prop="totalPathLen" label="总路径长" width="110"
-          :formatter="(row: ExperimentReport) => Number(row.totalPathLen ?? 0).toFixed(1)" />
-        <el-table-column prop="totalWaitTick" label="总等待" width="100" />
-        <el-table-column prop="conflictCount" label="冲突" width="80" />
+          :formatter="(row: ExperimentReport) => formatMetric(row.totalPathLen, 1)" />
+        <el-table-column prop="totalWaitTick" label="总等待" width="100"
+          :formatter="(row: ExperimentReport) => formatMetric(row.totalWaitTick)" />
+        <el-table-column prop="conflictCount" label="冲突" width="80"
+          :formatter="(row: ExperimentReport) => formatMetric(row.conflictCount)" />
         <el-table-column prop="createTime" label="时间" min-width="170"
-          :formatter="(row: ExperimentReport) => formatTime(row.createTime)" />
+          :formatter="(row: ExperimentReport) => formatDateTime(row.createTime)" />
       </el-table>
     </div>
   </div>
