@@ -113,16 +113,23 @@ function animate() {
   renderer?.render(scene, camera)
 }
 
+function disposeMaterial(material: THREE.Material | THREE.Material[]) {
+  const list = Array.isArray(material) ? material : [material]
+  for (const item of list) {
+    const map = (item as THREE.MeshStandardMaterial).map
+    map?.dispose()
+    item.dispose()
+  }
+}
+
 function disposeGroup(group: THREE.Group) {
   group.traverse((obj) => {
     if (obj instanceof THREE.Mesh || obj instanceof THREE.Line) {
       obj.geometry.dispose()
-      const material = obj.material as THREE.Material | THREE.Material[]
-      if (Array.isArray(material)) {
-        material.forEach((m) => m.dispose())
-      } else {
-        material.dispose()
-      }
+      disposeMaterial(obj.material)
+    } else if (obj instanceof THREE.Sprite) {
+      // 标签精灵没有 geometry，但持有 CanvasTexture，必须一起释放
+      disposeMaterial(obj.material)
     }
   })
   group.clear()
@@ -274,6 +281,7 @@ function updateAgvs(list: AgvView[] | undefined) {
   for (const [id, mesh] of agvMeshes) {
     if (!seen.has(id)) {
       agvGroup.remove(mesh.group)
+      disposeGroup(mesh.group)
       agvMeshes.delete(id)
     }
   }
