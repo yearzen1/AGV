@@ -131,6 +131,8 @@ WS     /ws/sim                  仿真帧通道（推送帧与状态，支持 ec
 - 每个会话的发送由 Spring 的 `ConcurrentWebSocketSessionDecorator` 串行化，避免同一连接上并发写导致 `TEXT_PARTIAL_WRITING`。
 - 单个会话发送失败只移除该会话并记一条警告，**不会中断仿真**，也不会把仿真状态置为失败。
 - 事件不落库，只在帧里推送；实验结束后仅保存四项汇总指标。
+- 页面刷新或重新进入「仿真运行」时，前端调用 `GET /api/sim/status` 恢复运行状态；`status` 为 `RUNNING` / `FINISHED` / `FAILED` 时同步启动参数、速度、暂停状态、tick 与指标。
+- 历史实验列表用 `RUNNING` / `FINISHED` / `FAILED` / `ABORTED` 标记状态；被新仿真替换或手动重置的旧实验记为 `ABORTED`（已中断），未完成实验的汇总指标显示为 `-`。后端重启时，遗留的 `RUNNING` 实验也会在启动时标记为 `ABORTED`。列表时间统一格式化为 `YYYY-MM-DD HH:mm:ss`。
 
 ## 进度
 
