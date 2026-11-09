@@ -1795,6 +1795,10 @@ watch(
   { deep: true }
 )
 
+watch(searchQuery, () => {
+  searchIndex.value = 0
+})
+
 onMounted(() => {
   loadPayload(props.initial, true)
   window.addEventListener('keydown', onKeyDown)
@@ -1904,7 +1908,9 @@ defineExpose({
         @keyup.enter="nextSearch"
       >
         <template #append>
-          <el-button @click="nextSearch">{{ searchResults.length }}</el-button>
+          <el-button :disabled="!searchQuery.trim()" @click="nextSearch">
+            {{ searchQuery.trim() ? searchResults.length : '查找' }}
+          </el-button>
         </template>
       </el-input>
 
