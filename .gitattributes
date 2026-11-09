@@ -1,0 +1,7 @@
+# PowerShell 脚本统一用 CRLF 换行。
+# 另外这些文件必须以 UTF-8 with BOM 提交：Windows PowerShell 5.1 读取无 BOM 脚本时
+# 会按系统 ANSI 代码页（中文系统为 GBK）解码，中文提示会整屏乱码。
+*.ps1 text eol=crlf
+
+# 本文件自身保持 LF，避免不同平台反复改写。
+.gitattributes text eol=lf

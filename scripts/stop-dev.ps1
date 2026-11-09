@@ -1,4 +1,8 @@
-# 停止开发环境：释放 8080 与 5173 端口
+﻿# 停止开发环境：释放 8080 与 5173 端口
+# 注意：本文件必须保存为 UTF-8 with BOM，否则 Windows PowerShell 5.1 会按 GBK 解码中文。
+
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+
 $ports = @(8080, 5173)
 foreach ($port in $ports) {
     $connections = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue

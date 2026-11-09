@@ -1,8 +1,14 @@
-# 开发环境启动脚本
+﻿# 开发环境启动脚本
 # 用法：在仓库根目录执行  powershell -ExecutionPolicy Bypass -File scripts\dev.ps1
 # 说明：首次运行会先构建 agv-algorithm 并安装到本地仓库，否则后端无法解析该依赖。
+# 注意：本文件必须保存为 UTF-8 with BOM。Windows PowerShell 5.1 读取无 BOM 脚本时
+#       会按系统 ANSI 代码页（中文系统为 GBK）解码，中文提示全部变成乱码。
 
 $ErrorActionPreference = "Stop"
+$OutputEncoding = [System.Text.UTF8Encoding]::new()
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+$env:MAVEN_OPTS = "-Dfile.encoding=UTF-8"
+
 $root = Split-Path -Parent $PSScriptRoot
 
 Write-Host "==> 1/3 构建后端与算法包" -ForegroundColor Cyan
@@ -26,7 +32,7 @@ Write-Host "==> 2/3 启动后端（H2 开发库，端口 8080）" -ForegroundCol
 Start-Process powershell -ArgumentList @(
     "-NoExit",
     "-Command",
-    "cd '$root\agv-backend'; `$env:MAVEN_OPTS='-Dfile.encoding=UTF-8'; mvn spring-boot:run"
+    "chcp 65001 > `$null; cd '$root\agv-backend'; mvn spring-boot:run"
 )
 
 Start-Sleep -Seconds 12
@@ -35,7 +41,7 @@ Write-Host "==> 3/3 启动前端（端口 5173）" -ForegroundColor Cyan
 Start-Process powershell -ArgumentList @(
     "-NoExit",
     "-Command",
-    "cd '$root\agv-frontend'; npm run dev"
+    "chcp 65001 > `$null; cd '$root\agv-frontend'; npm run dev"
 )
 
 Write-Host ""
