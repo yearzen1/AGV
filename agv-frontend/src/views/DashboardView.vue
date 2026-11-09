@@ -46,9 +46,11 @@ onMounted(load)
       </el-col>
       <el-col :span="8">
         <div class="panel stat">
-          <div class="stat-label">当前阶段</div>
-          <div class="stat-value">P0 环境搭建</div>
-          <div class="muted">登录、路网接口、帧通道已打通</div>
+          <div class="stat-label">系统状态</div>
+          <div class="stat-value">
+            <el-tag type="success" size="large">已就绪</el-tag>
+          </div>
+          <div class="muted">P0–P5 已完成，可运行仿真与对比实验</div>
         </div>
       </el-col>
     </el-row>

@@ -11,6 +11,7 @@ import {
   type TaskDto,
   type TaskSetSummary
 } from '@/api/sim'
+import { formatDateTime } from '@/utils/format'
 
 const sets = ref<TaskSetSummary[]>([])
 const loading = ref(false)
@@ -138,7 +139,8 @@ onMounted(load)
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="name" label="名称" min-width="220" />
         <el-table-column prop="taskCount" label="任务数" width="100" />
-        <el-table-column prop="createTime" label="创建时间" width="180" />
+        <el-table-column prop="createTime" label="创建时间" width="180"
+          :formatter="(row: TaskSetSummary) => formatDateTime(row.createTime)" />
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>

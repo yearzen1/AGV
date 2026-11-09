@@ -9,6 +9,7 @@ import {
   type UserInfo
 } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime } from '@/utils/format'
 
 const auth = useAuthStore()
 const users = ref<UserInfo[]>([])
@@ -127,7 +128,8 @@ onMounted(load)
             />
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="180" />
+        <el-table-column prop="createTime" label="创建时间" width="180"
+          :formatter="(row: UserInfo) => formatDateTime(row.createTime)" />
         <el-table-column label="操作" width="160">
           <template #default="{ row }">
             <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
