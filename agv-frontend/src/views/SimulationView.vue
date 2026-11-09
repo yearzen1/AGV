@@ -10,6 +10,7 @@ import {
   resetSim,
   resumeSim,
   setSpeed as setSimSpeed,
+  simStatus,
   startSim,
   type AgvSnapshot,
   type SimEvent,
@@ -17,6 +18,7 @@ import {
   type SimStatus,
   type TaskSetSummary
 } from '@/api/sim'
+import { taskSetLabel } from '@/utils/format'
 
 const maps = ref<RoadNetSummary[]>([])
 const taskSets = ref<TaskSetSummary[]>([])
@@ -35,11 +37,28 @@ const metrics = ref<SimMetrics | null>(null)
 const status = ref<SimStatus | null>(null)
 const tick = ref(0)
 const running = ref(false)
+const finished = ref(false)
 const paused = ref(false)
 const speed = ref(1)
 const socketState = ref<'closed' | 'open'>('closed')
 
 let socket: WebSocket | null = null
+
+const hasSim = computed(() => running.value || finished.value)
+
+const simState = computed(() => {
+  if (running.value) {
+    return paused.value
+      ? { label: '已暂停', type: 'warning' as const }
+      : { label: '运行中', type: 'success' as const }
+  }
+  if (finished.value) {
+    return status.value?.status === 'FAILED'
+      ? { label: '仿真失败', type: 'danger' as const }
+      : { label: '已完成', type: 'info' as const }
+  }
+  return null
+})
 
 const agvViews = computed<AgvView[]>(() =>
   agvs.value.map((a) => ({
@@ -100,14 +119,19 @@ async function onMapChange(id: number) {
 function connectSocket() {
   if (socket && socket.readyState === WebSocket.OPEN) return
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
-  socket = new WebSocket(`${protocol}://${location.host}/ws/sim`)
-  socket.onopen = () => {
+  const ws = new WebSocket(`${protocol}://${location.host}/ws/sim`)
+  socket = ws
+  ws.onopen = () => {
     socketState.value = 'open'
   }
-  socket.onclose = () => {
+  ws.onclose = () => {
+    if (socket === ws) socket = null
     socketState.value = 'closed'
   }
-  socket.onmessage = (messageEvent) => {
+  ws.onerror = () => {
+    socketState.value = 'closed'
+  }
+  ws.onmessage = (messageEvent) => {
     try {
       const payload = JSON.parse(String(messageEvent.data))
       if (payload.type === 'frame') {
@@ -120,16 +144,51 @@ function connectSocket() {
         }
         if (frame.finished) {
           running.value = false
+          finished.value = true
         }
       } else if (payload.type === 'status' || payload.type === 'connected') {
         if (payload.type === 'status') {
           status.value = payload as SimStatus
           paused.value = !!payload.paused
+          if (payload.status === 'FINISHED' || payload.status === 'FAILED') {
+            running.value = false
+            finished.value = true
+          }
         }
       }
     } catch {
       // 忽略非 JSON 消息
     }
+  }
+}
+
+/**
+ * 刷新页面或切换菜单后，后端可能仍在运行仿真。
+ * 用 /api/sim/status 把运行状态、参数和指标同步回页面，避免显示成「未开始」。
+ */
+async function syncStatus() {
+  try {
+    const current = await simStatus()
+    if (current.status !== 'RUNNING' && current.status !== 'FINISHED' && current.status !== 'FAILED') {
+      return
+    }
+    status.value = current
+    running.value = current.status === 'RUNNING'
+    finished.value = current.status !== 'RUNNING'
+    paused.value = current.paused
+    speed.value = current.speed
+    tick.value = current.tick
+    metrics.value = current.metrics
+    if (current.mapId) {
+      selectedMapId.value = current.mapId
+      await loadRoadNet(current.mapId)
+    }
+    if (current.taskSetId) selectedTaskSetId.value = current.taskSetId
+    if (current.algorithm) algorithm.value = current.algorithm
+    if (current.agvCount) agvCount.value = current.agvCount
+    if (current.seed !== null && current.seed !== undefined) seed.value = current.seed
+  } catch {
+    // 状态恢复失败不阻断手动启动
   }
 }
 
@@ -149,8 +208,13 @@ async function start() {
     })
     status.value = result
     events.value = []
+    agvs.value = []
+    metrics.value = result.metrics ?? null
+    tick.value = result.tick ?? 0
     running.value = true
+    finished.value = false
     paused.value = false
+    speed.value = result.speed ?? 1
     ElMessage.success('仿真已启动')
   } catch (error: any) {
     ElMessage.error(error.message || '启动失败')
@@ -158,28 +222,48 @@ async function start() {
 }
 
 async function pause() {
-  await pauseSim()
-  paused.value = true
+  try {
+    await pauseSim()
+    paused.value = true
+  } catch (error: any) {
+    ElMessage.error(error.message || '暂停失败')
+  }
 }
 
 async function resume() {
-  await resumeSim()
-  paused.value = false
+  try {
+    await resumeSim()
+    paused.value = false
+  } catch (error: any) {
+    ElMessage.error(error.message || '继续失败')
+  }
 }
 
 async function reset() {
-  await resetSim()
-  running.value = false
-  paused.value = false
-  agvs.value = []
-  events.value = []
-  metrics.value = null
-  tick.value = 0
+  try {
+    await resetSim()
+    running.value = false
+    finished.value = false
+    paused.value = false
+    agvs.value = []
+    events.value = []
+    metrics.value = null
+    tick.value = 0
+    status.value = null
+  } catch (error: any) {
+    ElMessage.error(error.message || '重置失败')
+  }
 }
 
 async function changeSpeed(value: number) {
+  const previous = speed.value
   speed.value = value
-  await setSimSpeed(value)
+  try {
+    await setSimSpeed(value)
+  } catch (error: any) {
+    speed.value = previous
+    ElMessage.error(error.message || '调速失败')
+  }
 }
 
 function onSpeedChange(value: string | number | boolean | undefined) {
@@ -214,6 +298,7 @@ function statusTagType(value: string) {
 
 onMounted(async () => {
   await loadOptions()
+  await syncStatus()
   connectSocket()
 })
 </script>
@@ -228,7 +313,7 @@ onMounted(async () => {
         <el-option
           v-for="set in taskSets"
           :key="set.id"
-          :label="`${set.name}（${set.taskCount} 单）`"
+          :label="taskSetLabel(set.name, set.taskCount)"
           :value="set.id"
         />
       </el-select>
@@ -240,16 +325,18 @@ onMounted(async () => {
       <el-button type="primary" :disabled="running" @click="start">开始</el-button>
       <el-button :disabled="!running || paused" @click="pause">暂停</el-button>
       <el-button :disabled="!running || !paused" @click="resume">继续</el-button>
-      <el-button :disabled="!running" @click="reset">重置</el-button>
+      <el-button :disabled="!hasSim" @click="reset">重置</el-button>
       <el-radio-group :model-value="speed" size="small" @change="onSpeedChange">
         <el-radio-button :value="0.5">0.5x</el-radio-button>
         <el-radio-button :value="1">1x</el-radio-button>
         <el-radio-button :value="2">2x</el-radio-button>
         <el-radio-button :value="4">4x</el-radio-button>
       </el-radio-group>
+      <el-tag v-if="simState" :type="simState.type" size="small">{{ simState.label }}</el-tag>
       <el-tag :type="socketState === 'open' ? 'success' : 'info'" size="small">
         {{ socketState === 'open' ? '实时通道已连接' : '实时通道未连接' }}
       </el-tag>
+      <el-button v-if="socketState !== 'open'" size="small" @click="connectSocket">重连</el-button>
     </div>
 
     <div class="body">
@@ -292,7 +379,9 @@ onMounted(async () => {
 
         <div class="panel agv-panel">
           <div class="panel-title">车辆状态</div>
-          <div v-if="agvs.length === 0" class="muted">尚未启动仿真</div>
+          <div v-if="agvs.length === 0" class="muted">
+            {{ finished ? '仿真已结束，车辆位置只在运行中可见' : '尚未启动仿真' }}
+          </div>
           <div v-for="agv in agvs" :key="agv.id" class="agv-row">
             <span class="agv-id">{{ agv.id }}</span>
             <el-tag size="small" :type="statusTagType(agv.status)">{{ statusText(agv.status) }}</el-tag>
@@ -303,7 +392,9 @@ onMounted(async () => {
 
         <div class="panel log-panel">
           <div class="panel-title">事件日志</div>
-          <div v-if="events.length === 0" class="muted">等待冲突、任务分配等事件会显示在这里</div>
+          <div v-if="events.length === 0" class="muted">
+            {{ finished ? '仿真已结束；事件只在运行期间推送，刷新后不保留' : '等待冲突、任务分配等事件会显示在这里' }}
+          </div>
           <div v-for="(event, index) in events" :key="index" class="log-row">
             <span class="log-tick">{{ event.tick }}</span>
             <el-tag size="small" :type="event.type === 'WAIT_CONFLICT' ? 'danger' : 'info'">
