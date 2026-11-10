@@ -202,6 +202,15 @@ python scripts/build-ppt.py           # 生成 pptx
 mvn test
 ```
 
+前端地图编辑器回归（需要先启动后端 8080 和前端 5173）：
+
+```bash
+cd agv-frontend
+npm run e2e:roadnet
+```
+
+首次运行需安装浏览器：`npx playwright install chromium`。脚本会验证布局、编辑、连边、搜索、页签、任务聚合、3D 与全屏，并把截图写到 `.playwright-mcp/e2e/`。
+
 - `AStarPlannerTest`：直线路网、不可达、封锁绕行、转弯惩罚、与状态空间 Bellman-Ford 对拍
 - `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区
 - `RoadNetValidatorTest`：8 条校验规则
