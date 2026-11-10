@@ -34,10 +34,11 @@ python scripts/capture-figures.mjs    # 需要先启动前后端与无头 Edge�
 
 ## 数据来源
 
-第 6 章表 6-2 的数值由 `EngineScaleTest` 产出，落盘于 `agv-backend/target/scale-matrix.txt`；也可通过 `/api/experiment/compare` 复现，参数为 `mapId=1, taskSetId=1, seed=20261107`。
+第 6 章表 6-2 的数值由 `EngineScaleTest` 产出，落盘于 `agv-backend/target/scale-matrix.txt`；也可通过 `/api/experiment/compare` 复现，参数为 `roadnetId=1, taskSetId=1, seed=20261107`。
 
 ## 待人工完成
 
 - 官方查重：需学校指定系统与账号，建议按 ≤15% 目标先自查。
 - 封面表头（姓名、学号、班级、导师）需填写。
 - 若学校模板对页边距、页眉页脚、参考文献格式有额外要求，在 Word 中套用模板即可，正文内容无需改动。
+

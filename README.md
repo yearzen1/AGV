@@ -105,7 +105,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
   ```json
   {
     "name": "演示任务集",
-    "mapId": 1,
+    "roadnetId": 1,
     "taskSet": {
       "tasks": [
         { "id": 1, "from": "W1", "to": "W2" }
@@ -141,7 +141,7 @@ DELETE /api/roadnet/{id}        删除
 POST   /api/roadnet/import      导入 JSON
 GET    /api/roadnet/{id}/export 导出 JSON
 POST   /api/roadnet/validate    仅校验不落库
-GET    /api/taskset/list        任务集列表（可选 mapId 过滤）
+GET    /api/taskset/list        任务集列表（可选 roadnetId 过滤）
 GET    /api/taskset/{id}        任务集详情
 POST   /api/taskset             新建任务集
 PUT    /api/taskset/{id}        保存任务集
