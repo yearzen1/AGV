@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import * as echarts from 'echarts'
 import { listRoadNets, type RoadNetSummary } from '@/api/roadnet'
@@ -16,6 +16,9 @@ const maps = ref<RoadNetSummary[]>([])
 const taskSets = ref<TaskSetSummary[]>([])
 const selectedMapId = ref<number | null>(null)
 const selectedTaskSetId = ref<number | null>(null)
+const mapTaskSets = computed(() =>
+  taskSets.value.filter((set) => set.mapId === selectedMapId.value)
+)
 const agvCount = ref(3)
 const seed = ref(20261107)
 
@@ -30,11 +33,22 @@ async function loadOptions() {
     maps.value = await listRoadNets()
     taskSets.value = await listTaskSets()
     if (maps.value.length > 0) selectedMapId.value = maps.value[0].id
-    if (taskSets.value.length > 0) selectedTaskSetId.value = taskSets.value[0].id
+    selectDefaultTaskSet()
     history.value = await experimentHistory()
   } catch (error: any) {
     ElMessage.error(error.message || '加载参数失败')
   }
+}
+
+function selectDefaultTaskSet() {
+  const candidates = mapTaskSets.value
+  if (!candidates.some((set) => set.id === selectedTaskSetId.value)) {
+    selectedTaskSetId.value = candidates[0]?.id ?? null
+  }
+}
+
+function onMapChange() {
+  selectDefaultTaskSet()
 }
 
 async function runCompare() {
@@ -131,22 +145,25 @@ onBeforeUnmount(() => {
 
     <div class="panel">
       <el-space wrap>
-        <el-select v-model="selectedMapId" style="width: 210px">
+        <el-select v-model="selectedMapId" style="width: 210px" @change="onMapChange">
           <el-option v-for="map in maps" :key="map.id" :label="map.name" :value="map.id" />
         </el-select>
         <el-select v-model="selectedTaskSetId" style="width: 200px">
           <el-option
-            v-for="set in taskSets"
+            v-for="set in mapTaskSets"
             :key="set.id"
             :label="taskSetLabel(set.name, set.taskCount)"
             :value="set.id"
           />
         </el-select>
+        <span v-if="selectedMapId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
         <span class="muted">AGV 数量</span>
         <el-input-number v-model="agvCount" :min="1" :max="12" style="width: 120px" />
         <span class="muted">随机种子</span>
         <el-input-number v-model="seed" :min="0" :controls="false" style="width: 150px" />
-        <el-button type="primary" :loading="running" @click="runCompare">运行对比（两种算法）</el-button>
+        <el-button type="primary" :loading="running" :disabled="!selectedTaskSetId" @click="runCompare">
+          运行对比（两种算法）
+        </el-button>
       </el-space>
       <div class="muted" style="margin-top: 8px">
         同一路网、同一任务集、同一随机种子下依次跑就近分配与贪心 ETA，指标口径见实验报告。

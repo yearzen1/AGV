@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import RoadNetEditor from '@/components/RoadNetEditor.vue'
@@ -38,6 +38,9 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const selectedTaskSetId = ref<number | null>(null)
 const showTaskOverlay = ref(false)
 const overlayTasks = ref<TaskDto[]>([])
+const mapTaskSets = computed(() =>
+  taskSets.value.filter((set) => set.mapId === currentId.value)
+)
 
 const preview3DVisible = ref(false)
 const preview3DPayload = ref<RoadNetPayload | null>(null)
@@ -94,12 +97,22 @@ async function loadList() {
 async function loadTaskSets() {
   try {
     taskSets.value = await listTaskSets()
-    if (taskSets.value.length > 0) {
-      selectedTaskSetId.value = taskSets.value[0].id
-      await loadOverlayTasks()
-    }
+    syncTaskSetForMap()
   } catch {
     taskSets.value = []
+  }
+}
+
+/** 任务流向只显示与当前路网绑定的任务集。 */
+function syncTaskSetForMap() {
+  const candidates = mapTaskSets.value
+  if (!candidates.some((set) => set.id === selectedTaskSetId.value)) {
+    selectedTaskSetId.value = candidates[0]?.id ?? null
+  }
+  if (!selectedTaskSetId.value) {
+    overlayTasks.value = []
+  } else if (showTaskOverlay.value) {
+    void loadOverlayTasks()
   }
 }
 
@@ -155,6 +168,7 @@ async function open(id: number) {
     previewMode.value = true
     errors.value = []
     dirty.value = false
+    syncTaskSetForMap()
 
     const draft = readDraft(id)
     if (draft && !samePayload(draft.payload, detail)) {
@@ -185,6 +199,8 @@ async function createNew() {
   if (!(await confirmDiscard())) return
   if (wasDirty) clearDraft(currentId.value)
   currentId.value = null
+  selectedTaskSetId.value = null
+  overlayTasks.value = []
   name.value = '新路网'
   isTemplate.value = false
   const next: RoadNetPayload = {
@@ -263,6 +279,7 @@ async function save() {
       : await createRoadNet({ name: name.value, roadnet: body })
     const previousId = currentId.value
     currentId.value = summary.id
+    syncTaskSetForMap()
     isTemplate.value = !!summary.isTemplate
     editorRef.value?.markSaved()
     dirty.value = false
@@ -285,6 +302,7 @@ async function saveAs() {
     })
     const summary = await createRoadNet({ name: result.value, roadnet: currentPayload() })
     currentId.value = summary.id
+    syncTaskSetForMap()
     name.value = summary.name
     isTemplate.value = false
     editorRef.value?.markSaved()
@@ -307,6 +325,8 @@ async function remove(id: number) {
     ElMessage.success('已删除')
     if (currentId.value === id) {
       currentId.value = null
+      selectedTaskSetId.value = null
+      overlayTasks.value = []
       const empty: RoadNetPayload = { nodes: [], edges: [], ...DEFAULT_SIZE }
       payload.value = empty
       editorRef.value?.setPayload(empty)
@@ -471,15 +491,22 @@ onBeforeUnmount(() => {
             @change="onTaskSetChange"
           >
             <el-option
-              v-for="item in taskSets"
+              v-for="item in mapTaskSets"
               :key="item.id"
               :label="item.name"
               :value="item.id"
             />
           </el-select>
-          <el-checkbox v-model="showTaskOverlay" @change="onTaskOverlayToggle">
+          <el-checkbox
+            v-model="showTaskOverlay"
+            :disabled="!selectedTaskSetId"
+            @change="onTaskOverlayToggle"
+          >
             在地图上显示任务流向
           </el-checkbox>
+          <div v-if="currentId && mapTaskSets.length === 0" class="muted">
+            当前路网还没有绑定任务集
+          </div>
         </div>
       </div>
 

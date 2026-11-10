@@ -91,24 +91,31 @@ export interface TaskDto {
 export interface TaskSetSummary {
   id: number
   name: string
+  mapId: number | null
+  mapName: string | null
   taskCount: number
   createUser: number | null
   createTime: string
 }
 
-export function listTaskSets() {
-  return http.get<any, TaskSetSummary[]>('/taskset/list')
+export function listTaskSets(mapId?: number) {
+  return http.get<any, TaskSetSummary[]>('/taskset/list', {
+    params: mapId === undefined ? undefined : { mapId }
+  })
 }
 
 export function getTaskSet(id: number) {
   return http.get<any, { tasks: TaskDto[] }>(`/taskset/${id}`)
 }
 
-export function createTaskSet(payload: { name: string; taskSet: { tasks: TaskDto[] } }) {
+export function createTaskSet(payload: { name: string; mapId: number; taskSet: { tasks: TaskDto[] } }) {
   return http.post<any, TaskSetSummary>('/taskset', payload)
 }
 
-export function updateTaskSet(id: number, payload: { name: string; taskSet: { tasks: TaskDto[] } }) {
+export function updateTaskSet(
+  id: number,
+  payload: { name: string; mapId: number; taskSet: { tasks: TaskDto[] } }
+) {
   return http.put<any, TaskSetSummary>(`/taskset/${id}`, payload)
 }
 

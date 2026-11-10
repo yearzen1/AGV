@@ -30,6 +30,10 @@ const algorithm = ref('nearest')
 const agvCount = ref(3)
 const seed = ref(20261107)
 
+const mapTaskSets = computed(() =>
+  taskSets.value.filter((set) => set.mapId === selectedMapId.value)
+)
+
 const roadnet = ref<RoadNetPayload | null>(null)
 const agvs = ref<AgvSnapshot[]>([])
 const events = ref<SimEvent[]>([])
@@ -95,12 +99,18 @@ async function loadOptions() {
     if (maps.value.length > 0) {
       selectedMapId.value = maps.value[0].id
       await loadRoadNet(maps.value[0].id)
-    }
-    if (taskSets.value.length > 0) {
-      selectedTaskSetId.value = taskSets.value[0].id
+      selectDefaultTaskSet()
     }
   } catch (error: any) {
     ElMessage.error(error.message || '加载参数失败')
+  }
+}
+
+/** 任务集绑定路网，切换路网后只保留匹配的任务集。 */
+function selectDefaultTaskSet() {
+  const candidates = mapTaskSets.value
+  if (!candidates.some((set) => set.id === selectedTaskSetId.value)) {
+    selectedTaskSetId.value = candidates[0]?.id ?? null
   }
 }
 
@@ -114,6 +124,7 @@ async function loadRoadNet(id: number) {
 
 async function onMapChange(id: number) {
   await loadRoadNet(id)
+  selectDefaultTaskSet()
 }
 
 function connectSocket() {
@@ -184,6 +195,7 @@ async function syncStatus() {
       await loadRoadNet(current.mapId)
     }
     if (current.taskSetId) selectedTaskSetId.value = current.taskSetId
+    selectDefaultTaskSet()
     if (current.algorithm) algorithm.value = current.algorithm
     if (current.agvCount) agvCount.value = current.agvCount
     if (current.seed !== null && current.seed !== undefined) seed.value = current.seed
@@ -311,18 +323,19 @@ onMounted(async () => {
       </el-select>
       <el-select v-model="selectedTaskSetId" style="width: 190px" placeholder="任务集">
         <el-option
-          v-for="set in taskSets"
+          v-for="set in mapTaskSets"
           :key="set.id"
           :label="taskSetLabel(set.name, set.taskCount)"
           :value="set.id"
         />
       </el-select>
+      <span v-if="selectedMapId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
       <el-select v-model="algorithm" style="width: 150px">
         <el-option v-for="item in algorithms" :key="item.dictCode" :label="item.dictValue" :value="item.dictCode" />
       </el-select>
       <el-input-number v-model="agvCount" :min="1" :max="12" style="width: 120px" />
       <el-input-number v-model="seed" :min="0" :controls="false" style="width: 140px" />
-      <el-button type="primary" :disabled="running" @click="start">开始</el-button>
+      <el-button type="primary" :disabled="running || !selectedTaskSetId" @click="start">开始</el-button>
       <el-button :disabled="!running || paused" @click="pause">暂停</el-button>
       <el-button :disabled="!running || !paused" @click="resume">继续</el-button>
       <el-button :disabled="!hasSim" @click="reset">重置</el-button>
