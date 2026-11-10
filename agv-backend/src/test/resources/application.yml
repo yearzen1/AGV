@@ -4,9 +4,14 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
+  # 测试用 validate：迁移脚本和实体不一致时直接失败，而不是悄悄多一列
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    locations: classpath:db/migration/h2
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     open-in-view: false
   h2:
     console:

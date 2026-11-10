@@ -3,6 +3,16 @@ spring:
     name: agv-backend
   profiles:
     active: dev
+  # 库结构以迁移脚本为准：已有库自动 baseline，空库从 V1 开始执行
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 1
+    locations: classpath:db/migration/h2
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
 
 server:
   port: 8080

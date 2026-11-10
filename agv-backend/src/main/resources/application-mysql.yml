@@ -8,7 +8,9 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     username: ${MYSQL_USER:root}
     password: ${MYSQL_PASSWORD:}
+  flyway:
+    locations: classpath:db/migration/mysql
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: none
     open-in-view: false
