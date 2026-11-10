@@ -1856,7 +1856,6 @@ function loadPayload(payload: RoadNetPayload, resetHistory = true) {
   }
   nextTick(() => {
     historyLock = false
-    if (nodes.value.length > 0) fitView()
   })
 }
 
@@ -1975,9 +1974,6 @@ defineExpose({
               </svg>
             </el-button>
           </el-button-group>
-          <span v-if="tool === 'connect' && connectFrom" class="connect-hint">
-            已选起点 {{ connectFrom }}，再点一个节点完成连接，Esc 取消
-          </span>
         </template>
         <el-tag v-else type="info" size="small">预览模式 · 点「编辑」可修改</el-tag>
         <div class="spacer" />
@@ -2134,6 +2130,9 @@ defineExpose({
         class="canvas-wrap"
         :class="{ 'is-maximized': isMaximized }"
       >
+        <div v-if="editable && tool === 'connect' && connectFrom" class="connect-hint">
+          已选起点 {{ connectFrom }}，再点一个节点完成连接，Esc 取消
+        </div>
         <svg
           ref="svgRef"
           :viewBox="`0 0 ${mapWidth * SCALE} ${mapHeight * SCALE}`"
@@ -2918,13 +2917,19 @@ defineExpose({
 }
 
 .connect-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
   font-size: 12px;
   color: #a06a1f;
   background: #fdf6ec;
   border: 1px solid #f3d19e;
-  border-radius: 4px;
-  padding: 2px 8px;
+  border-radius: 999px;
+  padding: 4px 10px;
   white-space: nowrap;
+  pointer-events: none;
 }
 
 .search-input {
