@@ -21,11 +21,14 @@ public class UserService {
     private final SysUserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final CurrentUser currentUser;
+    private final AuditService auditService;
 
-    public UserService(SysUserRepository userRepository, PasswordEncoder passwordEncoder, CurrentUser currentUser) {
+    public UserService(SysUserRepository userRepository, PasswordEncoder passwordEncoder,
+                       CurrentUser currentUser, AuditService auditService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.currentUser = currentUser;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -47,7 +50,9 @@ public class UserService {
         user.setRealName(request.realName());
         user.setRole(request.role());
         user.setStatus(1);
-        return userRepository.save(user);
+        SysUser saved = userRepository.save(user);
+        auditService.success("USER_CREATE", "USER", saved.getId());
+        return saved;
     }
 
     @Transactional
@@ -74,7 +79,9 @@ public class UserService {
             }
             user.setPassword(passwordEncoder.encode(request.password()));
         }
-        return userRepository.save(user);
+        SysUser saved = userRepository.save(user);
+        auditService.success("USER_UPDATE", "USER", saved.getId());
+        return saved;
     }
 
     @Transactional
@@ -83,6 +90,7 @@ public class UserService {
             throw new BusinessException("不能删除当前登录账号");
         }
         userRepository.delete(requireUser(id));
+        auditService.success("USER_DELETE", "USER", id);
     }
 
     private SysUser requireUser(Long id) {

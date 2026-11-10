@@ -33,16 +33,18 @@ public class TaskSetService {
     private final TaskSetValidator validator;
     private final ObjectMapper objectMapper;
     private final CurrentUser currentUser;
+    private final AuditService auditService;
 
     public TaskSetService(TaskSetRepository repository, RoadNetRepository mapRepository,
                           RoadNetService roadNetService, TaskSetValidator validator,
-                          ObjectMapper objectMapper, CurrentUser currentUser) {
+                          ObjectMapper objectMapper, CurrentUser currentUser, AuditService auditService) {
         this.repository = repository;
         this.mapRepository = mapRepository;
         this.roadNetService = roadNetService;
         this.validator = validator;
         this.objectMapper = objectMapper;
         this.currentUser = currentUser;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -82,6 +84,7 @@ public class TaskSetService {
         set.setTasksJson(writePayload(payload));
         set.setCreateUser(currentUser.id());
         TaskSet saved = repository.save(set);
+        auditService.success("TASKSET_CREATE", "TASKSET", saved.getId());
         return summary(saved, roadnetName(saved.getRoadnetId()), payload.tasks().size());
     }
 
@@ -93,12 +96,14 @@ public class TaskSetService {
         set.setRoadnetId(request.roadnetId());
         set.setTasksJson(writePayload(payload));
         TaskSet saved = repository.save(set);
+        auditService.success("TASKSET_UPDATE", "TASKSET", saved.getId());
         return summary(saved, roadnetName(saved.getRoadnetId()), payload.tasks().size());
     }
 
     @Transactional
     public void delete(Long id) {
         repository.delete(require(id));
+        auditService.success("TASKSET_DELETE", "TASKSET", id);
     }
 
     @Transactional(readOnly = true)

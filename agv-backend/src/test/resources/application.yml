@@ -8,7 +8,7 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: false
-    locations: classpath:db/migration/h2
+    locations: classpath:db/migration/common,classpath:db/migration/h2
   jpa:
     hibernate:
       ddl-auto: validate

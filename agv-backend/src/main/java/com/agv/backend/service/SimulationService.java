@@ -47,6 +47,7 @@ public class SimulationService {
     private final ExperimentRepository experimentRepository;
     private final ExperimentMetricRepository metricRepository;
     private final CurrentUser currentUser;
+    private final AuditService auditService;
 
     private final Object lock = new Object();
 
@@ -68,7 +69,8 @@ public class SimulationService {
     public SimulationService(RoadNetService roadNetService, TaskSetService taskSetService,
                              TaskSetValidator taskSetValidator, SimSocketHandler socketHandler,
                              ExperimentRepository experimentRepository,
-                             ExperimentMetricRepository metricRepository, CurrentUser currentUser) {
+                             ExperimentMetricRepository metricRepository, CurrentUser currentUser,
+                             AuditService auditService) {
         this.roadNetService = roadNetService;
         this.taskSetService = taskSetService;
         this.taskSetValidator = taskSetValidator;
@@ -76,6 +78,7 @@ public class SimulationService {
         this.experimentRepository = experimentRepository;
         this.metricRepository = metricRepository;
         this.currentUser = currentUser;
+        this.auditService = auditService;
     }
 
     public Map<String, Object> start(StartSimRequest request) {
@@ -107,6 +110,7 @@ public class SimulationService {
             status = "RUNNING";
 
             experimentId = persistExperiment("RUNNING").getId();
+            auditService.success("SIM_START", "SIM", experimentId);
             startScheduler();
             return statusPayload();
         }
@@ -128,6 +132,9 @@ public class SimulationService {
         synchronized (lock) {
             stopInternal();
             abortExperiment("ABORTED");
+            if (experimentId != null) {
+                auditService.success("SIM_RESET", "SIM", experimentId);
+            }
             status = "IDLE";
             experimentId = null;
             broadcastStatus("reset");

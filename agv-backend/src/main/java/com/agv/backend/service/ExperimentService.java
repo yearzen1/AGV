@@ -53,11 +53,12 @@ public class ExperimentService {
     private final ExperimentMetricRepository metricRepository;
     private final CurrentUser currentUser;
     private final ObjectMapper objectMapper;
+    private final AuditService auditService;
 
     public ExperimentService(RoadNetService roadNetService, TaskSetService taskSetService,
                              TaskSetValidator taskSetValidator, ExperimentRepository experimentRepository,
                              ExperimentMetricRepository metricRepository, CurrentUser currentUser,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper, AuditService auditService) {
         this.roadNetService = roadNetService;
         this.taskSetService = taskSetService;
         this.taskSetValidator = taskSetValidator;
@@ -65,6 +66,7 @@ public class ExperimentService {
         this.metricRepository = metricRepository;
         this.currentUser = currentUser;
         this.objectMapper = objectMapper;
+        this.auditService = auditService;
     }
 
     /** 跑一组实验；algorithm 为空时对全部算法各跑一次，用于对比报表。 */
@@ -122,6 +124,7 @@ public class ExperimentService {
         Experiment saved = experimentRepository.save(experiment);
 
         ExperimentMetric metric = saveMetric(saved.getId(), result);
+        auditService.success("EXPERIMENT_RUN", "EXPERIMENT", saved.getId());
         return toReport(saved, Optional.of(metric));
     }
 
@@ -164,6 +167,7 @@ public class ExperimentService {
         Experiment savedReplay = experimentRepository.save(replay);
 
         ExperimentMetric replayMetric = saveMetric(savedReplay.getId(), result);
+        auditService.success("EXPERIMENT_REPLAY", "EXPERIMENT", savedReplay.getId());
         boolean consistent = "FINISHED".equals(original.getStatus())
                 && result.finished()
                 && sameMetrics(originalMetric, replayMetric);

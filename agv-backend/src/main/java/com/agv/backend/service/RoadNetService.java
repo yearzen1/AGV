@@ -38,13 +38,15 @@ public class RoadNetService {
     private final TaskSetRepository taskSetRepository;
     private final ObjectMapper objectMapper;
     private final CurrentUser currentUser;
+    private final AuditService auditService;
 
     public RoadNetService(RoadNetRepository mapRepository, TaskSetRepository taskSetRepository,
-                          ObjectMapper objectMapper, CurrentUser currentUser) {
+                          ObjectMapper objectMapper, CurrentUser currentUser, AuditService auditService) {
         this.mapRepository = mapRepository;
         this.taskSetRepository = taskSetRepository;
         this.objectMapper = objectMapper;
         this.currentUser = currentUser;
+        this.auditService = auditService;
     }
 
     @Transactional(readOnly = true)
@@ -74,6 +76,7 @@ public class RoadNetService {
         map.setIsTemplate(Boolean.TRUE.equals(request.isTemplate()));
         map.setCreateUser(user.getId());
         RoadNetEntity saved = mapRepository.save(map);
+        auditService.success("ROADNET_CREATE", "ROADNET", saved.getId());
         return new RoadNetSummary(saved.getId(), saved.getName(), saved.getIsTemplate(),
                 saved.getCreateUser(), saved.getCreateTime(),
                 request.roadnet().nodes().size(), request.roadnet().edges().size());
@@ -90,6 +93,7 @@ public class RoadNetService {
             map.setIsTemplate(request.isTemplate());
         }
         RoadNetEntity saved = mapRepository.save(map);
+        auditService.success("ROADNET_UPDATE", "ROADNET", saved.getId());
         return new RoadNetSummary(saved.getId(), saved.getName(), saved.getIsTemplate(),
                 saved.getCreateUser(), saved.getCreateTime(),
                 request.roadnet().nodes().size(), request.roadnet().edges().size());
@@ -104,6 +108,7 @@ public class RoadNetService {
             throw new BusinessException("该路网被 " + references + " 个任务集使用，请先删除或改绑");
         }
         mapRepository.delete(map);
+        auditService.success("ROADNET_DELETE", "ROADNET", id);
     }
 
     /** 导出：原样返回，前端可直接下载为 .json。 */
