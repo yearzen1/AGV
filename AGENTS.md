@@ -27,7 +27,15 @@
 
 - 教程：`docs/tutorials/`
 - 操作指南：`docs/how-to/`
+- 参考：`docs/reference/`
+- 解释：`docs/explanation/`
 - 项目入口与接口：`README.md`
+
+## 领域术语
+
+- 领域术语以 `docs/reference/领域模型与术语.md` 为准。
+- 修改实体、字段、接口或页面文案中的领域名词前，先更新该文档。
+- 跨层重命名按 `docs/how-to/统一领域命名.md` 分阶段执行，不允许一次性全改。
 
 ## 提交
 

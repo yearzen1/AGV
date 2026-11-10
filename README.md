@@ -15,6 +15,14 @@ specs/           实施计划、时间安排、参考文献
 
 分层约定：**算法逻辑只能写在 `agv-algorithm`**，后端只做 IO 与编排。这条是论文里"算法可独立单测"的依据。
 
+## 领域模型
+
+- 术语、限界上下文、聚合边界、不变量和状态机：[docs/reference/领域模型与术语.md](docs/reference/领域模型与术语.md)
+- 为什么这样建模、持久化模型与领域模型的偏差：[docs/explanation/领域模型说明.md](docs/explanation/领域模型说明.md)
+- `WarehouseMap` / `mapId` 等历史命名的分阶段迁移计划：[docs/how-to/统一领域命名.md](docs/how-to/统一领域命名.md)
+
+代码、接口、页面、论文出现术语歧义时，以 reference 文档为准。
+
 ## 环境要求
 
 | 组件 | 版本 |
