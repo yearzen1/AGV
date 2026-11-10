@@ -44,6 +44,12 @@ const mapTaskSets = computed(() =>
 
 const preview3DVisible = ref(false)
 const preview3DPayload = ref<RoadNetPayload | null>(null)
+const preview3DFullscreen = ref(false)
+const roadnetSceneRef = ref<{ fitView: () => void } | null>(null)
+
+function reset3DView() {
+  roadnetSceneRef.value?.fitView()
+}
 
 let validateTimer: number | undefined
 let draftTimer: number | undefined
@@ -223,6 +229,7 @@ async function validate() {
   validating.value = true
   try {
     errors.value = await validateRoadNet(currentPayload())
+    editorRef.value?.showValidation()
     if (errors.value.length === 0) {
       ElMessage.success('校验通过')
     } else {
@@ -256,7 +263,11 @@ function onEditorChange() {
   dirty.value = isEditorDirty()
   scheduleValidate()
   window.clearTimeout(draftTimer)
-  draftTimer = window.setTimeout(saveDraft, 1000)
+  if (dirty.value) {
+    draftTimer = window.setTimeout(saveDraft, 1000)
+  } else {
+    clearDraft(currentId.value)
+  }
 }
 
 function onAutoValidateChange() {
@@ -392,7 +403,14 @@ async function onFileChange(event: Event) {
 
 function open3D() {
   preview3DPayload.value = currentPayload()
+  preview3DFullscreen.value = false
   preview3DVisible.value = true
+}
+
+function onMoreCommand(command: string) {
+  if (command === 'import') triggerImport()
+  else if (command === 'export') exportJson()
+  else if (command === 'saveAs') void saveAs()
 }
 
 function togglePreview(next: boolean) {
@@ -447,9 +465,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div>
-    <h2 class="page-title">车间地图</h2>
-
+  <div class="roadnet-page">
     <div class="layout">
       <div class="panel list-panel">
         <div class="list-actions">
@@ -512,7 +528,7 @@ onBeforeUnmount(() => {
 
       <div class="panel editor-panel" v-loading="loading">
         <div class="editor-head">
-          <el-input v-model="name" style="width: 220px" placeholder="路网名称" />
+          <el-input v-model="name" class="name-input" placeholder="路网名称" />
           <el-tag v-if="isTemplate" type="warning" size="small">
             预置模板{{ auth.isAdmin ? '' : '（只读，请另存为）' }}
           </el-tag>
@@ -532,45 +548,79 @@ onBeforeUnmount(() => {
           </el-checkbox>
           <el-button size="small" :loading="validating" @click="validate">校验</el-button>
           <el-button size="small" @click="open3D">3D 预览</el-button>
-          <el-button size="small" @click="triggerImport">导入 JSON</el-button>
-          <el-button size="small" @click="exportJson">导出 JSON</el-button>
-          <el-button size="small" @click="saveAs">另存为</el-button>
+          <el-dropdown trigger="click" @command="onMoreCommand">
+            <el-button size="small">更多</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="import">导入 JSON</el-dropdown-item>
+                <el-dropdown-item command="export">导出 JSON</el-dropdown-item>
+                <el-dropdown-item command="saveAs" divided>另存为</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
           <el-button size="small" type="primary" @click="save">保存</el-button>
           <input ref="fileInput" type="file" accept=".json" hidden @change="onFileChange" />
         </div>
 
-        <RoadNetEditor
-          ref="editorRef"
-          :initial="payload"
-          :errors="errors"
-          :readonly="previewMode"
-          :tasks="showTaskOverlay ? overlayTasks : []"
-          :name="name"
-          @change="onEditorChange"
-          @save="save"
-        />
+        <div class="editor-body">
+          <RoadNetEditor
+            ref="editorRef"
+            :initial="payload"
+            :errors="errors"
+            :readonly="previewMode"
+            :tasks="showTaskOverlay ? overlayTasks : []"
+            :name="name"
+            @change="onEditorChange"
+            @save="save"
+          />
+        </div>
       </div>
     </div>
 
-    <el-dialog v-model="preview3DVisible" title="3D 预览" width="80%" top="5vh" destroy-on-close>
-      <div class="preview-3d">
-        <RoadNetScene v-if="preview3DPayload" :roadnet="preview3DPayload" :agvs="[]" />
+    <el-dialog
+      v-model="preview3DVisible"
+      title="3D 预览"
+      :width="preview3DFullscreen ? '100%' : '80%'"
+      :fullscreen="preview3DFullscreen"
+      top="5vh"
+      destroy-on-close
+    >
+      <div class="preview-3d" :class="{ 'is-fullscreen': preview3DFullscreen }">
+        <RoadNetScene v-if="preview3DPayload" ref="roadnetSceneRef" :roadnet="preview3DPayload" :agvs="[]" />
       </div>
+      <template #footer>
+        <div class="preview-3d-footer">
+          <span class="muted">左键旋转 · 滚轮缩放 · 右键平移</span>
+          <div class="spacer" />
+          <el-button size="small" @click="reset3DView">重置视角</el-button>
+          <el-button size="small" @click="preview3DFullscreen = !preview3DFullscreen">
+            {{ preview3DFullscreen ? '退出全屏' : '全屏' }}
+          </el-button>
+          <el-button size="small" type="primary" @click="preview3DVisible = false">关闭</el-button>
+        </div>
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.roadnet-page {
+  height: 100%;
+  min-height: 0;
+}
+
 .layout {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
 }
 
 .list-panel {
   padding: 12px;
-  height: fit-content;
-  max-height: 860px;
+  height: 100%;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -633,15 +683,29 @@ onBeforeUnmount(() => {
   padding: 14px;
   display: flex;
   flex-direction: column;
-  min-height: 720px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.editor-body {
+  flex: 1;
+  min-height: 0;
+}
+
+.editor-body :deep(.editor) {
+  height: 100%;
 }
 
 .editor-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   flex-wrap: wrap;
+}
+
+.name-input {
+  width: 200px;
 }
 
 .spacer {
@@ -655,7 +719,18 @@ onBeforeUnmount(() => {
 
 .preview-3d {
   height: 70vh;
-  min-height: 480px;
+  min-height: 420px;
+}
+
+.preview-3d.is-fullscreen {
+  height: calc(100vh - 150px);
+  min-height: 0;
+}
+
+.preview-3d-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .muted {

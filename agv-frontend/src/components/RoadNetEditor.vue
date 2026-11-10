@@ -42,6 +42,21 @@ const TYPE_COLOR: Record<string, string> = {
   JUNCTION: '#909399'
 }
 
+/** 工具栏内联图标，避免额外依赖。 */
+const ICONS: Record<string, string> = {
+  undo: 'M9 14 4 9l5-5M4 9h9a7 7 0 0 1 0 14h-3',
+  redo: 'M15 14l5-5-5-5M20 9h-9a7 7 0 0 0 0 14h3',
+  copy: 'M9 9h10v12H9zM5 15H3V3h12v2',
+  paste: 'M9 4h6v3H9zM7 6H4v15h16V6h-3',
+  trash: 'M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14M10 11v6M14 11v6',
+  align: 'M4 4v16M8 8h9M8 16h6',
+  merge: 'M3 7h6l5 5-5 5H3M14 12h7',
+  reverse: 'M4 8h12l-3-3M20 16H8l3 3',
+  fit: 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5',
+  more: 'M5 12h.01M12 12h.01M19 12h.01',
+  eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'
+}
+
 const PREFIX: Record<string, string> = {
   WORKSTATION: 'W',
   CHARGER: 'CH',
@@ -80,6 +95,40 @@ const showNodeLabels = ref(true)
 const showEdgeLabels = ref(true)
 const showGrid = ref(true)
 const showTasks = ref(true)
+
+function readUiPref(key: string, fallback: boolean) {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw === null ? fallback : raw === '1'
+  } catch {
+    return fallback
+  }
+}
+
+function writeUiPref(key: string, value: boolean) {
+  try {
+    localStorage.setItem(key, value ? '1' : '0')
+  } catch {
+    // 隐私模式下忽略
+  }
+}
+
+/** 窄窗口默认收起悬浮层，避免遮挡地图。 */
+const narrowWindow = typeof window !== 'undefined' && window.innerWidth < 1600
+const minimapCollapsed = ref(readUiPref('agv_roadnet_minimap_collapsed', narrowWindow))
+const legendCollapsed = ref(readUiPref('agv_roadnet_legend_collapsed', narrowWindow))
+const sideTab = ref<'props' | 'stats' | 'errors'>('props')
+const isMaximized = ref(false)
+
+function toggleMinimap() {
+  minimapCollapsed.value = !minimapCollapsed.value
+  writeUiPref('agv_roadnet_minimap_collapsed', minimapCollapsed.value)
+}
+
+function toggleLegend() {
+  legendCollapsed.value = !legendCollapsed.value
+  writeUiPref('agv_roadnet_legend_collapsed', legendCollapsed.value)
+}
 
 const cursorWorld = ref<{ x: number; y: number } | null>(null)
 const hover = ref<{ kind: 'node' | 'edge'; id: string; x: number; y: number } | null>(null)
@@ -215,7 +264,19 @@ const searchResults = computed(() => {
   return result
 })
 
-const miniWidth = 180
+const searchHitNodeIds = computed(
+  () => new Set(searchResults.value.filter((item) => item.kind === 'node').map((item) => item.id))
+)
+const searchHitEdgeIds = computed(
+  () => new Set(searchResults.value.filter((item) => item.kind === 'edge').map((item) => item.id))
+)
+const searchLabel = computed(() => {
+  if (!searchQuery.value.trim()) return '查找'
+  if (searchResults.value.length === 0) return '0'
+  return `${searchIndex.value + 1}/${searchResults.value.length}`
+})
+
+const miniWidth = 140
 const miniHeight = computed(() =>
   Math.max(84, Math.round((miniWidth * mapHeight.value) / Math.max(mapWidth.value, 1)))
 )
@@ -238,11 +299,18 @@ const miniViewport = computed(() => {
 
 const taskFlows = computed(() => {
   if (!props.tasks?.length) return []
-  const result: { id: number; d: string; from: string; to: string }[] = []
-  props.tasks.forEach((task, index) => {
-    const from = nodeMap.value.get(task.from)
-    const to = nodeMap.value.get(task.to)
-    if (!from || !to) return
+  const groups = new Map<string, { from: string; to: string; count: number }>()
+  for (const task of props.tasks) {
+    if (!nodeMap.value.has(task.from) || !nodeMap.value.has(task.to)) continue
+    const key = `${task.from}->${task.to}`
+    const group = groups.get(key) ?? { from: task.from, to: task.to, count: 0 }
+    group.count += 1
+    groups.set(key, group)
+  }
+  const list = [...groups.values()]
+  return list.map((group, index) => {
+    const from = nodeMap.value.get(group.from)!
+    const to = nodeMap.value.get(group.to)!
     const x1 = from.x * SCALE
     const y1 = from.y * SCALE
     const x2 = to.x * SCALE
@@ -250,12 +318,19 @@ const taskFlows = computed(() => {
     const dx = x2 - x1
     const dy = y2 - y1
     const len = Math.hypot(dx, dy) || 1
-    const offset = ((index % 5) - 2) * 7
+    const offset = list.length > 1 ? ((index % 5) - 2) * 7 : 0
     const mx = (x1 + x2) / 2 + (-dy / len) * offset
     const my = (y1 + y2) / 2 + (dx / len) * offset
-    result.push({ id: task.id, d: `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`, from: task.from, to: task.to })
+    const labelX = 0.25 * x1 + 0.5 * mx + 0.25 * x2
+    const labelY = 0.25 * y1 + 0.5 * my + 0.25 * y2
+    return {
+      key: `${group.from}->${group.to}`,
+      d: `M ${x1} ${y1} Q ${mx} ${my} ${x2} ${y2}`,
+      count: group.count,
+      labelX,
+      labelY
+    }
   })
-  return result
 })
 
 const taskBadges = computed(() => {
@@ -627,7 +702,7 @@ function notifyPreviewReadonly() {
   ElMessage.info('预览模式：点右上角「编辑」后可拖动')
 }
 
-function fitNodes(list: NetNode[]) {
+function fitNodes(list: NetNode[], maxScale = MAX_SCALE) {
   if (list.length === 0) {
     resetView()
     return
@@ -644,7 +719,7 @@ function fitNodes(list: NetNode[]) {
   const scale = clamp(
     Math.min(viewWidth / Math.max(maxX - minX, 1), viewHeight / Math.max(maxY - minY, 1)),
     MIN_SCALE,
-    MAX_SCALE
+    maxScale
   )
   view.scale = scale
   view.tx = viewWidth / 2 - ((minX + maxX) / 2) * scale
@@ -652,7 +727,7 @@ function fitNodes(list: NetNode[]) {
 }
 
 function fitView() {
-  fitNodes(nodes.value)
+  fitNodes(nodes.value, 2)
 }
 
 function fitSelection() {
@@ -811,6 +886,7 @@ function onNodeClick(event: MouseEvent, node: NetNode) {
   }
   if (connectFrom.value === node.id) {
     connectFrom.value = null
+    ElMessage.info('起点和终点不能相同，已取消本次连接')
     return
   }
   const duplicate = edges.value.some(
@@ -819,6 +895,7 @@ function onNodeClick(event: MouseEvent, node: NetNode) {
       (edge.from === node.id && edge.to === connectFrom.value)
   )
   if (duplicate) {
+    ElMessage.info(`${connectFrom.value} 与 ${node.id} 之间已有路段`)
     connectFrom.value = null
     return
   }
@@ -1539,19 +1616,26 @@ function endMini() {
 }
 
 async function toggleFullscreen() {
-  try {
-    if (!document.fullscreenElement) {
+  if (isMaximized.value) {
+    isMaximized.value = false
+    isFullscreen.value = false
+    return
+  }
+  if (!document.fullscreenElement) {
+    try {
       await canvasWrap.value?.requestFullscreen()
-    } else {
-      await document.exitFullscreen()
+    } catch {
+      isMaximized.value = true
+      isFullscreen.value = true
+      ElMessage.info('已切换为页面内全屏，按 Esc 退出')
     }
-  } catch {
-    ElMessage.warning('当前浏览器不支持全屏')
+  } else {
+    await document.exitFullscreen()
   }
 }
 
 function onFullscreenChange() {
-  isFullscreen.value = !!document.fullscreenElement
+  isFullscreen.value = !!document.fullscreenElement || isMaximized.value
 }
 
 function download(filename: string, blob: Blob) {
@@ -1638,6 +1722,13 @@ function handleExport(command: string) {
   else if (command === 'png') void exportPng()
 }
 
+function onToolbarMore(command: string) {
+  if (command === 'fit-selection') fitSelection()
+  else if (command === 'fit-error') fitError()
+  else if (command === 'help') helpVisible.value = true
+  else handleExport(command)
+}
+
 function onKeyDown(event: KeyboardEvent) {
   if (isEditableTarget(event.target)) return
   if (event.key === '?' && !editable.value) {
@@ -1646,6 +1737,15 @@ function onKeyDown(event: KeyboardEvent) {
   }
   if (!hovering.value && !event.ctrlKey && !event.metaKey && event.key !== 'Escape') return
   if (event.key === 'Escape') {
+    if (isMaximized.value) {
+      isMaximized.value = false
+      isFullscreen.value = false
+      return
+    }
+    if (connectFrom.value) {
+      connectFrom.value = null
+      return
+    }
     clearSelection()
     closeContextMenu()
     hover.value = null
@@ -1756,6 +1856,7 @@ function loadPayload(payload: RoadNetPayload, resetHistory = true) {
   }
   nextTick(() => {
     historyLock = false
+    if (nodes.value.length > 0) fitView()
   })
 }
 
@@ -1799,6 +1900,19 @@ watch(searchQuery, () => {
   searchIndex.value = 0
 })
 
+watch(
+  [selectedNodeIds, selectedEdgeIds],
+  () => {
+    if (selectedCount.value > 0) sideTab.value = 'props'
+  },
+  { deep: true }
+)
+
+/** 手动校验后由父组件调用，直接展示校验页签。 */
+function showValidation() {
+  sideTab.value = 'errors'
+}
+
 onMounted(() => {
   loadPayload(props.initial, true)
   window.addEventListener('keydown', onKeyDown)
@@ -1824,6 +1938,7 @@ defineExpose({
   markDirty,
   focusError,
   fitSelection,
+  showValidation,
   fitError,
   undo,
   redo,
@@ -1835,176 +1950,190 @@ defineExpose({
 <template>
   <div class="editor">
     <div class="toolbar">
-      <template v-if="editable">
-        <el-radio-group v-model="tool" size="small">
-          <el-radio-button value="select">选择/拖动</el-radio-button>
-          <el-radio-button value="pan">平移</el-radio-button>
-          <el-radio-button value="connect">连路段</el-radio-button>
-        </el-radio-group>
-        <el-divider direction="vertical" />
-        <el-radio-group v-model="tool" size="small">
-          <el-radio-button v-for="type in NODE_TOOLS" :key="type" :value="type">
-            {{ TYPE_LABEL[type] }}
-          </el-radio-button>
-        </el-radio-group>
-        <el-divider direction="vertical" />
-        <el-button-group>
-          <el-button size="small" :disabled="!canUndo" @click="undo">撤销</el-button>
-          <el-button size="small" :disabled="!canRedo" @click="redo">重做</el-button>
+      <div class="toolbar-row toolbar-main">
+        <template v-if="editable">
+          <el-radio-group v-model="tool" size="small">
+            <el-radio-button value="select">选择</el-radio-button>
+            <el-radio-button value="pan">平移</el-radio-button>
+            <el-radio-button value="connect">连路段</el-radio-button>
+          </el-radio-group>
+          <el-radio-group v-model="tool" size="small" class="node-tools">
+            <el-radio-button v-for="type in NODE_TOOLS" :key="type" :value="type">
+              <span class="node-dot-mini" :style="{ background: TYPE_COLOR[type] }" />
+              {{ TYPE_LABEL[type] }}
+            </el-radio-button>
+          </el-radio-group>
+          <el-button-group class="icon-group">
+            <el-button size="small" :disabled="!canUndo" title="撤销 (Ctrl+Z)" @click="undo">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="ICONS.undo" />
+              </svg>
+            </el-button>
+            <el-button size="small" :disabled="!canRedo" title="重做 (Ctrl+Shift+Z)" @click="redo">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="ICONS.redo" />
+              </svg>
+            </el-button>
+          </el-button-group>
+          <span v-if="tool === 'connect' && connectFrom" class="connect-hint">
+            已选起点 {{ connectFrom }}，再点一个节点完成连接，Esc 取消
+          </span>
+        </template>
+        <el-tag v-else type="info" size="small">预览模式 · 点「编辑」可修改</el-tag>
+        <div class="spacer" />
+        <span class="hint">滚轮缩放 · 空格/中键平移</span>
+      </div>
+
+      <div class="toolbar-row toolbar-secondary">
+        <template v-if="editable">
+          <el-button-group class="icon-group">
+            <el-button size="small" :disabled="selectedCount === 0" title="复制 (Ctrl+C)" @click="copySelection">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="ICONS.copy" />
+              </svg>
+            </el-button>
+            <el-button size="small" :disabled="!clipboard" title="粘贴 (Ctrl+V)" @click="pasteClipboard">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="ICONS.paste" />
+              </svg>
+            </el-button>
+            <el-button size="small" :disabled="selectedCount === 0" title="删除 (Delete)" @click="deleteSelected">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="ICONS.trash" />
+              </svg>
+            </el-button>
+          </el-button-group>
+          <el-dropdown @command="handleAlign">
+            <el-button size="small" :disabled="selectedNodeIds.length < 2" title="对齐与分布">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="ICONS.align" />
+              </svg>
+              对齐
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="left">左对齐</el-dropdown-item>
+                <el-dropdown-item command="center-x">水平居中</el-dropdown-item>
+                <el-dropdown-item command="right">右对齐</el-dropdown-item>
+                <el-dropdown-item command="top">顶对齐</el-dropdown-item>
+                <el-dropdown-item command="middle-y">垂直居中</el-dropdown-item>
+                <el-dropdown-item command="bottom">底对齐</el-dropdown-item>
+                <el-dropdown-item command="distribute-x" divided>水平等距</el-dropdown-item>
+                <el-dropdown-item command="distribute-y">垂直等距</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button size="small" :disabled="selectedEdgeIds.length !== 2" title="合并两条共享端点的路段" @click="mergeSelectedEdges">
+            合并
+          </el-button>
+          <el-button size="small" :disabled="!hasSelectedOneWay" title="仅单向路段可反转" @click="reverseSelectedEdges">
+            反转
+          </el-button>
+          <el-divider direction="vertical" />
+        </template>
+
+        <el-input
+          v-model="searchQuery"
+          class="search-input"
+          size="small"
+          placeholder="搜索编号"
+          clearable
+          @keyup.enter="nextSearch"
+        >
+          <template #append>
+            <el-button :disabled="!searchQuery.trim()" title="Enter 定位下一个命中" @click="nextSearch">
+              {{ searchLabel }}
+            </el-button>
+          </template>
+        </el-input>
+
+        <el-popover placement="bottom" trigger="click" width="230">
+          <template #reference>
+            <el-button size="small" title="显示选项与画布尺寸">
+              <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path :d="ICONS.eye" />
+              </svg>
+              显示
+            </el-button>
+          </template>
+          <div class="popover-list">
+            <el-checkbox v-model="showNodeLabels">节点标签</el-checkbox>
+            <el-checkbox v-model="showEdgeLabels">路段标签</el-checkbox>
+            <el-checkbox v-model="showGrid">背景网格</el-checkbox>
+            <el-checkbox v-model="showTasks">任务流向</el-checkbox>
+            <div class="popover-divider" />
+            <div class="side-title">画布尺寸</div>
+            <div class="size-editor">
+              <label>
+                宽（米）
+                <el-input-number
+                  v-model="mapWidth"
+                  :min="MIN_SIZE"
+                  :max="MAX_SIZE"
+                  :disabled="!editable"
+                  size="small"
+                  @change="applyMapSize"
+                />
+              </label>
+              <label>
+                高（米）
+                <el-input-number
+                  v-model="mapHeight"
+                  :min="MIN_SIZE"
+                  :max="MAX_SIZE"
+                  :disabled="!editable"
+                  size="small"
+                  @change="applyMapSize"
+                />
+              </label>
+            </div>
+          </div>
+        </el-popover>
+
+        <el-button size="small" @click="selectAll">全选</el-button>
+        <el-button size="small" :disabled="selectedCount === 0" @click="clearSelection">清空</el-button>
+
+        <el-button-group class="zoom-group">
+          <el-button size="small" title="缩小" @click="zoomOut">−</el-button>
+          <el-button size="small" title="重置为 100%" @click="resetView">{{ zoomPercent }}%</el-button>
+          <el-button size="small" title="放大" @click="zoomIn">+</el-button>
         </el-button-group>
-        <el-button size="small" :disabled="selectedCount === 0" @click="copySelection">
-          复制
+        <el-button-group class="pan-buttons">
+          <el-button size="small" title="向左移动" @mousedown.prevent="startPanRepeat(-80, 0)" @mouseup="stopPanRepeat" @mouseleave="stopPanRepeat">←</el-button>
+          <el-button size="small" title="向右移动" @mousedown.prevent="startPanRepeat(80, 0)" @mouseup="stopPanRepeat" @mouseleave="stopPanRepeat">→</el-button>
+          <el-button size="small" title="向上移动" @mousedown.prevent="startPanRepeat(0, -80)" @mouseup="stopPanRepeat" @mouseleave="stopPanRepeat">↑</el-button>
+          <el-button size="small" title="向下移动" @mousedown.prevent="startPanRepeat(0, 80)" @mouseup="stopPanRepeat" @mouseleave="stopPanRepeat">↓</el-button>
+        </el-button-group>
+        <el-button size="small" title="适应窗口" @click="fitView">
+          <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path :d="ICONS.fit" />
+          </svg>
         </el-button>
-        <el-button size="small" :disabled="!clipboard" @click="pasteClipboard">粘贴</el-button>
-        <el-button size="small" :disabled="selectedCount === 0" @click="deleteSelected">
-          删除
-        </el-button>
-        <el-dropdown @command="handleAlign">
-          <el-button size="small" :disabled="selectedNodeIds.length < 2">对齐</el-button>
+        <el-dropdown trigger="click" @command="onToolbarMore">
+          <el-button size="small" title="更多操作">
+            <svg class="tool-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path :d="ICONS.more" stroke-width="2.6" />
+            </svg>
+          </el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item command="left">左对齐</el-dropdown-item>
-              <el-dropdown-item command="center-x">水平居中</el-dropdown-item>
-              <el-dropdown-item command="right">右对齐</el-dropdown-item>
-              <el-dropdown-item command="top">顶对齐</el-dropdown-item>
-              <el-dropdown-item command="middle-y">垂直居中</el-dropdown-item>
-              <el-dropdown-item command="bottom">底对齐</el-dropdown-item>
-              <el-dropdown-item command="distribute-x" divided>水平等距</el-dropdown-item>
-              <el-dropdown-item command="distribute-y">垂直等距</el-dropdown-item>
+              <el-dropdown-item command="fit-selection" :disabled="selectedCount === 0">适应选中</el-dropdown-item>
+              <el-dropdown-item command="fit-error" :disabled="errors.length === 0">适应错误</el-dropdown-item>
+              <el-dropdown-item command="png" divided>导出 PNG</el-dropdown-item>
+              <el-dropdown-item command="svg">导出 SVG</el-dropdown-item>
+              <el-dropdown-item command="help" divided>快捷键与操作</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button
-          size="small"
-          :disabled="selectedEdgeIds.length !== 2"
-          @click="mergeSelectedEdges"
-        >
-          合并
-        </el-button>
-        <el-button
-          size="small"
-          :disabled="!hasSelectedOneWay"
-          title="仅单向路段可反转"
-          @click="reverseSelectedEdges"
-        >
-          反转
-        </el-button>
-        <el-divider direction="vertical" />
-      </template>
-      <el-tag v-else type="info" size="small">预览模式 · 点「编辑」可修改</el-tag>
-      <el-tag type="info" size="small">范围 {{ mapWidth }}×{{ mapHeight }} m</el-tag>
-
-      <el-button size="small" @click="selectAll">全选</el-button>
-      <el-button size="small" :disabled="selectedCount === 0" @click="clearSelection">
-        清空
-      </el-button>
-
-      <el-input
-        v-model="searchQuery"
-        size="small"
-        placeholder="搜索编号"
-        clearable
-        style="width: 150px"
-        @keyup.enter="nextSearch"
-      >
-        <template #append>
-          <el-button :disabled="!searchQuery.trim()" @click="nextSearch">
-            {{ searchQuery.trim() ? searchResults.length : '查找' }}
-          </el-button>
-        </template>
-      </el-input>
-
-      <el-popover placement="bottom" trigger="click" width="180">
-        <template #reference>
-          <el-button size="small">显示</el-button>
-        </template>
-        <div class="popover-list">
-          <el-checkbox v-model="showNodeLabels">节点标签</el-checkbox>
-          <el-checkbox v-model="showEdgeLabels">路段标签</el-checkbox>
-          <el-checkbox v-model="showGrid">背景网格</el-checkbox>
-          <el-checkbox v-model="showTasks">任务流向</el-checkbox>
-        </div>
-      </el-popover>
-
-      <el-popover v-if="editable" placement="bottom" trigger="click" width="230">
-        <template #reference>
-          <el-button size="small">画布 {{ mapWidth }}×{{ mapHeight }}</el-button>
-        </template>
-        <div class="size-editor">
-          <label>
-            宽（米）
-            <el-input-number v-model="mapWidth" :min="10" :max="200" size="small" @change="applyMapSize" />
-          </label>
-          <label>
-            高（米）
-            <el-input-number v-model="mapHeight" :min="10" :max="200" size="small" @change="applyMapSize" />
-          </label>
-        </div>
-      </el-popover>
-
-      <el-button-group>
-        <el-button size="small" title="缩小" @click="zoomOut">−</el-button>
-        <el-button size="small" title="重置为 100%" @click="resetView">{{ zoomPercent }}%</el-button>
-        <el-button size="small" title="放大" @click="zoomIn">+</el-button>
-      </el-button-group>
-      <el-button-group class="pan-buttons">
-        <el-button
-          size="small"
-          title="向左移动"
-          @mousedown.prevent="startPanRepeat(-80, 0)"
-          @mouseup="stopPanRepeat"
-          @mouseleave="stopPanRepeat"
-        >
-          ←
-        </el-button>
-        <el-button
-          size="small"
-          title="向右移动"
-          @mousedown.prevent="startPanRepeat(80, 0)"
-          @mouseup="stopPanRepeat"
-          @mouseleave="stopPanRepeat"
-        >
-          →
-        </el-button>
-        <el-button
-          size="small"
-          title="向上移动"
-          @mousedown.prevent="startPanRepeat(0, -80)"
-          @mouseup="stopPanRepeat"
-          @mouseleave="stopPanRepeat"
-        >
-          ↑
-        </el-button>
-        <el-button
-          size="small"
-          title="向下移动"
-          @mousedown.prevent="startPanRepeat(0, 80)"
-          @mouseup="stopPanRepeat"
-          @mouseleave="stopPanRepeat"
-        >
-          ↓
-        </el-button>
-      </el-button-group>
-      <el-button size="small" @click="fitView">适应窗口</el-button>
-      <el-button size="small" :disabled="selectedCount === 0" @click="fitSelection">
-        适应选中
-      </el-button>
-      <el-button size="small" :disabled="errors.length === 0" @click="fitError">适应错误</el-button>
-      <el-dropdown @command="handleExport">
-        <el-button size="small">导出</el-button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item command="png">导出 PNG</el-dropdown-item>
-            <el-dropdown-item command="svg">导出 SVG</el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
-      <el-button size="small" @click="helpVisible = true">?</el-button>
-      <span class="hint">滚轮缩放 · 空格/中键平移 · 拖空白框选</span>
+      </div>
     </div>
 
     <div class="workspace">
-      <div ref="canvasWrap" class="canvas-wrap">
+      <div
+        ref="canvasWrap"
+        class="canvas-wrap"
+        :class="{ 'is-maximized': isMaximized }"
+      >
         <svg
           ref="svgRef"
           :viewBox="`0 0 ${mapWidth * SCALE} ${mapHeight * SCALE}`"
@@ -2131,11 +2260,24 @@ defineExpose({
             <g v-if="showTasks && taskFlows.length > 0">
               <path
                 v-for="flow in taskFlows"
-                :key="`task-${flow.id}`"
+                :key="`task-${flow.key}`"
                 :d="flow.d"
                 class="task-flow"
                 marker-end="url(#task-arrow)"
               />
+              <g v-for="flow in taskFlows.filter((item) => item.count > 1)" :key="`task-count-${flow.key}`">
+                <rect
+                  :x="flow.labelX - 11"
+                  :y="flow.labelY - 8"
+                  width="22"
+                  height="16"
+                  rx="8"
+                  class="task-count"
+                />
+                <text :x="flow.labelX" :y="flow.labelY + 3" text-anchor="middle" class="task-count-text">
+                  {{ flow.count }}
+                </text>
+              </g>
               <g v-for="badge in taskBadges" :key="`badge-${badge.id}`">
                 <rect
                   :x="badge.x - 4"
@@ -2187,6 +2329,15 @@ defineExpose({
                 @mouseleave="clearHover"
                 @contextmenu.prevent.stop="onEdgeContextMenu($event, edge)"
               />
+              <line
+                v-if="searchHitEdgeIds.has(edge.id)"
+                :x1="px(nodeMap.get(edge.from)?.x ?? 0)"
+                :y1="px(nodeMap.get(edge.from)?.y ?? 0)"
+                :x2="px(nodeMap.get(edge.to)?.x ?? 0)"
+                :y2="px(nodeMap.get(edge.to)?.y ?? 0)"
+                class="search-hit-edge"
+                pointer-events="none"
+              />
               <text
                 v-if="showEdgeLabels"
                 :x="edgeMid(edge).x"
@@ -2201,6 +2352,14 @@ defineExpose({
             </g>
 
             <g v-for="node in nodes" :key="node.id">
+              <circle
+                v-if="searchHitNodeIds.has(node.id)"
+                :cx="px(node.x)"
+                :cy="px(node.y)"
+                r="14"
+                class="search-ring"
+                pointer-events="none"
+              />
               <circle
                 :cx="px(node.x)"
                 :cy="px(node.y)"
@@ -2265,7 +2424,19 @@ defineExpose({
           />
         </svg>
 
-        <div class="map-legend">
+        <button
+          v-if="legendCollapsed"
+          class="overlay-toggle legend-toggle"
+          type="button"
+          @click="toggleLegend"
+        >
+          图例
+        </button>
+        <div v-else class="map-legend">
+          <div class="legend-head">
+            <span>图例</span>
+            <button type="button" title="收起图例" @click="toggleLegend">−</button>
+          </div>
           <div class="legend-row">
             <span class="dot" :style="{ background: TYPE_COLOR.WORKSTATION }"></span>工位
           </div>
@@ -2304,7 +2475,16 @@ defineExpose({
           {{ cursorWorld ? `X ${cursorWorld.x.toFixed(1)} m · Y ${cursorWorld.y.toFixed(1)} m` : '鼠标移入画布查看坐标' }}
         </div>
 
+        <button
+          v-if="minimapCollapsed"
+          class="overlay-toggle minimap-toggle"
+          type="button"
+          @click="toggleMinimap"
+        >
+          概览
+        </button>
         <div
+          v-else
           class="minimap"
           :class="{ 'is-dragging': miniDragging }"
           @mousedown.prevent="startMini"
@@ -2312,6 +2492,15 @@ defineExpose({
           @mouseup="endMini"
           @mouseleave="endMini"
         >
+          <button
+            class="minimap-collapse"
+            type="button"
+            title="收起小地图"
+            @mousedown.stop
+            @click.stop="toggleMinimap"
+          >
+            −
+          </button>
           <svg
             ref="miniRef"
             :width="miniWidth"
@@ -2354,8 +2543,39 @@ defineExpose({
 
       <div class="side">
         <div class="side-inner">
+          <div class="side-tabs" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              :class="{ active: sideTab === 'props' }"
+              :aria-selected="sideTab === 'props'"
+              @click="sideTab = 'props'"
+            >
+              属性
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :class="{ active: sideTab === 'stats' }"
+              :aria-selected="sideTab === 'stats'"
+              @click="sideTab = 'stats'"
+            >
+              统计
+            </button>
+            <button
+              type="button"
+              role="tab"
+              :class="{ active: sideTab === 'errors' }"
+              :aria-selected="sideTab === 'errors'"
+              @click="sideTab = 'errors'"
+            >
+              校验
+              <span v-if="errors.length > 0" class="tab-count">{{ errors.length }}</span>
+            </button>
+          </div>
+
+          <div v-show="sideTab === 'props'" class="side-pane">
           <div class="side-block">
-            <div class="side-title">属性</div>
             <template v-if="selectedNode">
               <el-form label-width="64px" size="small" :disabled="!editable">
                 <el-form-item label="编号">
@@ -2529,7 +2749,9 @@ defineExpose({
             </div>
             <div v-else class="muted">选中节点或路段后可编辑属性</div>
           </div>
+          </div>
 
+          <div v-show="sideTab === 'stats'" class="side-pane">
           <div class="side-block">
             <div class="side-title">统计</div>
             <div class="stat-row"><span>节点</span><b>{{ stats.nodes }}</b></div>
@@ -2538,7 +2760,9 @@ defineExpose({
             <div class="stat-row"><span>充电位</span><b>{{ stats.chargers }}</b></div>
             <div class="stat-row"><span>选中</span><b>{{ selectedCount }}</b></div>
           </div>
+          </div>
 
+          <div v-show="sideTab === 'errors'" class="side-pane">
           <div class="side-block">
             <div class="side-title">
               校验
@@ -2556,6 +2780,7 @@ defineExpose({
                 <span>{{ error.message }}</span>
               </div>
             </div>
+          </div>
           </div>
         </div>
       </div>
@@ -2605,7 +2830,7 @@ defineExpose({
           <tr><td>`Ctrl/Cmd+Shift+Z` / `Ctrl+Y`</td><td>重做</td></tr>
           <tr><td>`Ctrl/Cmd+S`</td><td>保存</td></tr>
           <tr><td>`Delete` / `Backspace`</td><td>删除选中</td></tr>
-          <tr><td>`Esc`</td><td>清空选择 / 关闭菜单</td></tr>
+          <tr><td>`Esc`</td><td>清空选择 / 退出页面内全屏 / 关闭菜单</td></tr>
           <tr><td>方向键</td><td>选中节点移动 0.5 米</td></tr>
           <tr><td>`Shift` + 方向键</td><td>选中节点移动 2.5 米</td></tr>
           <tr><td>`Shift` + 拖动</td><td>锁定水平 / 垂直</td></tr>
@@ -2620,8 +2845,9 @@ defineExpose({
 .editor {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   height: 100%;
+  min-height: 0;
   --map-cursor-default: default;
   --map-cursor-grab: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%23ffffff' stroke-width='5'%3E%3Cpath d='M18 11V6a2 2 0 0 0-4 0v5'/%3E%3Cpath d='M14 10V4a2 2 0 0 0-4 0v6'/%3E%3Cpath d='M10 10.5V6a2 2 0 0 0-4 0v8'/%3E%3Cpath d='M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/%3E%3C/g%3E%3Cg stroke='%23303133' stroke-width='2.4'%3E%3Cpath d='M18 11V6a2 2 0 0 0-4 0v5'/%3E%3Cpath d='M14 10V4a2 2 0 0 0-4 0v6'/%3E%3Cpath d='M10 10.5V6a2 2 0 0 0-4 0v8'/%3E%3Cpath d='M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15'/%3E%3C/g%3E%3C/svg%3E") 16 16, grab;
   --map-cursor-grabbing: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 24 24' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg stroke='%23ffffff' stroke-width='5'%3E%3Cpath d='M8 12V9a2 2 0 0 1 4 0v3'/%3E%3Cpath d='M12 12V8a2 2 0 0 1 4 0v4'/%3E%3Cpath d='M16 12V9a2 2 0 0 1 4 0v7a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.9-2.55l-2.2-3.1a2 2 0 0 1 3.2-2.4L11 16'/%3E%3C/g%3E%3Cg stroke='%23303133' stroke-width='2.4'%3E%3Cpath d='M8 12V9a2 2 0 0 1 4 0v3'/%3E%3Cpath d='M12 12V8a2 2 0 0 1 4 0v4'/%3E%3Cpath d='M16 12V9a2 2 0 0 1 4 0v7a6 6 0 0 1-6 6h-1.5a6 6 0 0 1-4.9-2.55l-2.2-3.1a2 2 0 0 1 3.2-2.4L11 16'/%3E%3C/g%3E%3C/svg%3E") 16 16, grabbing;
@@ -2631,14 +2857,84 @@ defineExpose({
 
 .toolbar {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.toolbar-row {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  min-width: 0;
+}
+
+.toolbar-main {
+  flex-wrap: wrap;
+}
+
+.toolbar-secondary {
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px solid #eef2f7;
+}
+
+.spacer {
+  flex: 1;
 }
 
 .hint {
   font-size: 12px;
   color: #909399;
+  white-space: nowrap;
+}
+
+.tool-icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vertical-align: -2px;
+}
+
+.icon-group :deep(.el-button) {
+  padding-left: 7px;
+  padding-right: 7px;
+}
+
+.node-tools :deep(.el-radio-button__inner) {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.node-dot-mini {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.connect-hint {
+  font-size: 12px;
+  color: #a06a1f;
+  background: #fdf6ec;
+  border: 1px solid #f3d19e;
+  border-radius: 4px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.search-input {
+  width: 140px;
+}
+
+.popover-divider {
+  height: 1px;
+  background: #eef2f7;
+  margin: 2px 0;
 }
 
 .popover-list {
@@ -2664,10 +2960,10 @@ defineExpose({
 
 .workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 260px;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) 250px;
+  gap: 10px;
   flex: 1;
-  min-height: 540px;
+  min-height: 0;
 }
 
 .canvas-wrap {
@@ -2676,7 +2972,16 @@ defineExpose({
   border-radius: 8px;
   overflow: hidden;
   background: #fbfdff;
-  min-height: 540px;
+  min-height: 0;
+}
+
+.canvas-wrap.is-maximized {
+  position: fixed;
+  inset: 0;
+  z-index: 2600;
+  border: none;
+  border-radius: 0;
+  background: #fbfdff;
 }
 
 .canvas-wrap:fullscreen {
@@ -2796,20 +3101,86 @@ defineExpose({
   pointer-events: none;
 }
 
+.task-count {
+  fill: #ffffff;
+  stroke: #e6a23c;
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.task-count-text {
+  font-size: 10px;
+  font-weight: 600;
+  fill: #a06a1f;
+  pointer-events: none;
+}
+
+.search-ring {
+  fill: rgba(230, 162, 60, 0.15);
+  stroke: #e6a23c;
+  stroke-width: 2;
+  stroke-dasharray: 3 2;
+}
+
+.search-hit-edge {
+  stroke: rgba(230, 162, 60, 0.5);
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
 .map-legend {
   position: absolute;
   left: 12px;
   bottom: 38px;
-  background: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.94);
   border: 1px solid #e4e9f0;
   border-radius: 8px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 11px;
   color: #606266;
-  pointer-events: none;
+  pointer-events: auto;
+}
+
+.legend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 2px;
+  font-weight: 600;
+  color: #1f3b73;
+}
+
+.legend-head button {
+  border: none;
+  background: transparent;
+  color: #8fa3bd;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.overlay-toggle {
+  position: absolute;
+  left: 12px;
+  bottom: 38px;
+  border: 1px solid #e4e9f0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #5c7392;
+  font-size: 11px;
+  line-height: 1;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.overlay-toggle:hover {
+  color: #1f3b73;
+  border-color: #b6cbe8;
 }
 
 .legend-row {
@@ -2899,12 +3270,35 @@ defineExpose({
 .minimap {
   position: absolute;
   right: 12px;
-  top: 12px;
+  top: 44px;
   border: 1px solid #dbe4ef;
   border-radius: 6px;
   overflow: hidden;
   background: #f7fbff;
   cursor: var(--map-cursor-grab);
+}
+
+.minimap-collapse {
+  position: absolute;
+  right: 4px;
+  top: 4px;
+  z-index: 2;
+  width: 18px;
+  height: 18px;
+  line-height: 1;
+  border: 1px solid #dbe4ef;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #5c7392;
+  cursor: pointer;
+  padding: 0;
+}
+
+.minimap-toggle {
+  top: 44px;
+  right: 12px;
+  left: auto;
+  bottom: auto;
 }
 
 .minimap.is-dragging {
@@ -2921,7 +3315,7 @@ defineExpose({
 .fullscreen-btn {
   position: absolute;
   right: 12px;
-  top: 136px;
+  top: 12px;
 }
 
 .side {
@@ -2934,7 +3328,60 @@ defineExpose({
   inset: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.side-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  background: #eef2f7;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.side-tabs button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: #5c7392;
+  font-size: 12px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.side-tabs button:hover {
+  color: #1f3b73;
+}
+
+.side-tabs button.active {
+  background: #fff;
+  color: #1f3b73;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(31, 59, 115, 0.12);
+}
+
+.tab-count {
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.side-pane {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
@@ -3004,6 +3451,27 @@ defineExpose({
 .muted {
   font-size: 12px;
   color: #909399;
+}
+
+@media (max-width: 1600px) {
+  .pan-buttons {
+    display: none;
+  }
+}
+
+@media (max-width: 1400px) {
+  .hint {
+    display: none;
+  }
+
+  .search-input {
+    width: 110px;
+  }
+
+  .toolbar-secondary :deep(.el-button) {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
 }
 
 .map-tooltip {
