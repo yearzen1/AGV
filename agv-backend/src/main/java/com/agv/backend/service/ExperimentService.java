@@ -131,8 +131,9 @@ public class ExperimentService {
     /**
      * 用实验输入快照重跑一次，并比较四项指标。
      * 回放会新增一条实验记录，原记录保持不变。
+     * <p>
+     * 不加事务：仿真可能跑很久，不应在整个计算期间占用数据库连接。
      */
-    @Transactional
     public ExperimentReplayResult replay(Long id) {
         Experiment original = experimentRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(4040, "实验不存在：" + id));
