@@ -5,11 +5,11 @@ import com.agv.backend.dto.TaskSetPayload;
 import com.agv.backend.entity.SysDict;
 import com.agv.backend.entity.SysUser;
 import com.agv.backend.entity.TaskSet;
-import com.agv.backend.entity.WarehouseMap;
+import com.agv.backend.entity.RoadNetEntity;
 import com.agv.backend.repository.SysDictRepository;
 import com.agv.backend.repository.SysUserRepository;
 import com.agv.backend.repository.TaskSetRepository;
-import com.agv.backend.repository.WarehouseMapRepository;
+import com.agv.backend.repository.RoadNetRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -28,13 +28,13 @@ public class DataInitializer implements CommandLineRunner {
 
     private final SysUserRepository userRepository;
     private final SysDictRepository dictRepository;
-    private final WarehouseMapRepository mapRepository;
+    private final RoadNetRepository mapRepository;
     private final TaskSetRepository taskSetRepository;
     private final PasswordEncoder passwordEncoder;
     private final ObjectMapper objectMapper;
 
     public DataInitializer(SysUserRepository userRepository, SysDictRepository dictRepository,
-                           WarehouseMapRepository mapRepository, TaskSetRepository taskSetRepository,
+                           RoadNetRepository mapRepository, TaskSetRepository taskSetRepository,
                            PasswordEncoder passwordEncoder, ObjectMapper objectMapper) {
         this.userRepository = userRepository;
         this.dictRepository = dictRepository;
@@ -95,7 +95,7 @@ public class DataInitializer implements CommandLineRunner {
 
     /** 模板按名称幂等更新：已有库也会同步到最新的标准布局。 */
     private void upsertTemplate(String name, String json) {
-        for (WarehouseMap map : mapRepository.findAllByOrderByIdAsc()) {
+        for (RoadNetEntity map : mapRepository.findAllByOrderByIdAsc()) {
             if (name.equals(map.getName()) && Boolean.TRUE.equals(map.getIsTemplate())) {
                 if (!json.equals(map.getRoadnetJson())) {
                     map.setRoadnetJson(json);
@@ -109,8 +109,8 @@ public class DataInitializer implements CommandLineRunner {
         log.info("初始化预置模板 {}", name);
     }
 
-    private WarehouseMap template(String name, String json) {
-        WarehouseMap map = new WarehouseMap();
+    private RoadNetEntity template(String name, String json) {
+        RoadNetEntity map = new RoadNetEntity();
         map.setName(name);
         map.setRoadnetJson(json);
         map.setIsTemplate(true);
@@ -139,13 +139,13 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private Long standardWorkshopId() {
-        for (WarehouseMap map : mapRepository.findAllByOrderByIdAsc()) {
+        for (RoadNetEntity map : mapRepository.findAllByOrderByIdAsc()) {
             if ("标准车间（双充电位）".equals(map.getName()) && Boolean.TRUE.equals(map.getIsTemplate())) {
                 return map.getId();
             }
         }
         return mapRepository.findAllByOrderByIdAsc().stream()
-                .map(WarehouseMap::getId)
+                .map(RoadNetEntity::getId)
                 .findFirst()
                 .orElse(null);
     }
@@ -178,3 +178,4 @@ public class DataInitializer implements CommandLineRunner {
         }
     }
 }
+

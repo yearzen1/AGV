@@ -7,9 +7,9 @@ import com.agv.backend.dto.TaskDto;
 import com.agv.backend.dto.TaskSetPayload;
 import com.agv.backend.dto.TaskSetSummary;
 import com.agv.backend.entity.TaskSet;
-import com.agv.backend.entity.WarehouseMap;
+import com.agv.backend.entity.RoadNetEntity;
 import com.agv.backend.repository.TaskSetRepository;
-import com.agv.backend.repository.WarehouseMapRepository;
+import com.agv.backend.repository.RoadNetRepository;
 import com.agv.backend.security.CurrentUser;
 import com.agv.backend.support.TaskSetValidator;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -28,13 +28,13 @@ import java.util.Set;
 public class TaskSetService {
 
     private final TaskSetRepository repository;
-    private final WarehouseMapRepository mapRepository;
+    private final RoadNetRepository mapRepository;
     private final RoadNetService roadNetService;
     private final TaskSetValidator validator;
     private final ObjectMapper objectMapper;
     private final CurrentUser currentUser;
 
-    public TaskSetService(TaskSetRepository repository, WarehouseMapRepository mapRepository,
+    public TaskSetService(TaskSetRepository repository, RoadNetRepository mapRepository,
                           RoadNetService roadNetService, TaskSetValidator validator,
                           ObjectMapper objectMapper, CurrentUser currentUser) {
         this.repository = repository;
@@ -51,7 +51,7 @@ public class TaskSetService {
                 ? repository.findAllByOrderByIdDesc()
                 : repository.findByMapIdOrderByIdDesc(mapId);
         Map<Long, String> mapNames = new HashMap<>();
-        for (WarehouseMap map : mapRepository.findAll()) {
+        for (RoadNetEntity map : mapRepository.findAll()) {
             mapNames.put(map.getId(), map.getName());
         }
         List<TaskSetSummary> result = new ArrayList<>();
@@ -110,7 +110,7 @@ public class TaskSetService {
         if (mapId == null) {
             return null;
         }
-        return mapRepository.findById(mapId).map(WarehouseMap::getName).orElse(null);
+        return mapRepository.findById(mapId).map(RoadNetEntity::getName).orElse(null);
     }
 
     /** 校验并补齐任务编号，保证 id 从 1 连续。 */
@@ -153,3 +153,4 @@ public class TaskSetService {
         }
     }
 }
+

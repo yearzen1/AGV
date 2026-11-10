@@ -11,11 +11,14 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * 车间路网。整张图存为一个 roadnet_json，不按节点/边拆表。
+ * 路网的持久化实体。整张图存为一个 roadnet_json，不按节点/边拆表。
+ * <p>
+ * 领域模型是 {@code com.agv.algorithm.model.RoadNet}；本类只负责存储。
+ * 表名保留 {@code warehouse_map}，迁移计划见 docs/how-to/统一领域命名.md。
  */
 @Entity
 @Table(name = "warehouse_map")
-public class WarehouseMap {
+public class RoadNetEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -86,3 +89,4 @@ public class WarehouseMap {
         this.createTime = createTime;
     }
 }
+

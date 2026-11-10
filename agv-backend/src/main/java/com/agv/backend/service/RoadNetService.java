@@ -16,9 +16,9 @@ import com.agv.backend.dto.RoadNetPayload;
 import com.agv.backend.dto.RoadNetSummary;
 import com.agv.backend.dto.SaveRoadNetRequest;
 import com.agv.backend.entity.SysUser;
-import com.agv.backend.entity.WarehouseMap;
+import com.agv.backend.entity.RoadNetEntity;
 import com.agv.backend.repository.TaskSetRepository;
-import com.agv.backend.repository.WarehouseMapRepository;
+import com.agv.backend.repository.RoadNetRepository;
 import com.agv.backend.security.CurrentUser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,12 +34,12 @@ import java.util.List;
 @Service
 public class RoadNetService {
 
-    private final WarehouseMapRepository mapRepository;
+    private final RoadNetRepository mapRepository;
     private final TaskSetRepository taskSetRepository;
     private final ObjectMapper objectMapper;
     private final CurrentUser currentUser;
 
-    public RoadNetService(WarehouseMapRepository mapRepository, TaskSetRepository taskSetRepository,
+    public RoadNetService(RoadNetRepository mapRepository, TaskSetRepository taskSetRepository,
                           ObjectMapper objectMapper, CurrentUser currentUser) {
         this.mapRepository = mapRepository;
         this.taskSetRepository = taskSetRepository;
@@ -50,7 +50,7 @@ public class RoadNetService {
     @Transactional(readOnly = true)
     public List<RoadNetSummary> list() {
         List<RoadNetSummary> result = new ArrayList<>();
-        for (WarehouseMap map : mapRepository.findAllByOrderByIdAsc()) {
+        for (RoadNetEntity map : mapRepository.findAllByOrderByIdAsc()) {
             RoadNetPayload payload = readPayload(map.getRoadnetJson());
             result.add(new RoadNetSummary(map.getId(), map.getName(), map.getIsTemplate(),
                     map.getCreateUser(), map.getCreateTime(),
@@ -68,12 +68,12 @@ public class RoadNetService {
     public RoadNetSummary create(SaveRoadNetRequest request) {
         validateOrThrow(request.roadnet());
         SysUser user = currentUser.get();
-        WarehouseMap map = new WarehouseMap();
+        RoadNetEntity map = new RoadNetEntity();
         map.setName(request.name());
         map.setRoadnetJson(writePayload(request.roadnet()));
         map.setIsTemplate(Boolean.TRUE.equals(request.isTemplate()));
         map.setCreateUser(user.getId());
-        WarehouseMap saved = mapRepository.save(map);
+        RoadNetEntity saved = mapRepository.save(map);
         return new RoadNetSummary(saved.getId(), saved.getName(), saved.getIsTemplate(),
                 saved.getCreateUser(), saved.getCreateTime(),
                 request.roadnet().nodes().size(), request.roadnet().edges().size());
@@ -81,7 +81,7 @@ public class RoadNetService {
 
     @Transactional
     public RoadNetSummary update(Long id, SaveRoadNetRequest request) {
-        WarehouseMap map = requireMap(id);
+        RoadNetEntity map = requireMap(id);
         checkWritable(map);
         validateOrThrow(request.roadnet());
         map.setName(request.name());
@@ -89,7 +89,7 @@ public class RoadNetService {
         if (request.isTemplate() != null) {
             map.setIsTemplate(request.isTemplate());
         }
-        WarehouseMap saved = mapRepository.save(map);
+        RoadNetEntity saved = mapRepository.save(map);
         return new RoadNetSummary(saved.getId(), saved.getName(), saved.getIsTemplate(),
                 saved.getCreateUser(), saved.getCreateTime(),
                 request.roadnet().nodes().size(), request.roadnet().edges().size());
@@ -97,7 +97,7 @@ public class RoadNetService {
 
     @Transactional
     public void delete(Long id) {
-        WarehouseMap map = requireMap(id);
+        RoadNetEntity map = requireMap(id);
         checkWritable(map);
         long references = taskSetRepository.countByMapId(id);
         if (references > 0) {
@@ -175,13 +175,13 @@ public class RoadNetService {
         return "DUAL".equalsIgnoreCase(laneMode) ? LaneMode.DUAL : LaneMode.SINGLE;
     }
 
-    private WarehouseMap requireMap(Long id) {
+    private RoadNetEntity requireMap(Long id) {
         return mapRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(4040, "路网不存在：" + id));
     }
 
     /** 预置模板默认只读，管理员除外。 */
-    private void checkWritable(WarehouseMap map) {
+    private void checkWritable(RoadNetEntity map) {
         if (Boolean.TRUE.equals(map.getIsTemplate())
                 && !SysUser.ROLE_ADMIN.equals(currentUser.get().getRole())) {
             throw new BusinessException(4030, "预置模板不可直接修改，请另存为副本");
@@ -204,3 +204,4 @@ public class RoadNetService {
         }
     }
 }
+
