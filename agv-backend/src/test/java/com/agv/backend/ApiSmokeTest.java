@@ -2,6 +2,10 @@ package com.agv.backend;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.agv.backend.repository.ExperimentMetricRepository;
+import com.agv.backend.repository.ExperimentRepository;
+import com.agv.backend.service.SimulationService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +32,23 @@ class ApiSmokeTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private ExperimentRepository experimentRepository;
+
+    @Autowired
+    private ExperimentMetricRepository metricRepository;
+
+    @Autowired
+    private SimulationService simulationService;
+
+    /** 同一上下文里的测试共享 H2；每个用例前清空实验，避免历史记录条数互相影响。 */
+    @BeforeEach
+    void resetSimulationState() {
+        simulationService.reset();
+        metricRepository.deleteAll();
+        experimentRepository.deleteAll();
+    }
+
     @Test
     @DisplayName("登录拿到 JWT 后可读路网列表，且预置模板已初始化")
     void loginThenListTemplates() throws Exception {
@@ -48,13 +69,78 @@ class ApiSmokeTest {
     }
 
     @Test
-    @DisplayName("密码错误：返回业务错误码 4012")
+    @DisplayName("密码错误：返回业务错误码 4012，HTTP 401")
     void wrongPasswordRejected() throws Exception {
         mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"username\":\"admin\",\"password\":\"bad-password\"}"))
-                .andExpect(status().isBadRequest())
+                .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(4012));
+    }
+
+    @Test
+    @DisplayName("资源不存在：业务码 4040 对应 HTTP 404，而不是 400")
+    void missingResourceReturns404() throws Exception {
+        String token = login("admin", "admin123");
+
+        mockMvc.perform(get("/api/roadnet/999999").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(4040));
+    }
+
+    @Test
+    @DisplayName("请求体不是合法 JSON：返回 4000 / 400")
+    void malformedBodyReturns400() throws Exception {
+        String token = login("admin", "admin123");
+
+        mockMvc.perform(post("/api/roadnet")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4000));
+    }
+
+    @Test
+    @DisplayName("AGV 数量超过上限：参数校验拦截")
+    void agvCountAboveLimitRejected() throws Exception {
+        String token = login("admin", "admin123");
+
+        mockMvc.perform(post("/api/sim/start")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"roadnetId":1,"taskSetId":1,"algorithm":"nearest","agvCount":999}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4000));
+    }
+
+    @Test
+    @DisplayName("未知调度算法：参数校验拦截")
+    void unknownAlgorithmRejected() throws Exception {
+        String token = login("admin", "admin123");
+
+        mockMvc.perform(post("/api/experiment/run")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"roadnetId":1,"taskSetId":1,"algorithm":"bogus","agvCount":3}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4000));
+    }
+
+    @Test
+    @DisplayName("速度倍率不是有限数：拒绝而不是让调度器空转")
+    void nonFiniteSpeedRejected() throws Exception {
+        String token = login("admin", "admin123");
+
+        mockMvc.perform(post("/api/sim/speed")
+                        .header("Authorization", "Bearer " + token)
+                        .param("value", "NaN"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4000));
     }
 
     @Test

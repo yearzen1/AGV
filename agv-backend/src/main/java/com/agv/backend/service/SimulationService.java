@@ -137,6 +137,9 @@ public class SimulationService {
 
     public Map<String, Object> setSpeed(double value) {
         synchronized (lock) {
+            if (!Double.isFinite(value)) {
+                throw new BusinessException(4000, "速度倍率必须是有限数值");
+            }
             speed = Math.max(0.25, Math.min(8.0, value));
             if (scheduler != null && !scheduler.isShutdown() && engine != null && !engine.finished()) {
                 if (loop != null) {

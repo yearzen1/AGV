@@ -7,6 +7,10 @@ spring:
 server:
   port: 8080
 
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{traceId:-}] %logger{36} - %msg%n"
+
 agv:
   jwt:
     secret: ${AGV_JWT_SECRET:agv-sim-secret-key-change-me-in-production-2026-11}
