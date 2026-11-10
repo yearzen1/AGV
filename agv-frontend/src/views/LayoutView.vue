@@ -24,6 +24,7 @@ const menus = computed(() => {
 })
 
 const currentTitle = computed(() => (route.meta.title as string) || '')
+const currentSubtitle = computed(() => (route.meta.subtitle as string) || '')
 
 function logout() {
   auth.logout()
@@ -45,7 +46,10 @@ function logout() {
 
     <el-container>
       <el-header class="header">
-        <div class="header-title">{{ currentTitle }}</div>
+        <div class="header-title">
+          {{ currentTitle }}
+          <span v-if="currentSubtitle" class="header-subtitle">{{ currentSubtitle }}</span>
+        </div>
         <div class="header-right">
           <el-tag size="small" :type="auth.isAdmin ? 'danger' : 'success'">
             {{ auth.isAdmin ? '管理员' : '调度人员' }}
@@ -114,6 +118,15 @@ function logout() {
 .header-title {
   font-size: 16px;
   font-weight: 600;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.header-subtitle {
+  font-size: 12px;
+  font-weight: 400;
+  color: #909399;
 }
 
 .header-right {

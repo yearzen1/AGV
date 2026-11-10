@@ -25,7 +25,7 @@ const router = createRouter({
           path: 'roadnet',
           name: 'roadnet',
           component: () => import('@/views/RoadNetView.vue'),
-          meta: { title: '车间地图' }
+          meta: { title: '车间地图', subtitle: '路网编辑' }
         },
         {
           path: 'tasks',
