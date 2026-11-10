@@ -92,6 +92,21 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 - 路网校验失败返回 `code = 4001`，`data` 是带 `nodeId` / `edgeId` 的错误明细，前端据此标红。
 - 不存在的路径返回 HTTP 404 与 `{ "code": 4040, "message": "接口不存在：<path>" }`，不会返回 500，也不会把异常堆栈暴露给调用方。
 - 任务集接口是 `/api/taskset`，不是 `/api/task-set`。
+- 任务集必须绑定一个路网。任务的起点与终点只能是该路网的**工位**（`WORKSTATION`），保存时校验节点存在、类型正确、起终点不同且 A* 可达；仿真与对比实验启动前会再次校验，避免旧数据或改图后残留的非法任务进入引擎。新建或修改任务集的载荷：
+
+  ```json
+  {
+    "name": "演示任务集",
+    "mapId": 1,
+    "taskSet": {
+      "tasks": [
+        { "id": 1, "from": "W1", "to": "W2" }
+      ]
+    }
+  }
+  ```
+
+  删除仍被任务集引用的路网会被拒绝，需先删除任务集或把它改绑到其他路网。操作步骤见 [docs/how-to/维护任务集.md](docs/how-to/维护任务集.md)。
 
 ### 错误码
 
@@ -118,6 +133,11 @@ DELETE /api/roadnet/{id}        删除
 POST   /api/roadnet/import      导入 JSON
 GET    /api/roadnet/{id}/export 导出 JSON
 POST   /api/roadnet/validate    仅校验不落库
+GET    /api/taskset/list        任务集列表（可选 mapId 过滤）
+GET    /api/taskset/{id}        任务集详情
+POST   /api/taskset             新建任务集
+PUT    /api/taskset/{id}        保存任务集
+DELETE /api/taskset/{id}        删除任务集
 GET    /api/dict/{dictType}     下拉字典（algorithm / metric）
 GET    /api/admin/users         用户管理（仅管理员）
 GET    /api/admin/dict          字典管理（仅管理员）
@@ -186,4 +206,5 @@ mvn test
 - `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区
 - `RoadNetValidatorTest`：8 条校验规则
 - `ApiSmokeTest`：登录、401/403、路网校验拦截、模板校验
+- `TaskSetValidationTest`：任务集绑定路网、工位校验、跨图启动拦截、删除保护
 - `SimSocketHandlerTest`：WebSocket 连接、echo 与广播
