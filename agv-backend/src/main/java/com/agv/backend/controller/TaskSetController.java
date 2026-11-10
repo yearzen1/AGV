@@ -29,8 +29,8 @@ public class TaskSetController {
     }
 
     @GetMapping("/list")
-    public ApiResponse<List<TaskSetSummary>> list(@RequestParam(required = false) Long mapId) {
-        return ApiResponse.ok(taskSetService.list(mapId));
+    public ApiResponse<List<TaskSetSummary>> list(@RequestParam(required = false) Long roadnetId) {
+        return ApiResponse.ok(taskSetService.list(roadnetId));
     }
 
     @GetMapping("/{id}")

@@ -29,12 +29,12 @@ const editingId = ref<number | null>(null)
 const mapLoading = ref(false)
 const dialogRoadnet = ref<RoadNetPayload | null>(null)
 const invalidTaskId = ref<number | null>(null)
-const form = reactive<{ name: string; mapId: number | null; tasks: TaskDto[] }>({
+const form = reactive<{ name: string; roadnetId: number | null; tasks: TaskDto[] }>({
   name: '',
-  mapId: null,
+  roadnetId: null,
   tasks: []
 })
-let lastMapId: number | null = null
+let lastRoadnetId: number | null = null
 
 const pickerVisible = ref(false)
 const pickerIndex = ref<number | null>(null)
@@ -66,12 +66,12 @@ async function load() {
   }
 }
 
-async function loadDialogMap(mapId: number | null) {
+async function loadDialogMap(roadnetId: number | null) {
   dialogRoadnet.value = null
-  if (!mapId) return
+  if (!roadnetId) return
   mapLoading.value = true
   try {
-    dialogRoadnet.value = await getRoadNet(mapId)
+    dialogRoadnet.value = await getRoadNet(roadnetId)
   } catch (error: any) {
     ElMessage.error(error.message || '加载路网失败')
   } finally {
@@ -92,9 +92,9 @@ async function openCreate() {
   editingId.value = null
   invalidTaskId.value = null
   form.name = '新任务集'
-  form.mapId = maps.value[0].id
-  lastMapId = form.mapId
-  await loadDialogMap(form.mapId)
+  form.roadnetId = maps.value[0].id
+  lastRoadnetId = form.roadnetId
+  await loadDialogMap(form.roadnetId)
   form.tasks = defaultTasks()
   dialogVisible.value = true
 }
@@ -105,9 +105,9 @@ async function openEdit(row: TaskSetSummary) {
     editingId.value = row.id
     invalidTaskId.value = null
     form.name = row.name
-    form.mapId = row.mapId ?? maps.value[0]?.id ?? null
-    lastMapId = form.mapId
-    await loadDialogMap(form.mapId)
+    form.roadnetId = row.roadnetId ?? maps.value[0]?.id ?? null
+    lastRoadnetId = form.roadnetId
+    await loadDialogMap(form.roadnetId)
     form.tasks = payload.tasks.map((task) => ({ ...task }))
     dialogVisible.value = true
   } catch (error: any) {
@@ -115,7 +115,7 @@ async function openEdit(row: TaskSetSummary) {
   }
 }
 
-async function onMapChange(mapId: number) {
+async function onMapChange(roadnetId: number) {
   if (form.tasks.length > 0) {
     try {
       await ElMessageBox.confirm(
@@ -124,12 +124,12 @@ async function onMapChange(mapId: number) {
         { type: 'warning', confirmButtonText: '切换并清空', cancelButtonText: '取消' }
       )
     } catch {
-      form.mapId = lastMapId
+      form.roadnetId = lastRoadnetId
       return
     }
   }
-  lastMapId = mapId
-  await loadDialogMap(mapId)
+  lastRoadnetId = roadnetId
+  await loadDialogMap(roadnetId)
   form.tasks = defaultTasks()
   invalidTaskId.value = null
 }
@@ -194,7 +194,7 @@ async function submit() {
     ElMessage.warning('请填写任务集名称')
     return
   }
-  if (!form.mapId) {
+  if (!form.roadnetId) {
     ElMessage.warning('请选择所属路网')
     return
   }
@@ -212,7 +212,7 @@ async function submit() {
   }
   invalidTaskId.value = null
   try {
-    const payload = { name: form.name, mapId: form.mapId, taskSet: { tasks: form.tasks } }
+    const payload = { name: form.name, roadnetId: form.roadnetId, taskSet: { tasks: form.tasks } }
     if (editingId.value) {
       await updateTaskSet(editingId.value, payload)
       ElMessage.success('已保存')
@@ -258,7 +258,7 @@ onMounted(load)
         <el-table-column prop="name" label="名称" min-width="200" />
         <el-table-column label="所属路网" min-width="180">
           <template #default="{ row }">
-            <el-tag v-if="row.mapId" size="small">{{ row.mapName || `路网 ${row.mapId}` }}</el-tag>
+            <el-tag v-if="row.roadnetId" size="small">{{ row.roadnetName || `路网 ${row.roadnetId}` }}</el-tag>
             <el-tag v-else type="danger" size="small">未绑定</el-tag>
           </template>
         </el-table-column>
@@ -281,7 +281,7 @@ onMounted(load)
         </el-form-item>
         <el-form-item label="所属路网">
           <el-select
-            v-model="form.mapId"
+            v-model="form.roadnetId"
             :loading="mapLoading"
             placeholder="选择路网"
             style="width: 320px"

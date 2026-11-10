@@ -14,10 +14,10 @@ import { formatDateTime, formatMetric, taskSetLabel } from '@/utils/format'
 
 const maps = ref<RoadNetSummary[]>([])
 const taskSets = ref<TaskSetSummary[]>([])
-const selectedMapId = ref<number | null>(null)
+const selectedRoadnetId = ref<number | null>(null)
 const selectedTaskSetId = ref<number | null>(null)
 const mapTaskSets = computed(() =>
-  taskSets.value.filter((set) => set.mapId === selectedMapId.value)
+  taskSets.value.filter((set) => set.roadnetId === selectedRoadnetId.value)
 )
 const agvCount = ref(3)
 const seed = ref(20261107)
@@ -32,7 +32,7 @@ async function loadOptions() {
   try {
     maps.value = await listRoadNets()
     taskSets.value = await listTaskSets()
-    if (maps.value.length > 0) selectedMapId.value = maps.value[0].id
+    if (maps.value.length > 0) selectedRoadnetId.value = maps.value[0].id
     selectDefaultTaskSet()
     history.value = await experimentHistory()
   } catch (error: any) {
@@ -52,14 +52,14 @@ function onMapChange() {
 }
 
 async function runCompare() {
-  if (!selectedMapId.value || !selectedTaskSetId.value) {
+  if (!selectedRoadnetId.value || !selectedTaskSetId.value) {
     ElMessage.warning('请选择路网与任务集')
     return
   }
   running.value = true
   try {
     results.value = await compareExperiment({
-      mapId: selectedMapId.value,
+      roadnetId: selectedRoadnetId.value,
       taskSetId: selectedTaskSetId.value,
       agvCount: agvCount.value,
       seed: seed.value
@@ -145,7 +145,7 @@ onBeforeUnmount(() => {
 
     <div class="panel">
       <el-space wrap>
-        <el-select v-model="selectedMapId" style="width: 210px" @change="onMapChange">
+        <el-select v-model="selectedRoadnetId" style="width: 210px" @change="onMapChange">
           <el-option v-for="map in maps" :key="map.id" :label="map.name" :value="map.id" />
         </el-select>
         <el-select v-model="selectedTaskSetId" style="width: 200px">
@@ -156,7 +156,7 @@ onBeforeUnmount(() => {
             :value="set.id"
           />
         </el-select>
-        <span v-if="selectedMapId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
+        <span v-if="selectedRoadnetId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
         <span class="muted">AGV 数量</span>
         <el-input-number v-model="agvCount" :min="1" :max="12" style="width: 120px" />
         <span class="muted">随机种子</span>
@@ -198,7 +198,7 @@ onBeforeUnmount(() => {
       <el-table :data="history" size="small" empty-text="还没有实验记录">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="algorithmName" label="算法" width="120" />
-        <el-table-column prop="mapId" label="路网" width="80" />
+        <el-table-column prop="roadnetId" label="路网" width="80" />
         <el-table-column prop="taskSetId" label="任务集" width="90" />
         <el-table-column prop="agvCount" label="AGV" width="80" />
         <el-table-column prop="seed" label="种子" width="120" />

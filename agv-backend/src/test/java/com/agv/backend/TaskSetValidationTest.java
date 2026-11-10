@@ -57,13 +57,13 @@ class TaskSetValidationTest {
                         .content(taskSetBody("绑定测试", 1, "W1", "W2")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.mapId").value(1))
-                .andExpect(jsonPath("$.data.mapName").value("标准车间（双充电位）"))
+                .andExpect(jsonPath("$.data.roadnetId").value(1))
+                .andExpect(jsonPath("$.data.roadnetName").value("标准车间（双充电位）"))
                 .andExpect(jsonPath("$.data.taskCount").value(1));
     }
 
     @Test
-    @DisplayName("缺少 mapId：拒绝创建")
+    @DisplayName("缺少 roadnetId：拒绝创建")
     void rejectsTaskSetWithoutMapId() throws Exception {
         String token = login("dispatcher", "dispatcher123");
 
@@ -123,12 +123,12 @@ class TaskSetValidationTest {
     @DisplayName("单向环上反向不可达：拒绝创建")
     void rejectsUnreachableEndpoints() throws Exception {
         String token = login("dispatcher", "dispatcher123");
-        long mapId = createOneWayBranchMap(token);
+        long roadnetId = createOneWayBranchMap(token);
 
         mockMvc.perform(post("/api/taskset")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(taskSetBody("不可达", mapId, "W2", "W1")))
+                        .content(taskSetBody("不可达", roadnetId, "W2", "W1")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4000))
                 .andExpect(jsonPath("$.message").value("任务 1：W2 → W1 不可达"));
@@ -144,7 +144,7 @@ class TaskSetValidationTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"mapId":2,"taskSetId":%d,"algorithm":"nearest","agvCount":3,"seed":20261107}
+                                {"roadnetId":2,"taskSetId":%d,"algorithm":"nearest","agvCount":3,"seed":20261107}
                                 """.formatted(taskSetId)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4000))
@@ -156,10 +156,10 @@ class TaskSetValidationTest {
     @DisplayName("删除仍被任务集引用的路网：拒绝删除")
     void rejectsDeletingReferencedMap() throws Exception {
         String token = login("dispatcher", "dispatcher123");
-        long mapId = createOneWayBranchMap(token);
-        createTaskSet(token, "引用路网", mapId, "W1", "W2");
+        long roadnetId = createOneWayBranchMap(token);
+        createTaskSet(token, "引用路网", roadnetId, "W1", "W2");
 
-        mockMvc.perform(delete("/api/roadnet/" + mapId)
+        mockMvc.perform(delete("/api/roadnet/" + roadnetId)
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4000))
@@ -181,25 +181,25 @@ class TaskSetValidationTest {
         String token = login("dispatcher", "dispatcher123");
         mockMvc.perform(get("/api/taskset/list").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[?(@.name == '旧任务集')].mapId").value(1));
+                .andExpect(jsonPath("$.data[?(@.name == '旧任务集')].roadnetId").value(1));
     }
 
-    private String taskSetBody(String name, long mapId, String from, String to) {
+    private String taskSetBody(String name, long roadnetId, String from, String to) {
         return """
                 {
                   "name": "%s",
-                  "mapId": %d,
+                  "roadnetId": %d,
                   "taskSet": {"tasks": [{"id": 1, "from": "%s", "to": "%s"}]}
                 }
-                """.formatted(name, mapId, from, to);
+                """.formatted(name, roadnetId, from, to);
     }
 
-    private long createTaskSet(String token, String name, long mapId, String from, String to)
+    private long createTaskSet(String token, String name, long roadnetId, String from, String to)
             throws Exception {
         String response = mockMvc.perform(post("/api/taskset")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(taskSetBody(name, mapId, from, to)))
+                        .content(taskSetBody(name, roadnetId, from, to)))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
         return objectMapper.readTree(response).path("data").path("id").asLong();

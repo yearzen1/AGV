@@ -123,7 +123,7 @@ class ApiSmokeTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"mapId":1,"taskSetId":1,"agvCount":3,"seed":20261107}
+                                {"roadnetId":1,"taskSetId":1,"agvCount":3,"seed":20261107}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(2))
@@ -142,7 +142,7 @@ class ApiSmokeTest {
     void interruptedSimulationIsMarkedAborted() throws Exception {
         String token = login("admin", "admin123");
         String startBody = """
-                {"mapId":1,"taskSetId":1,"algorithm":"nearest","agvCount":3,"seed":20261107}
+                {"roadnetId":1,"taskSetId":1,"algorithm":"nearest","agvCount":3,"seed":20261107}
                 """;
 
         mockMvc.perform(post("/api/sim/start")

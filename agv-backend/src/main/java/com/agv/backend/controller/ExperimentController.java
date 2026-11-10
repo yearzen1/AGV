@@ -41,7 +41,7 @@ public class ExperimentController {
     }
 
     @GetMapping("/by-map")
-    public ApiResponse<List<ExperimentReport>> byMap(@RequestParam Long mapId, @RequestParam Long taskSetId) {
-        return ApiResponse.ok(experimentService.byMapAndTaskSet(mapId, taskSetId));
+    public ApiResponse<List<ExperimentReport>> byMap(@RequestParam Long roadnetId, @RequestParam Long taskSetId) {
+        return ApiResponse.ok(experimentService.byMapAndTaskSet(roadnetId, taskSetId));
     }
 }

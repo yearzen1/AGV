@@ -21,7 +21,7 @@ public class Experiment {
     private Long id;
 
     @Column(name = "map_id", nullable = false)
-    private Long mapId;
+    private Long roadnetId;
 
     @Column(name = "task_set_id", nullable = false)
     private Long taskSetId;
@@ -55,12 +55,12 @@ public class Experiment {
         this.id = id;
     }
 
-    public Long getMapId() {
-        return mapId;
+    public Long getRoadnetId() {
+        return roadnetId;
     }
 
-    public void setMapId(Long mapId) {
-        this.mapId = mapId;
+    public void setRoadnetId(Long roadnetId) {
+        this.roadnetId = roadnetId;
     }
 
     public Long getTaskSetId() {

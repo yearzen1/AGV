@@ -122,20 +122,20 @@ public class DataInitializer implements CommandLineRunner {
      * 旧版本任务集没有 map_id。启动时统一绑到标准车间，避免升级后列表显示「未绑定」。
      */
     private void bindOrphanTaskSets() {
-        java.util.List<TaskSet> orphans = taskSetRepository.findByMapIdIsNull();
+        java.util.List<TaskSet> orphans = taskSetRepository.findByRoadnetIdIsNull();
         if (orphans.isEmpty()) {
             return;
         }
-        Long mapId = standardWorkshopId();
-        if (mapId == null) {
+        Long roadnetId = standardWorkshopId();
+        if (roadnetId == null) {
             log.warn("没有可用的路网，{} 个旧任务集暂时无法绑定", orphans.size());
             return;
         }
         for (TaskSet set : orphans) {
-            set.setMapId(mapId);
+            set.setRoadnetId(roadnetId);
         }
         taskSetRepository.saveAll(orphans);
-        log.info("已将 {} 个旧任务集绑定到路网 {}", orphans.size(), mapId);
+        log.info("已将 {} 个旧任务集绑定到路网 {}", orphans.size(), roadnetId);
     }
 
     private Long standardWorkshopId() {
@@ -168,7 +168,7 @@ public class DataInitializer implements CommandLineRunner {
         try {
             TaskSet set = new TaskSet();
             set.setName("演示任务集（20 单）");
-            set.setMapId(standardWorkshopId());
+            set.setRoadnetId(standardWorkshopId());
             set.setTasksJson(objectMapper.writeValueAsString(new TaskSetPayload(tasks)));
             set.setCreateUser(null);
             taskSetRepository.save(set);
@@ -178,4 +178,3 @@ public class DataInitializer implements CommandLineRunner {
         }
     }
 }
-

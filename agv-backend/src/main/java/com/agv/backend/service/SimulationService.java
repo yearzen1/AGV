@@ -59,7 +59,7 @@ public class SimulationService {
     private volatile String status = "IDLE";
 
     private Long experimentId;
-    private Long mapId;
+    private Long roadnetId;
     private Long taskSetId;
     private String algorithm;
     private Integer agvCount;
@@ -82,9 +82,9 @@ public class SimulationService {
         synchronized (lock) {
             stopInternal();
             abortExperiment("ABORTED");
-            RoadNet net = roadNetService.toModel(roadNetService.detail(request.mapId()));
+            RoadNet net = roadNetService.toModel(roadNetService.detail(request.roadnetId()));
             TaskSet taskSet = taskSetService.require(request.taskSetId());
-            requireMatchingMap(taskSet, request.mapId());
+            requireMatchingMap(taskSet, request.roadnetId());
             TaskSetPayload payload = taskSetService.detail(request.taskSetId());
             taskSetValidator.validateOrThrow(net, payload.tasks());
             List<Task> tasks = toTasks(payload);
@@ -97,7 +97,7 @@ public class SimulationService {
                 throw new BusinessException(4004, "无法启动仿真：" + ex.getMessage());
             }
 
-            mapId = request.mapId();
+            roadnetId = request.roadnetId();
             taskSetId = request.taskSetId();
             algorithm = request.algorithm();
             agvCount = count;
@@ -228,7 +228,7 @@ public class SimulationService {
 
     private Experiment persistExperiment(String state) {
         Experiment experiment = new Experiment();
-        experiment.setMapId(mapId);
+        experiment.setRoadnetId(roadnetId);
         experiment.setTaskSetId(taskSetId);
         experiment.setAlgorithm(algorithm);
         experiment.setAgvCount(agvCount);
@@ -283,11 +283,11 @@ public class SimulationService {
                 .toList();
     }
 
-    private void requireMatchingMap(TaskSet taskSet, Long mapId) {
-        if (taskSet.getMapId() == null) {
+    private void requireMatchingMap(TaskSet taskSet, Long roadnetId) {
+        if (taskSet.getRoadnetId() == null) {
             throw new BusinessException("任务集「" + taskSet.getName() + "」未绑定路网，请先编辑");
         }
-        if (!taskSet.getMapId().equals(mapId)) {
+        if (!taskSet.getRoadnetId().equals(roadnetId)) {
             throw new BusinessException("任务集「" + taskSet.getName() + "」绑定的路网与所选路网不一致");
         }
     }
@@ -322,7 +322,7 @@ public class SimulationService {
         payload.put("paused", paused);
         payload.put("speed", speed);
         payload.put("experimentId", experimentId);
-        payload.put("mapId", mapId);
+        payload.put("roadnetId", roadnetId);
         payload.put("taskSetId", taskSetId);
         payload.put("algorithm", algorithm);
         payload.put("agvCount", agvCount);

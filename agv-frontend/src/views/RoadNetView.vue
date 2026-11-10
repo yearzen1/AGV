@@ -39,7 +39,7 @@ const selectedTaskSetId = ref<number | null>(null)
 const showTaskOverlay = ref(false)
 const overlayTasks = ref<TaskDto[]>([])
 const mapTaskSets = computed(() =>
-  taskSets.value.filter((set) => set.mapId === currentId.value)
+  taskSets.value.filter((set) => set.roadnetId === currentId.value)
 )
 
 const preview3DVisible = ref(false)

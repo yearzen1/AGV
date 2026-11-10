@@ -26,7 +26,7 @@ public class TaskSet {
 
     /** 绑定的路网。节点编号只在单张路网内唯一，任务集不能跨图复用。 */
     @Column(name = "map_id")
-    private Long mapId;
+    private Long roadnetId;
 
     @Lob
     @Column(name = "tasks_json", nullable = false)
@@ -54,12 +54,12 @@ public class TaskSet {
         this.name = name;
     }
 
-    public Long getMapId() {
-        return mapId;
+    public Long getRoadnetId() {
+        return roadnetId;
     }
 
-    public void setMapId(Long mapId) {
-        this.mapId = mapId;
+    public void setRoadnetId(Long roadnetId) {
+        this.roadnetId = roadnetId;
     }
 
     public String getTasksJson() {

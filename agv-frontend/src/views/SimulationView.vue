@@ -24,14 +24,14 @@ const maps = ref<RoadNetSummary[]>([])
 const taskSets = ref<TaskSetSummary[]>([])
 const algorithms = ref<{ dictCode: string; dictValue: string }[]>([])
 
-const selectedMapId = ref<number | null>(null)
+const selectedRoadnetId = ref<number | null>(null)
 const selectedTaskSetId = ref<number | null>(null)
 const algorithm = ref('nearest')
 const agvCount = ref(3)
 const seed = ref(20261107)
 
 const mapTaskSets = computed(() =>
-  taskSets.value.filter((set) => set.mapId === selectedMapId.value)
+  taskSets.value.filter((set) => set.roadnetId === selectedRoadnetId.value)
 )
 
 const roadnet = ref<RoadNetPayload | null>(null)
@@ -97,7 +97,7 @@ async function loadOptions() {
     taskSets.value = await listTaskSets()
     algorithms.value = await listDict('algorithm')
     if (maps.value.length > 0) {
-      selectedMapId.value = maps.value[0].id
+      selectedRoadnetId.value = maps.value[0].id
       await loadRoadNet(maps.value[0].id)
       selectDefaultTaskSet()
     }
@@ -190,9 +190,9 @@ async function syncStatus() {
     speed.value = current.speed
     tick.value = current.tick
     metrics.value = current.metrics
-    if (current.mapId) {
-      selectedMapId.value = current.mapId
-      await loadRoadNet(current.mapId)
+    if (current.roadnetId) {
+      selectedRoadnetId.value = current.roadnetId
+      await loadRoadNet(current.roadnetId)
     }
     if (current.taskSetId) selectedTaskSetId.value = current.taskSetId
     selectDefaultTaskSet()
@@ -205,14 +205,14 @@ async function syncStatus() {
 }
 
 async function start() {
-  if (!selectedMapId.value || !selectedTaskSetId.value) {
+  if (!selectedRoadnetId.value || !selectedTaskSetId.value) {
     ElMessage.warning('请先选择路网与任务集')
     return
   }
   connectSocket()
   try {
     const result = await startSim({
-      mapId: selectedMapId.value,
+      roadnetId: selectedRoadnetId.value,
       taskSetId: selectedTaskSetId.value,
       algorithm: algorithm.value,
       agvCount: agvCount.value,
@@ -318,7 +318,7 @@ onMounted(async () => {
 <template>
   <div class="sim-page">
     <div class="toolbar panel">
-      <el-select v-model="selectedMapId" style="width: 200px" placeholder="路网" @change="onMapChange">
+      <el-select v-model="selectedRoadnetId" style="width: 200px" placeholder="路网" @change="onMapChange">
         <el-option v-for="map in maps" :key="map.id" :label="map.name" :value="map.id" />
       </el-select>
       <el-select v-model="selectedTaskSetId" style="width: 190px" placeholder="任务集">
@@ -329,7 +329,7 @@ onMounted(async () => {
           :value="set.id"
         />
       </el-select>
-      <span v-if="selectedMapId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
+      <span v-if="selectedRoadnetId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
       <el-select v-model="algorithm" style="width: 150px">
         <el-option v-for="item in algorithms" :key="item.dictCode" :label="item.dictValue" :value="item.dictCode" />
       </el-select>

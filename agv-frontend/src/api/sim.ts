@@ -43,7 +43,7 @@ export interface SimStatus {
   paused: boolean
   speed: number
   experimentId: number | null
-  mapId: number | null
+  roadnetId: number | null
   taskSetId: number | null
   algorithm: string | null
   agvCount: number | null
@@ -53,7 +53,7 @@ export interface SimStatus {
 }
 
 export function startSim(payload: {
-  mapId: number
+  roadnetId: number
   taskSetId: number
   algorithm: string
   agvCount: number
@@ -91,16 +91,16 @@ export interface TaskDto {
 export interface TaskSetSummary {
   id: number
   name: string
-  mapId: number | null
-  mapName: string | null
+  roadnetId: number | null
+  roadnetName: string | null
   taskCount: number
   createUser: number | null
   createTime: string
 }
 
-export function listTaskSets(mapId?: number) {
+export function listTaskSets(roadnetId?: number) {
   return http.get<any, TaskSetSummary[]>('/taskset/list', {
-    params: mapId === undefined ? undefined : { mapId }
+    params: roadnetId === undefined ? undefined : { roadnetId }
   })
 }
 
@@ -108,13 +108,13 @@ export function getTaskSet(id: number) {
   return http.get<any, { tasks: TaskDto[] }>(`/taskset/${id}`)
 }
 
-export function createTaskSet(payload: { name: string; mapId: number; taskSet: { tasks: TaskDto[] } }) {
+export function createTaskSet(payload: { name: string; roadnetId: number; taskSet: { tasks: TaskDto[] } }) {
   return http.post<any, TaskSetSummary>('/taskset', payload)
 }
 
 export function updateTaskSet(
   id: number,
-  payload: { name: string; mapId: number; taskSet: { tasks: TaskDto[] } }
+  payload: { name: string; roadnetId: number; taskSet: { tasks: TaskDto[] } }
 ) {
   return http.put<any, TaskSetSummary>(`/taskset/${id}`, payload)
 }
@@ -125,7 +125,7 @@ export function deleteTaskSet(id: number) {
 
 export interface ExperimentReport {
   id: number
-  mapId: number
+  roadnetId: number
   taskSetId: number
   algorithm: string
   algorithmName: string
@@ -140,7 +140,7 @@ export interface ExperimentReport {
 }
 
 export function runExperiment(payload: {
-  mapId: number
+  roadnetId: number
   taskSetId: number
   algorithm?: string
   agvCount: number
@@ -150,7 +150,7 @@ export function runExperiment(payload: {
 }
 
 export function compareExperiment(payload: {
-  mapId: number
+  roadnetId: number
   taskSetId: number
   agvCount: number
   seed?: number

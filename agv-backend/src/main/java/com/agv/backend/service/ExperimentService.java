@@ -59,14 +59,14 @@ public class ExperimentService {
                 : List.of(request.algorithm());
 
         TaskSet taskSet = taskSetService.require(request.taskSetId());
-        if (taskSet.getMapId() == null) {
+        if (taskSet.getRoadnetId() == null) {
             throw new BusinessException("任务集「" + taskSet.getName() + "」未绑定路网，请先编辑");
         }
-        if (!taskSet.getMapId().equals(request.mapId())) {
+        if (!taskSet.getRoadnetId().equals(request.roadnetId())) {
             throw new BusinessException("任务集「" + taskSet.getName() + "」绑定的路网与所选路网不一致");
         }
 
-        RoadNet net = roadNetService.toModel(roadNetService.detail(request.mapId()));
+        RoadNet net = roadNetService.toModel(roadNetService.detail(request.roadnetId()));
         TaskSetPayload payload = taskSetService.detail(request.taskSetId());
         taskSetValidator.validateOrThrow(net, payload.tasks());
         List<Task> tasks = payload.tasks().stream()
@@ -94,7 +94,7 @@ public class ExperimentService {
         }
 
         Experiment experiment = new Experiment();
-        experiment.setMapId(request.mapId());
+        experiment.setRoadnetId(request.roadnetId());
         experiment.setTaskSetId(request.taskSetId());
         experiment.setAlgorithm(algorithm);
         experiment.setAgvCount(agvCount);
@@ -124,9 +124,9 @@ public class ExperimentService {
     }
 
     @Transactional(readOnly = true)
-    public List<ExperimentReport> byMapAndTaskSet(Long mapId, Long taskSetId) {
+    public List<ExperimentReport> byMapAndTaskSet(Long roadnetId, Long taskSetId) {
         List<ExperimentReport> reports = new ArrayList<>();
-        for (Experiment experiment : experimentRepository.findByMapIdAndTaskSetIdOrderByIdDesc(mapId, taskSetId)) {
+        for (Experiment experiment : experimentRepository.findByRoadnetIdAndTaskSetIdOrderByIdDesc(roadnetId, taskSetId)) {
             reports.add(toReport(experiment, metricRepository.findByExperimentId(experiment.getId())));
         }
         return reports;
@@ -134,7 +134,7 @@ public class ExperimentService {
 
     private ExperimentReport toReport(Experiment experiment, Optional<ExperimentMetric> metric) {
         ExperimentMetric m = metric.orElse(null);
-        return new ExperimentReport(experiment.getId(), experiment.getMapId(), experiment.getTaskSetId(),
+        return new ExperimentReport(experiment.getId(), experiment.getRoadnetId(), experiment.getTaskSetId(),
                 experiment.getAlgorithm(),
                 ALGORITHM_NAMES.getOrDefault(experiment.getAlgorithm(), experiment.getAlgorithm()),
                 experiment.getAgvCount(), experiment.getSeed(), experiment.getStatus(),

@@ -99,7 +99,7 @@ public class RoadNetService {
     public void delete(Long id) {
         RoadNetEntity map = requireMap(id);
         checkWritable(map);
-        long references = taskSetRepository.countByMapId(id);
+        long references = taskSetRepository.countByRoadnetId(id);
         if (references > 0) {
             throw new BusinessException("该路网被 " + references + " 个任务集使用，请先删除或改绑");
         }
@@ -204,4 +204,3 @@ public class RoadNetService {
         }
     }
 }
-

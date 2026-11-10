@@ -11,9 +11,9 @@ public interface TaskSetRepository extends JpaRepository<TaskSet, Long> {
 
     List<TaskSet> findByCreateUserOrderByIdDesc(Long createUser);
 
-    List<TaskSet> findByMapIdOrderByIdDesc(Long mapId);
+    List<TaskSet> findByRoadnetIdOrderByIdDesc(Long roadnetId);
 
-    List<TaskSet> findByMapIdIsNull();
+    List<TaskSet> findByRoadnetIdIsNull();
 
-    long countByMapId(Long mapId);
+    long countByRoadnetId(Long roadnetId);
 }

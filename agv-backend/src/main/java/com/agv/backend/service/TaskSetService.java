@@ -46,10 +46,10 @@ public class TaskSetService {
     }
 
     @Transactional(readOnly = true)
-    public List<TaskSetSummary> list(Long mapId) {
-        List<TaskSet> sets = mapId == null
+    public List<TaskSetSummary> list(Long roadnetId) {
+        List<TaskSet> sets = roadnetId == null
                 ? repository.findAllByOrderByIdDesc()
-                : repository.findByMapIdOrderByIdDesc(mapId);
+                : repository.findByRoadnetIdOrderByIdDesc(roadnetId);
         Map<Long, String> mapNames = new HashMap<>();
         for (RoadNetEntity map : mapRepository.findAll()) {
             mapNames.put(map.getId(), map.getName());
@@ -57,7 +57,7 @@ public class TaskSetService {
         List<TaskSetSummary> result = new ArrayList<>();
         for (TaskSet set : sets) {
             TaskSetPayload payload = readPayload(set.getTasksJson());
-            result.add(summary(set, mapNames.get(set.getMapId()), payload.tasks().size()));
+            result.add(summary(set, mapNames.get(set.getRoadnetId()), payload.tasks().size()));
         }
         return result;
     }
@@ -69,25 +69,25 @@ public class TaskSetService {
 
     @Transactional
     public TaskSetSummary create(SaveTaskSetRequest request) {
-        TaskSetPayload payload = normalize(request.mapId(), request.taskSet());
+        TaskSetPayload payload = normalize(request.roadnetId(), request.taskSet());
         TaskSet set = new TaskSet();
         set.setName(request.name());
-        set.setMapId(request.mapId());
+        set.setRoadnetId(request.roadnetId());
         set.setTasksJson(writePayload(payload));
         set.setCreateUser(currentUser.id());
         TaskSet saved = repository.save(set);
-        return summary(saved, mapName(saved.getMapId()), payload.tasks().size());
+        return summary(saved, roadnetName(saved.getRoadnetId()), payload.tasks().size());
     }
 
     @Transactional
     public TaskSetSummary update(Long id, SaveTaskSetRequest request) {
         TaskSet set = require(id);
-        TaskSetPayload payload = normalize(request.mapId(), request.taskSet());
+        TaskSetPayload payload = normalize(request.roadnetId(), request.taskSet());
         set.setName(request.name());
-        set.setMapId(request.mapId());
+        set.setRoadnetId(request.roadnetId());
         set.setTasksJson(writePayload(payload));
         TaskSet saved = repository.save(set);
-        return summary(saved, mapName(saved.getMapId()), payload.tasks().size());
+        return summary(saved, roadnetName(saved.getRoadnetId()), payload.tasks().size());
     }
 
     @Transactional
@@ -101,20 +101,20 @@ public class TaskSetService {
                 .orElseThrow(() -> new BusinessException(4040, "任务集不存在：" + id));
     }
 
-    private TaskSetSummary summary(TaskSet set, String mapName, int taskCount) {
-        return new TaskSetSummary(set.getId(), set.getName(), set.getMapId(), mapName, taskCount,
+    private TaskSetSummary summary(TaskSet set, String roadnetName, int taskCount) {
+        return new TaskSetSummary(set.getId(), set.getName(), set.getRoadnetId(), roadnetName, taskCount,
                 set.getCreateUser(), set.getCreateTime());
     }
 
-    private String mapName(Long mapId) {
-        if (mapId == null) {
+    private String roadnetName(Long roadnetId) {
+        if (roadnetId == null) {
             return null;
         }
-        return mapRepository.findById(mapId).map(RoadNetEntity::getName).orElse(null);
+        return mapRepository.findById(roadnetId).map(RoadNetEntity::getName).orElse(null);
     }
 
     /** 校验并补齐任务编号，保证 id 从 1 连续。 */
-    private TaskSetPayload normalize(Long mapId, TaskSetPayload payload) {
+    private TaskSetPayload normalize(Long roadnetId, TaskSetPayload payload) {
         if (payload.tasks().isEmpty()) {
             throw new BusinessException("任务集至少需要一条任务");
         }
@@ -132,7 +132,7 @@ public class TaskSetService {
         }
         normalized.sort((a, b) -> Integer.compare(a.id(), b.id()));
 
-        RoadNet net = roadNetService.toModel(roadNetService.detail(mapId));
+        RoadNet net = roadNetService.toModel(roadNetService.detail(roadnetId));
         validator.validateOrThrow(net, normalized);
         return new TaskSetPayload(normalized);
     }
@@ -153,4 +153,3 @@ public class TaskSetService {
         }
     }
 }
-
