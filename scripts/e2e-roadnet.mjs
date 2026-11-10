@@ -129,6 +129,8 @@ async function main() {
     await page.waitForFunction(() => document.querySelectorAll('circle.node-dot').length > 0, null, {
       timeout: 15000
     })
+    const subtitle = await page.locator('.header-subtitle').textContent().catch(() => null)
+    assert(subtitle?.trim() === '路网编辑', '页头显示「路网编辑」副标题')
 
     console.log('检查布局与悬浮层')
     let metrics = await page.evaluate(() => {
@@ -335,5 +337,3 @@ main().catch((error) => {
   console.error(error)
   process.exitCode = 1
 })
-
-
