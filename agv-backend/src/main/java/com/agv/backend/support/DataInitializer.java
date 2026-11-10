@@ -50,6 +50,7 @@ public class DataInitializer implements CommandLineRunner {
         seedDicts();
         seedTemplates();
         seedTaskSet();
+        bindOrphanTaskSets();
     }
 
     private void seedUsers() {
@@ -117,6 +118,38 @@ public class DataInitializer implements CommandLineRunner {
         return map;
     }
 
+    /**
+     * 旧版本任务集没有 map_id。启动时统一绑到标准车间，避免升级后列表显示「未绑定」。
+     */
+    private void bindOrphanTaskSets() {
+        java.util.List<TaskSet> orphans = taskSetRepository.findByMapIdIsNull();
+        if (orphans.isEmpty()) {
+            return;
+        }
+        Long mapId = standardWorkshopId();
+        if (mapId == null) {
+            log.warn("没有可用的路网，{} 个旧任务集暂时无法绑定", orphans.size());
+            return;
+        }
+        for (TaskSet set : orphans) {
+            set.setMapId(mapId);
+        }
+        taskSetRepository.saveAll(orphans);
+        log.info("已将 {} 个旧任务集绑定到路网 {}", orphans.size(), mapId);
+    }
+
+    private Long standardWorkshopId() {
+        for (WarehouseMap map : mapRepository.findAllByOrderByIdAsc()) {
+            if ("标准车间（双充电位）".equals(map.getName()) && Boolean.TRUE.equals(map.getIsTemplate())) {
+                return map.getId();
+            }
+        }
+        return mapRepository.findAllByOrderByIdAsc().stream()
+                .map(WarehouseMap::getId)
+                .findFirst()
+                .orElse(null);
+    }
+
     /** 演示任务集：20 单在三个工位之间循环，覆盖空驶、会车与等待冲突。 */
     private void seedTaskSet() {
         if (taskSetRepository.count() > 0) {
@@ -135,6 +168,7 @@ public class DataInitializer implements CommandLineRunner {
         try {
             TaskSet set = new TaskSet();
             set.setName("演示任务集（20 单）");
+            set.setMapId(standardWorkshopId());
             set.setTasksJson(objectMapper.writeValueAsString(new TaskSetPayload(tasks)));
             set.setCreateUser(null);
             taskSetRepository.save(set);

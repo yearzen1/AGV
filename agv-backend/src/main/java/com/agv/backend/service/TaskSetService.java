@@ -1,43 +1,63 @@
 package com.agv.backend.service;
 
+import com.agv.algorithm.model.RoadNet;
 import com.agv.backend.common.BusinessException;
 import com.agv.backend.dto.SaveTaskSetRequest;
 import com.agv.backend.dto.TaskDto;
 import com.agv.backend.dto.TaskSetPayload;
 import com.agv.backend.dto.TaskSetSummary;
 import com.agv.backend.entity.TaskSet;
+import com.agv.backend.entity.WarehouseMap;
 import com.agv.backend.repository.TaskSetRepository;
+import com.agv.backend.repository.WarehouseMapRepository;
 import com.agv.backend.security.CurrentUser;
+import com.agv.backend.support.TaskSetValidator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Service
 public class TaskSetService {
 
     private final TaskSetRepository repository;
+    private final WarehouseMapRepository mapRepository;
+    private final RoadNetService roadNetService;
+    private final TaskSetValidator validator;
     private final ObjectMapper objectMapper;
     private final CurrentUser currentUser;
 
-    public TaskSetService(TaskSetRepository repository, ObjectMapper objectMapper, CurrentUser currentUser) {
+    public TaskSetService(TaskSetRepository repository, WarehouseMapRepository mapRepository,
+                          RoadNetService roadNetService, TaskSetValidator validator,
+                          ObjectMapper objectMapper, CurrentUser currentUser) {
         this.repository = repository;
+        this.mapRepository = mapRepository;
+        this.roadNetService = roadNetService;
+        this.validator = validator;
         this.objectMapper = objectMapper;
         this.currentUser = currentUser;
     }
 
     @Transactional(readOnly = true)
-    public List<TaskSetSummary> list() {
+    public List<TaskSetSummary> list(Long mapId) {
+        List<TaskSet> sets = mapId == null
+                ? repository.findAllByOrderByIdDesc()
+                : repository.findByMapIdOrderByIdDesc(mapId);
+        Map<Long, String> mapNames = new HashMap<>();
+        for (WarehouseMap map : mapRepository.findAll()) {
+            mapNames.put(map.getId(), map.getName());
+        }
         List<TaskSetSummary> result = new ArrayList<>();
-        for (TaskSet set : repository.findAllByOrderByIdDesc()) {
+        for (TaskSet set : sets) {
             TaskSetPayload payload = readPayload(set.getTasksJson());
-            result.add(new TaskSetSummary(set.getId(), set.getName(), payload.tasks().size(),
-                    set.getCreateUser(), set.getCreateTime()));
+            result.add(summary(set, mapNames.get(set.getMapId()), payload.tasks().size()));
         }
         return result;
     }
@@ -49,25 +69,25 @@ public class TaskSetService {
 
     @Transactional
     public TaskSetSummary create(SaveTaskSetRequest request) {
-        TaskSetPayload payload = normalize(request.taskSet());
+        TaskSetPayload payload = normalize(request.mapId(), request.taskSet());
         TaskSet set = new TaskSet();
         set.setName(request.name());
+        set.setMapId(request.mapId());
         set.setTasksJson(writePayload(payload));
         set.setCreateUser(currentUser.id());
         TaskSet saved = repository.save(set);
-        return new TaskSetSummary(saved.getId(), saved.getName(), payload.tasks().size(),
-                saved.getCreateUser(), saved.getCreateTime());
+        return summary(saved, mapName(saved.getMapId()), payload.tasks().size());
     }
 
     @Transactional
     public TaskSetSummary update(Long id, SaveTaskSetRequest request) {
         TaskSet set = require(id);
-        TaskSetPayload payload = normalize(request.taskSet());
+        TaskSetPayload payload = normalize(request.mapId(), request.taskSet());
         set.setName(request.name());
+        set.setMapId(request.mapId());
         set.setTasksJson(writePayload(payload));
         TaskSet saved = repository.save(set);
-        return new TaskSetSummary(saved.getId(), saved.getName(), payload.tasks().size(),
-                saved.getCreateUser(), saved.getCreateTime());
+        return summary(saved, mapName(saved.getMapId()), payload.tasks().size());
     }
 
     @Transactional
@@ -81,8 +101,20 @@ public class TaskSetService {
                 .orElseThrow(() -> new BusinessException(4040, "任务集不存在：" + id));
     }
 
+    private TaskSetSummary summary(TaskSet set, String mapName, int taskCount) {
+        return new TaskSetSummary(set.getId(), set.getName(), set.getMapId(), mapName, taskCount,
+                set.getCreateUser(), set.getCreateTime());
+    }
+
+    private String mapName(Long mapId) {
+        if (mapId == null) {
+            return null;
+        }
+        return mapRepository.findById(mapId).map(WarehouseMap::getName).orElse(null);
+    }
+
     /** 校验并补齐任务编号，保证 id 从 1 连续。 */
-    private TaskSetPayload normalize(TaskSetPayload payload) {
+    private TaskSetPayload normalize(Long mapId, TaskSetPayload payload) {
         if (payload.tasks().isEmpty()) {
             throw new BusinessException("任务集至少需要一条任务");
         }
@@ -99,6 +131,9 @@ public class TaskSetService {
             normalized.add(new TaskDto(id, dto.from(), dto.to()));
         }
         normalized.sort((a, b) -> Integer.compare(a.id(), b.id()));
+
+        RoadNet net = roadNetService.toModel(roadNetService.detail(mapId));
+        validator.validateOrThrow(net, normalized);
         return new TaskSetPayload(normalized);
     }
 

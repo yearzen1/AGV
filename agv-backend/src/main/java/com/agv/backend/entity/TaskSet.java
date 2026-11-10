@@ -24,6 +24,10 @@ public class TaskSet {
     @Column(nullable = false, length = 128)
     private String name;
 
+    /** 绑定的路网。节点编号只在单张路网内唯一，任务集不能跨图复用。 */
+    @Column(name = "map_id")
+    private Long mapId;
+
     @Lob
     @Column(name = "tasks_json", nullable = false)
     private String tasksJson;
@@ -48,6 +52,14 @@ public class TaskSet {
 
     public void setName(String name) {
         this.name = name;
+    }
+
+    public Long getMapId() {
+        return mapId;
+    }
+
+    public void setMapId(Long mapId) {
+        this.mapId = mapId;
     }
 
     public String getTasksJson() {

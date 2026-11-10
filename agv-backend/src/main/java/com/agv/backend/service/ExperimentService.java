@@ -8,11 +8,14 @@ import com.agv.algorithm.sim.Task;
 import com.agv.backend.common.BusinessException;
 import com.agv.backend.dto.ExperimentReport;
 import com.agv.backend.dto.ExperimentRequest;
+import com.agv.backend.dto.TaskSetPayload;
 import com.agv.backend.entity.Experiment;
 import com.agv.backend.entity.ExperimentMetric;
+import com.agv.backend.entity.TaskSet;
 import com.agv.backend.repository.ExperimentMetricRepository;
 import com.agv.backend.repository.ExperimentRepository;
 import com.agv.backend.security.CurrentUser;
+import com.agv.backend.support.TaskSetValidator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,15 +36,17 @@ public class ExperimentService {
 
     private final RoadNetService roadNetService;
     private final TaskSetService taskSetService;
+    private final TaskSetValidator taskSetValidator;
     private final ExperimentRepository experimentRepository;
     private final ExperimentMetricRepository metricRepository;
     private final CurrentUser currentUser;
 
     public ExperimentService(RoadNetService roadNetService, TaskSetService taskSetService,
-                             ExperimentRepository experimentRepository,
+                             TaskSetValidator taskSetValidator, ExperimentRepository experimentRepository,
                              ExperimentMetricRepository metricRepository, CurrentUser currentUser) {
         this.roadNetService = roadNetService;
         this.taskSetService = taskSetService;
+        this.taskSetValidator = taskSetValidator;
         this.experimentRepository = experimentRepository;
         this.metricRepository = metricRepository;
         this.currentUser = currentUser;
@@ -53,8 +58,18 @@ public class ExperimentService {
                 ? List.of("nearest", "greedy-eta")
                 : List.of(request.algorithm());
 
+        TaskSet taskSet = taskSetService.require(request.taskSetId());
+        if (taskSet.getMapId() == null) {
+            throw new BusinessException("任务集「" + taskSet.getName() + "」未绑定路网，请先编辑");
+        }
+        if (!taskSet.getMapId().equals(request.mapId())) {
+            throw new BusinessException("任务集「" + taskSet.getName() + "」绑定的路网与所选路网不一致");
+        }
+
         RoadNet net = roadNetService.toModel(roadNetService.detail(request.mapId()));
-        List<Task> tasks = taskSetService.detail(request.taskSetId()).tasks().stream()
+        TaskSetPayload payload = taskSetService.detail(request.taskSetId());
+        taskSetValidator.validateOrThrow(net, payload.tasks());
+        List<Task> tasks = payload.tasks().stream()
                 .map(dto -> new Task(dto.id() == null ? 0 : dto.id(), dto.from(), dto.to()))
                 .toList();
         int agvCount = request.agvCount() == null ? 3 : request.agvCount();

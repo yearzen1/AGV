@@ -17,6 +17,7 @@ import com.agv.backend.dto.RoadNetSummary;
 import com.agv.backend.dto.SaveRoadNetRequest;
 import com.agv.backend.entity.SysUser;
 import com.agv.backend.entity.WarehouseMap;
+import com.agv.backend.repository.TaskSetRepository;
 import com.agv.backend.repository.WarehouseMapRepository;
 import com.agv.backend.security.CurrentUser;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -34,11 +35,14 @@ import java.util.List;
 public class RoadNetService {
 
     private final WarehouseMapRepository mapRepository;
+    private final TaskSetRepository taskSetRepository;
     private final ObjectMapper objectMapper;
     private final CurrentUser currentUser;
 
-    public RoadNetService(WarehouseMapRepository mapRepository, ObjectMapper objectMapper, CurrentUser currentUser) {
+    public RoadNetService(WarehouseMapRepository mapRepository, TaskSetRepository taskSetRepository,
+                          ObjectMapper objectMapper, CurrentUser currentUser) {
         this.mapRepository = mapRepository;
+        this.taskSetRepository = taskSetRepository;
         this.objectMapper = objectMapper;
         this.currentUser = currentUser;
     }
@@ -95,6 +99,10 @@ public class RoadNetService {
     public void delete(Long id) {
         WarehouseMap map = requireMap(id);
         checkWritable(map);
+        long references = taskSetRepository.countByMapId(id);
+        if (references > 0) {
+            throw new BusinessException("该路网被 " + references + " 个任务集使用，请先删除或改绑");
+        }
         mapRepository.delete(map);
     }
 

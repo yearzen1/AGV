@@ -10,4 +10,10 @@ public interface TaskSetRepository extends JpaRepository<TaskSet, Long> {
     List<TaskSet> findAllByOrderByIdDesc();
 
     List<TaskSet> findByCreateUserOrderByIdDesc(Long createUser);
+
+    List<TaskSet> findByMapIdOrderByIdDesc(Long mapId);
+
+    List<TaskSet> findByMapIdIsNull();
+
+    long countByMapId(Long mapId);
 }

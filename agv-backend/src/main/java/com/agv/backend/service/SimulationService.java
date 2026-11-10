@@ -7,11 +7,14 @@ import com.agv.algorithm.sim.SimulationEngine;
 import com.agv.algorithm.sim.Task;
 import com.agv.backend.common.BusinessException;
 import com.agv.backend.dto.StartSimRequest;
+import com.agv.backend.dto.TaskSetPayload;
 import com.agv.backend.entity.Experiment;
 import com.agv.backend.entity.ExperimentMetric;
+import com.agv.backend.entity.TaskSet;
 import com.agv.backend.repository.ExperimentMetricRepository;
 import com.agv.backend.repository.ExperimentRepository;
 import com.agv.backend.security.CurrentUser;
+import com.agv.backend.support.TaskSetValidator;
 import com.agv.backend.ws.SimSocketHandler;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -39,6 +42,7 @@ public class SimulationService {
 
     private final RoadNetService roadNetService;
     private final TaskSetService taskSetService;
+    private final TaskSetValidator taskSetValidator;
     private final SimSocketHandler socketHandler;
     private final ExperimentRepository experimentRepository;
     private final ExperimentMetricRepository metricRepository;
@@ -62,10 +66,12 @@ public class SimulationService {
     private Long seed;
 
     public SimulationService(RoadNetService roadNetService, TaskSetService taskSetService,
-                             SimSocketHandler socketHandler, ExperimentRepository experimentRepository,
+                             TaskSetValidator taskSetValidator, SimSocketHandler socketHandler,
+                             ExperimentRepository experimentRepository,
                              ExperimentMetricRepository metricRepository, CurrentUser currentUser) {
         this.roadNetService = roadNetService;
         this.taskSetService = taskSetService;
+        this.taskSetValidator = taskSetValidator;
         this.socketHandler = socketHandler;
         this.experimentRepository = experimentRepository;
         this.metricRepository = metricRepository;
@@ -77,7 +83,11 @@ public class SimulationService {
             stopInternal();
             abortExperiment("ABORTED");
             RoadNet net = roadNetService.toModel(roadNetService.detail(request.mapId()));
-            List<Task> tasks = loadTasks(request.taskSetId());
+            TaskSet taskSet = taskSetService.require(request.taskSetId());
+            requireMatchingMap(taskSet, request.mapId());
+            TaskSetPayload payload = taskSetService.detail(request.taskSetId());
+            taskSetValidator.validateOrThrow(net, payload.tasks());
+            List<Task> tasks = toTasks(payload);
             long actualSeed = request.seed() == null ? System.currentTimeMillis() : request.seed();
             int count = request.agvCount() == null ? 3 : request.agvCount();
 
@@ -267,10 +277,19 @@ public class SimulationService {
         }
     }
 
-    private List<Task> loadTasks(Long id) {
-        return taskSetService.detail(id).tasks().stream()
+    private List<Task> toTasks(TaskSetPayload payload) {
+        return payload.tasks().stream()
                 .map(dto -> new Task(dto.id() == null ? 0 : dto.id(), dto.from(), dto.to()))
                 .toList();
+    }
+
+    private void requireMatchingMap(TaskSet taskSet, Long mapId) {
+        if (taskSet.getMapId() == null) {
+            throw new BusinessException("任务集「" + taskSet.getName() + "」未绑定路网，请先编辑");
+        }
+        if (!taskSet.getMapId().equals(mapId)) {
+            throw new BusinessException("任务集「" + taskSet.getName() + "」绑定的路网与所选路网不一致");
+        }
     }
 
     private void stopScheduler() {
