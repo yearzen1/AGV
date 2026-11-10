@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 
 /**
- * 路网持久化仓储。对应表 {@code warehouse_map}，领域名是 RoadNet。
+ * 路网持久化仓储。对应表 {@code roadnet}，领域名是 RoadNet。
  */
 public interface RoadNetRepository extends JpaRepository<RoadNetEntity, Long> {
 
@@ -14,4 +14,3 @@ public interface RoadNetRepository extends JpaRepository<RoadNetEntity, Long> {
 
     List<RoadNetEntity> findByIsTemplateTrueOrderByIdAsc();
 }
-

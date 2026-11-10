@@ -119,7 +119,7 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     /**
-     * 旧版本任务集没有 map_id。启动时统一绑到标准车间，避免升级后列表显示「未绑定」。
+     * 旧版本任务集没有 roadnet_id。启动时统一绑到标准车间，避免升级后列表显示「未绑定」。
      */
     private void bindOrphanTaskSets() {
         java.util.List<TaskSet> orphans = taskSetRepository.findByRoadnetIdIsNull();

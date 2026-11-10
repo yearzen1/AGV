@@ -25,7 +25,7 @@ public class TaskSet {
     private String name;
 
     /** 绑定的路网。节点编号只在单张路网内唯一，任务集不能跨图复用。 */
-    @Column(name = "map_id")
+    @Column(name = "roadnet_id")
     private Long roadnetId;
 
     @Lob

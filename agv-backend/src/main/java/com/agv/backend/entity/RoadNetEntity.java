@@ -14,10 +14,10 @@ import java.time.LocalDateTime;
  * 路网的持久化实体。整张图存为一个 roadnet_json，不按节点/边拆表。
  * <p>
  * 领域模型是 {@code com.agv.algorithm.model.RoadNet}；本类只负责存储。
- * 表名保留 {@code warehouse_map}，迁移计划见 docs/how-to/统一领域命名.md。
+ * 表名与领域名一致，均为 {@code roadnet}。
  */
 @Entity
-@Table(name = "warehouse_map")
+@Table(name = "roadnet")
 public class RoadNetEntity {
 
     @Id
@@ -89,4 +89,3 @@ public class RoadNetEntity {
         this.createTime = createTime;
     }
 }
-

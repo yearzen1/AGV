@@ -20,7 +20,7 @@ public class Experiment {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "map_id", nullable = false)
+    @Column(name = "roadnet_id", nullable = false)
     private Long roadnetId;
 
     @Column(name = "task_set_id", nullable = false)
