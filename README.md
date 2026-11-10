@@ -272,5 +272,6 @@ npm run e2e:roadnet
 - `AuditLogTest`：动作记录、登录失败记录、管理员分页查询与权限拦截
 - `TaskSetValidationTest`：任务集绑定路网、工位校验、跨图启动拦截、删除保护
 - `SimSocketHandlerTest`：WebSocket 连接、echo、按用户路由与坏会话隔离
+- `JwtHandshakeInterceptorTest`：握手令牌校验与账号状态拦截
 - `MultiUserSimulationTest`：两个用户并发仿真互不干扰，暂停/重置只影响自己
 - `SimulationConcurrencyLimitTest`：并发上限拦截与 4290 错误码
