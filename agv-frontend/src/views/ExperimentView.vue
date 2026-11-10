@@ -7,6 +7,7 @@ import {
   compareExperiment,
   experimentHistory,
   listTaskSets,
+  replayExperiment,
   type ExperimentReport,
   type TaskSetSummary
 } from '@/api/sim'
@@ -24,6 +25,10 @@ const seed = ref(20261107)
 
 const results = ref<ExperimentReport[]>([])
 const history = ref<ExperimentReport[]>([])
+const historyTotal = ref(0)
+const historyPage = ref(0)
+const historySize = 10
+const replayingId = ref<number | null>(null)
 const running = ref(false)
 const chartRef = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -34,9 +39,39 @@ async function loadOptions() {
     taskSets.value = await listTaskSets()
     if (maps.value.length > 0) selectedRoadnetId.value = maps.value[0].id
     selectDefaultTaskSet()
-    history.value = await experimentHistory()
+    await loadHistory(0)
   } catch (error: any) {
     ElMessage.error(error.message || '加载参数失败')
+  }
+}
+
+async function loadHistory(page = historyPage.value) {
+  const data = await experimentHistory(page, historySize)
+  history.value = data.records
+  historyTotal.value = data.total
+  historyPage.value = data.page
+}
+
+function onHistoryPageChange(page: number) {
+  loadHistory(page - 1).catch((error: any) => {
+    ElMessage.error(error.message || '加载历史实验失败')
+  })
+}
+
+async function onReplay(row: ExperimentReport) {
+  replayingId.value = row.id
+  try {
+    const result = await replayExperiment(row.id)
+    if (result.consistent) {
+      ElMessage.success(`回放完成，四项指标与实验 #${row.id} 一致`)
+    } else {
+      ElMessage.warning(`回放完成，但指标与实验 #${row.id} 不一致，请检查输入快照`)
+    }
+    await loadHistory(0)
+  } catch (error: any) {
+    ElMessage.error(error.message || '回放失败')
+  } finally {
+    replayingId.value = null
   }
 }
 
@@ -64,7 +99,7 @@ async function runCompare() {
       agvCount: agvCount.value,
       seed: seed.value
     })
-    history.value = await experimentHistory()
+    await loadHistory(0)
     await nextTick()
     renderChart()
     ElMessage.success('对比实验完成')
@@ -217,7 +252,26 @@ onBeforeUnmount(() => {
           :formatter="(row: ExperimentReport) => formatMetric(row.conflictCount)" />
         <el-table-column prop="createTime" label="时间" min-width="170"
           :formatter="(row: ExperimentReport) => formatDateTime(row.createTime)" />
+        <el-table-column label="操作" width="90" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              link
+              type="primary"
+              :loading="replayingId === row.id"
+              @click="onReplay(row)"
+            >回放</el-button>
+          </template>
+        </el-table-column>
       </el-table>
+      <div style="display: flex; justify-content: flex-end; margin-top: 12px">
+        <el-pagination
+          layout="total, prev, pager, next"
+          :total="historyTotal"
+          :page-size="historySize"
+          :current-page="historyPage + 1"
+          @current-change="onHistoryPageChange"
+        />
+      </div>
     </div>
   </div>
 </template>

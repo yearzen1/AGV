@@ -220,7 +220,45 @@ class ApiSmokeTest {
 
         mockMvc.perform(get("/api/experiment/list").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(2));
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.records.length()").value(2));
+    }
+
+    @Test
+    @DisplayName("实验历史分页：total、page、size、records 与非法 size 校验")
+    void experimentHistoryIsPaginated() throws Exception {
+        String token = login("admin", "admin123");
+        String body = """
+                {"roadnetId":1,"taskSetId":1,"algorithm":"nearest","agvCount":3,"seed":20261107}
+                """;
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(post("/api/experiment/run")
+                            .header("Authorization", "Bearer " + token)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isOk());
+        }
+
+        mockMvc.perform(get("/api/experiment/list")
+                        .header("Authorization", "Bearer " + token)
+                        .param("page", "0").param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(3))
+                .andExpect(jsonPath("$.data.page").value(0))
+                .andExpect(jsonPath("$.data.size").value(2))
+                .andExpect(jsonPath("$.data.records.length()").value(2));
+
+        mockMvc.perform(get("/api/experiment/list")
+                        .header("Authorization", "Bearer " + token)
+                        .param("page", "1").param("size", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records.length()").value(1));
+
+        mockMvc.perform(get("/api/experiment/list")
+                        .header("Authorization", "Bearer " + token)
+                        .param("page", "0").param("size", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4000));
     }
 
     @Test
@@ -251,9 +289,9 @@ class ApiSmokeTest {
 
         mockMvc.perform(get("/api/experiment/list").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(2))
-                .andExpect(jsonPath("$.data[0].status").value("ABORTED"))
-                .andExpect(jsonPath("$.data[1].status").value("ABORTED"));
+                .andExpect(jsonPath("$.data.total").value(2))
+                .andExpect(jsonPath("$.data.records[0].status").value("ABORTED"))
+                .andExpect(jsonPath("$.data.records[1].status").value("ABORTED"));
     }
 
     @Test

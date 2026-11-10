@@ -9,6 +9,7 @@ import com.agv.backend.common.BusinessException;
 import com.agv.backend.dto.ExperimentReplayResult;
 import com.agv.backend.dto.ExperimentReport;
 import com.agv.backend.dto.ExperimentRequest;
+import com.agv.backend.dto.PageResponse;
 import com.agv.backend.dto.RoadNetPayload;
 import com.agv.backend.dto.TaskSetPayload;
 import com.agv.backend.entity.Experiment;
@@ -21,6 +22,8 @@ import com.agv.backend.security.CurrentUser;
 import com.agv.backend.support.TaskSetValidator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * 离线对比实验：同一路网、同一任务集、同一 seed 换算法重跑，指标入库。
@@ -202,12 +206,26 @@ public class ExperimentService {
     }
 
     @Transactional(readOnly = true)
-    public List<ExperimentReport> history() {
-        List<ExperimentReport> reports = new ArrayList<>();
-        for (Experiment experiment : experimentRepository.findByCreateUserOrderByIdDesc(currentUser.id())) {
-            reports.add(toReport(experiment, metricRepository.findByExperimentId(experiment.getId())));
+    public PageResponse<ExperimentReport> history(int page, int size) {
+        validatePaging(page, size);
+        Page<Experiment> pageData = experimentRepository.findByCreateUserOrderByIdDesc(
+                currentUser.id(), PageRequest.of(page, size));
+        List<Long> ids = pageData.getContent().stream().map(Experiment::getId).toList();
+        Map<Long, ExperimentMetric> metrics = ids.isEmpty()
+                ? Map.of()
+                : metricRepository.findByExperimentIdIn(ids).stream()
+                        .collect(Collectors.toMap(ExperimentMetric::getExperimentId, metric -> metric));
+        return PageResponse.of(pageData.map(experiment ->
+                toReport(experiment, Optional.ofNullable(metrics.get(experiment.getId())))));
+    }
+
+    private void validatePaging(int page, int size) {
+        if (page < 0) {
+            throw new BusinessException(4000, "page 不能小于 0");
         }
-        return reports;
+        if (size < 1 || size > 100) {
+            throw new BusinessException(4000, "size 必须在 1 到 100 之间");
+        }
     }
 
     @Transactional(readOnly = true)

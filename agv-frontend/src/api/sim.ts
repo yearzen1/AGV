@@ -139,6 +139,21 @@ export interface ExperimentReport {
   createTime: string
 }
 
+export interface PageResponse<T> {
+  total: number
+  page: number
+  size: number
+  records: T[]
+}
+
+export interface ExperimentReplayResult {
+  experimentId: number
+  replayId: number
+  consistent: boolean
+  original: ExperimentReport
+  replay: ExperimentReport
+}
+
 export function runExperiment(payload: {
   roadnetId: number
   taskSetId: number
@@ -158,6 +173,10 @@ export function compareExperiment(payload: {
   return http.post<any, ExperimentReport[]>('/experiment/compare', payload)
 }
 
-export function experimentHistory() {
-  return http.get<any, ExperimentReport[]>('/experiment/list')
+export function experimentHistory(page = 0, size = 10) {
+  return http.get<any, PageResponse<ExperimentReport>>('/experiment/list', { params: { page, size } })
+}
+
+export function replayExperiment(id: number) {
+  return http.post<any, ExperimentReplayResult>(`/experiment/${id}/replay`)
 }

@@ -4,6 +4,7 @@ import com.agv.backend.common.ApiResponse;
 import com.agv.backend.dto.ExperimentReplayResult;
 import com.agv.backend.dto.ExperimentReport;
 import com.agv.backend.dto.ExperimentRequest;
+import com.agv.backend.dto.PageResponse;
 import com.agv.backend.service.ExperimentService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,8 +39,10 @@ public class ExperimentController {
     }
 
     @GetMapping("/list")
-    public ApiResponse<List<ExperimentReport>> history() {
-        return ApiResponse.ok(experimentService.history());
+    public ApiResponse<PageResponse<ExperimentReport>> history(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.ok(experimentService.history(page, size));
     }
 
     @GetMapping("/by-map")
