@@ -75,9 +75,11 @@ cd agv-backend
 mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 ```
 
-建表由 Hibernate `ddl-auto=update` 自动完成，共 6 张表：
-`sys_user`、`sys_dict`、`roadnet`、`task_set`、`experiment`、`experiment_metric`。
+建表由 Flyway 迁移脚本管理（`agv-backend/src/main/resources/db/migration/`），共 7 张表：
+`sys_user`、`sys_dict`、`roadnet`、`task_set`、`experiment`、`experiment_metric`、`sys_audit_log`。
 （`sim_event` 为可选降级项，默认不建，事件只走 WebSocket。）
+
+升级已有数据库时 Flyway 会自动 `baseline`，不会清空数据；脚本只做增量变更。
 
 ## 部署与安全
 
@@ -97,8 +99,11 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 
 - 统一返回 `{ code, message, data }`，`code = 0` 表示成功。
 - 鉴权：`Authorization: Bearer <token>`，登录接口 `POST /api/auth/login`。
+- HTTP 状态由业务码决定：`code / 10` 是目标状态码（如 `4012 → 401`、`4040 → 404`、`4090 → 409`），没有对应状态时按 `400` 返回。
 - 路网校验失败返回 `code = 4001`，`data` 是带 `nodeId` / `edgeId` 的错误明细，前端据此标红。
 - 不存在的路径返回 HTTP 404 与 `{ "code": 4040, "message": "接口不存在：<path>" }`，不会返回 500，也不会把异常堆栈暴露给调用方。
+- 未预期的 500 只返回通用文案与请求编号（响应头 `X-Request-Id`），堆栈只写服务端日志。
+- 列表接口默认不强制分页；实验历史与审计日志使用 `page`（从 0 起）和 `size`（1–100，默认 20），返回 `{ total, page, size, records }`。
 - 任务集接口是 `/api/taskset`，不是 `/api/task-set`。
 - 任务集必须绑定一个路网。任务的起点与终点只能是该路网的**工位**（`WORKSTATION`），保存时校验节点存在、类型正确、起终点不同且 A* 可达；仿真与对比实验启动前会再次校验，避免旧数据或改图后残留的非法任务进入引擎。新建或修改任务集的载荷：
 
@@ -121,12 +126,15 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 | code | HTTP | 含义 |
 |---|---|---|
 | 0 | 200 | 成功 |
-| 4000 | 400 | 参数校验失败 |
+| 4000 | 400 | 参数校验失败（含请求体格式、参数类型错误） |
 | 4001 | 400 | 路网校验未通过，`data` 为逐条错误 |
 | 4010 | 401 | 未登录或令牌过期 |
+| 4011 | 401 | 账号已停用 |
+| 4012 | 401 | 用户名或密码错误 |
 | 4030 | 403 | 无权限 |
 | 4040 | 404 | 资源或接口不存在 |
-| 5000 | 500 | 服务器内部错误 |
+| 4090 | 409 | 数据冲突（唯一键或引用约束） |
+| 5000 | 500 | 服务器内部错误，消息附带请求编号 |
 
 主要端点：
 
@@ -147,10 +155,31 @@ POST   /api/taskset             新建任务集
 PUT    /api/taskset/{id}        保存任务集
 DELETE /api/taskset/{id}        删除任务集
 GET    /api/dict/{dictType}     下拉字典（algorithm / metric）
+POST   /api/experiment/{id}/replay  按实验输入快照重跑并比对指标
+GET    /api/experiment/list?page=0&size=20  实验历史（分页）
 GET    /api/admin/users         用户管理（仅管理员）
 GET    /api/admin/dict          字典管理（仅管理员）
+GET    /api/admin/audit?page=0&size=20  审计日志（仅管理员，分页）
 WS     /ws/sim                  仿真帧通道（推送帧与状态，支持 echo 自检）
 ```
+
+### 实验快照与回放
+
+实验创建时会把当时的整张路网和任务集 JSON 存入 `experiment.roadnet_snapshot` / `taskset_snapshot`。
+即使之后路网或任务集被编辑、删除，历史实验仍可用 `POST /api/experiment/{id}/replay` 按原输入重跑，
+并返回新旧两次的四项指标与 `consistent` 比对结果。
+
+- 回放只重跑输入、不重放逐帧画面；事件仍然只在 WebSocket 中推送。
+- 快照功能上线前的历史实验没有快照，回放返回 `code = 4005`。
+- 没有指标记录（`FAILED` / `ABORTED`）的实验不能回放，返回 `code = 4006`。
+
+细节见 [实验快照与回放](docs/reference/实验快照与回放.md)。
+
+### 审计日志
+
+登录、路网/任务集/用户变更、仿真启动与实验运行会写入 `sys_audit_log`。
+审计写入失败只记服务端警告，不影响业务操作。管理员用 `GET /api/admin/audit` 分页查询。
+动作清单与字段见 [审计日志](docs/reference/审计日志.md)。
 
 ### 实时推送（WebSocket）
 
@@ -222,6 +251,8 @@ npm run e2e:roadnet
 - `AStarPlannerTest`：直线路网、不可达、封锁绕行、转弯惩罚、与状态空间 Bellman-Ford 对拍
 - `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区
 - `RoadNetValidatorTest`：8 条校验规则
-- `ApiSmokeTest`：登录、401/403、路网校验拦截、模板校验
+- `ApiSmokeTest`：登录、401/403、路网校验拦截、模板校验、错误码映射、实验快照回放、审计查询
+- `ExperimentReplayTest`：同 seed 回放指标一致、缺快照与缺指标的回放拒绝
+- `AuditLogTest`：动作记录、登录失败记录、管理员分页查询与权限拦截
 - `TaskSetValidationTest`：任务集绑定路网、工位校验、跨图启动拦截、删除保护
 - `SimSocketHandlerTest`：WebSocket 连接、echo 与广播
