@@ -238,6 +238,8 @@ public class SimulationService {
         experiment.setSeed(seed);
         experiment.setStatus(state);
         experiment.setCreateUser(currentUser.id());
+        experiment.setRoadnetSnapshot(roadNetService.rawJson(roadnetId));
+        experiment.setTasksetSnapshot(taskSetService.rawJson(taskSetId));
         return experimentRepository.save(experiment);
     }
 

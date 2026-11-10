@@ -112,6 +112,12 @@ public class RoadNetService {
         return readPayload(requireMap(id).getRoadnetJson());
     }
 
+    /** 实验快照用：返回库里的整图 JSON 原文，避免解析再序列化带来的格式漂移。 */
+    @Transactional(readOnly = true)
+    public String rawJson(Long id) {
+        return requireMap(id).getRoadnetJson();
+    }
+
     /**
      * 只做校验不落库，供编辑器边改边验。
      */

@@ -67,6 +67,12 @@ public class TaskSetService {
         return readPayload(require(id).getTasksJson());
     }
 
+    /** 实验快照用：返回库里的任务集 JSON 原文。 */
+    @Transactional(readOnly = true)
+    public String rawJson(Long id) {
+        return require(id).getTasksJson();
+    }
+
     @Transactional
     public TaskSetSummary create(SaveTaskSetRequest request) {
         TaskSetPayload payload = normalize(request.roadnetId(), request.taskSet());

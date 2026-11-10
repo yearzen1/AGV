@@ -5,6 +5,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
@@ -46,6 +47,16 @@ public class Experiment {
 
     @Column(name = "create_time", nullable = false)
     private LocalDateTime createTime = LocalDateTime.now();
+
+    /** 创建实验时的整张路网 JSON。旧实验为空，回放时拒绝。 */
+    @Lob
+    @Column(name = "roadnet_snapshot")
+    private String roadnetSnapshot;
+
+    /** 创建实验时的任务集 JSON。旧实验为空，回放时拒绝。 */
+    @Lob
+    @Column(name = "taskset_snapshot")
+    private String tasksetSnapshot;
 
     public Long getId() {
         return id;
@@ -117,5 +128,21 @@ public class Experiment {
 
     public void setCreateTime(LocalDateTime createTime) {
         this.createTime = createTime;
+    }
+
+    public String getRoadnetSnapshot() {
+        return roadnetSnapshot;
+    }
+
+    public void setRoadnetSnapshot(String roadnetSnapshot) {
+        this.roadnetSnapshot = roadnetSnapshot;
+    }
+
+    public String getTasksetSnapshot() {
+        return tasksetSnapshot;
+    }
+
+    public void setTasksetSnapshot(String tasksetSnapshot) {
+        this.tasksetSnapshot = tasksetSnapshot;
     }
 }

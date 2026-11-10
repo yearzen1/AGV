@@ -1,11 +1,13 @@
 package com.agv.backend.controller;
 
 import com.agv.backend.common.ApiResponse;
+import com.agv.backend.dto.ExperimentReplayResult;
 import com.agv.backend.dto.ExperimentReport;
 import com.agv.backend.dto.ExperimentRequest;
 import com.agv.backend.service.ExperimentService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -43,5 +45,11 @@ public class ExperimentController {
     @GetMapping("/by-map")
     public ApiResponse<List<ExperimentReport>> byMap(@RequestParam Long roadnetId, @RequestParam Long taskSetId) {
         return ApiResponse.ok(experimentService.byMapAndTaskSet(roadnetId, taskSetId));
+    }
+
+    /** 用实验输入快照重跑一次并比对指标，不读取当前路网。 */
+    @PostMapping("/{id}/replay")
+    public ApiResponse<ExperimentReplayResult> replay(@PathVariable Long id) {
+        return ApiResponse.ok(experimentService.replay(id));
     }
 }
