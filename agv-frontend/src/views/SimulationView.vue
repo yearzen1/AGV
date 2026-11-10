@@ -19,6 +19,7 @@ import {
   type TaskSetSummary
 } from '@/api/sim'
 import { taskSetLabel } from '@/utils/format'
+import { simSocketUrl } from '@/utils/ws'
 
 const maps = ref<RoadNetSummary[]>([])
 const taskSets = ref<TaskSetSummary[]>([])
@@ -129,8 +130,7 @@ async function onMapChange(id: number) {
 
 function connectSocket() {
   if (socket && socket.readyState === WebSocket.OPEN) return
-  const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
-  const ws = new WebSocket(`${protocol}://${location.host}/ws/sim`)
+  const ws = new WebSocket(simSocketUrl())
   socket = ws
   ws.onopen = () => {
     socketState.value = 'open'

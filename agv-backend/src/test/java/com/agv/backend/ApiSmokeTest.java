@@ -44,7 +44,7 @@ class ApiSmokeTest {
     /** 同一上下文里的测试共享 H2；每个用例前清空实验，避免历史记录条数互相影响。 */
     @BeforeEach
     void resetSimulationState() {
-        simulationService.reset();
+        simulationService.resetAll();
         metricRepository.deleteAll();
         experimentRepository.deleteAll();
     }

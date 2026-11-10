@@ -14,13 +14,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 仿真帧推送通道 {@code /ws/sim}。
+ * 仿真帧推送通道 {@code /ws/sim?token=<jwt>}。
  * <p>
+ * 会话按用户分组：仿真帧只发给发起人，不广播给所有人。
  * 每个会话用 {@link ConcurrentWebSocketSessionDecorator} 包装，把同一连接上的发送串行化。
- * 没有这层包装时，广播线程与 echo 线程可能同时写同一个连接，触发
- * {@code TEXT_PARTIAL_WRITING} 并让整个仿真被判定为失败。
- * <p>
- * 单个会话发送失败只移除该会话，不向调用方抛异常。
  */
 @Component
 public class SimSocketHandler extends TextWebSocketHandler {
@@ -32,7 +29,7 @@ public class SimSocketHandler extends TextWebSocketHandler {
     /** 会话积压缓冲上限，超过后由装饰器关闭该会话而不是拖垮推送线程。 */
     private static final int BUFFER_SIZE_BYTES = 512 * 1024;
 
-    private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
+    private final Map<Long, Map<String, WebSocketSession>> sessionsByUser = new ConcurrentHashMap<>();
     private final ObjectMapper objectMapper;
 
     public SimSocketHandler(ObjectMapper objectMapper) {
@@ -41,58 +38,104 @@ public class SimSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
+        Long userId = userIdOf(session);
+        if (userId == null) {
+            closeQuietly(session, CloseStatus.POLICY_VIOLATION);
+            return;
+        }
         WebSocketSession safe = new ConcurrentWebSocketSessionDecorator(
                 session, SEND_TIME_LIMIT_MS, BUFFER_SIZE_BYTES);
-        sessions.put(session.getId(), safe);
-        send(safe, session.getId(),
-                Map.of("type", "connected", "sessionId", session.getId()));
+        sessionsByUser.computeIfAbsent(userId, key -> new ConcurrentHashMap<>())
+                .put(session.getId(), safe);
+        send(safe, session.getId(), Map.of("type", "connected", "sessionId", session.getId()));
     }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-        WebSocketSession safe = sessions.get(session.getId());
-        if (safe == null) {
-            safe = session;
+        WebSocketSession safe = session;
+        Long userId = userIdOf(session);
+        if (userId != null) {
+            Map<String, WebSocketSession> userSessions = sessionsByUser.get(userId);
+            if (userSessions != null && userSessions.containsKey(session.getId())) {
+                safe = userSessions.get(session.getId());
+            }
         }
-        send(safe, session.getId(),
-                Map.of("type", "echo", "payload", message.getPayload()));
+        send(safe, session.getId(), Map.of("type", "echo", "payload", message.getPayload()));
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        sessions.remove(session.getId());
+        Long userId = userIdOf(session);
+        if (userId == null) {
+            return;
+        }
+        Map<String, WebSocketSession> userSessions = sessionsByUser.get(userId);
+        if (userSessions == null) {
+            return;
+        }
+        userSessions.remove(session.getId());
+        if (userSessions.isEmpty()) {
+            sessionsByUser.remove(userId, userSessions);
+        }
     }
 
-    /** 向所有已连接客户端推送一条消息。 */
-    public void broadcast(Object payload) {
-        if (sessions.isEmpty()) {
+    /** 只向指定用户的全部连接推送；没有连接时直接返回。 */
+    public void sendToUser(Long userId, Object payload) {
+        Map<String, WebSocketSession> userSessions = sessionsByUser.get(userId);
+        if (userSessions == null || userSessions.isEmpty()) {
             return;
         }
         String json = toJson(payload);
-        for (Map.Entry<String, WebSocketSession> entry : sessions.entrySet()) {
+        for (Map.Entry<String, WebSocketSession> entry : userSessions.entrySet()) {
             WebSocketSession session = entry.getValue();
             if (!session.isOpen()) {
-                sessions.remove(entry.getKey());
+                userSessions.remove(entry.getKey());
                 continue;
             }
             try {
                 session.sendMessage(new TextMessage(json));
             } catch (Exception ex) {
-                sessions.remove(entry.getKey());
+                userSessions.remove(entry.getKey());
                 log.warn("推送失败，移除会话 {}：{}", entry.getKey(), ex.getMessage());
             }
+        }
+        if (userSessions.isEmpty()) {
+            sessionsByUser.remove(userId, userSessions);
         }
     }
 
     public int sessionCount() {
-        return sessions.size();
+        return sessionsByUser.values().stream().mapToInt(Map::size).sum();
+    }
+
+    public int userCount() {
+        return sessionsByUser.size();
+    }
+
+    private Long userIdOf(WebSocketSession session) {
+        Object value = session.getAttributes().get(JwtHandshakeInterceptor.ATTR_USER_ID);
+        return value instanceof Number number ? number.longValue() : null;
+    }
+
+    private void closeQuietly(WebSocketSession session, CloseStatus status) {
+        try {
+            session.close(status);
+        } catch (Exception ex) {
+            log.debug("关闭未鉴权会话失败：{}", ex.getMessage());
+        }
     }
 
     private void send(WebSocketSession session, String sessionId, Object payload) {
         try {
             session.sendMessage(new TextMessage(toJson(payload)));
         } catch (Exception ex) {
-            sessions.remove(sessionId);
+            Long userId = userIdOf(session);
+            if (userId != null) {
+                Map<String, WebSocketSession> userSessions = sessionsByUser.get(userId);
+                if (userSessions != null) {
+                    userSessions.remove(sessionId);
+                }
+            }
             log.warn("会话 {} 写入失败，已移除：{}", sessionId, ex.getMessage());
         }
     }

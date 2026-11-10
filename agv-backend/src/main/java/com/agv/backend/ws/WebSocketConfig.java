@@ -10,14 +10,18 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final SimSocketHandler simSocketHandler;
+    private final JwtHandshakeInterceptor jwtHandshakeInterceptor;
 
-    public WebSocketConfig(SimSocketHandler simSocketHandler) {
+    public WebSocketConfig(SimSocketHandler simSocketHandler,
+                           JwtHandshakeInterceptor jwtHandshakeInterceptor) {
         this.simSocketHandler = simSocketHandler;
+        this.jwtHandshakeInterceptor = jwtHandshakeInterceptor;
     }
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry.addHandler(simSocketHandler, "/ws/sim")
+                .addInterceptors(jwtHandshakeInterceptor)
                 .setAllowedOriginPatterns("*");
     }
 }

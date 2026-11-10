@@ -2,14 +2,12 @@ package com.agv.backend.service;
 
 import com.agv.algorithm.model.RoadNet;
 import com.agv.algorithm.sim.SimConfig;
-import com.agv.algorithm.sim.SimFrame;
 import com.agv.algorithm.sim.SimulationEngine;
 import com.agv.algorithm.sim.Task;
 import com.agv.backend.common.BusinessException;
 import com.agv.backend.dto.StartSimRequest;
 import com.agv.backend.dto.TaskSetPayload;
 import com.agv.backend.entity.Experiment;
-import com.agv.backend.entity.ExperimentMetric;
 import com.agv.backend.entity.TaskSet;
 import com.agv.backend.repository.ExperimentMetricRepository;
 import com.agv.backend.repository.ExperimentRepository;
@@ -20,18 +18,16 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 实时仿真编排：驱动引擎、按 tick 通过 WebSocket 推送帧、落库实验与指标。
+ * 实时仿真编排：按用户维护一份 {@link SimulationRunner}，驱动引擎、推送帧、落库实验与指标。
  * <p>
  * 引擎本身不依赖 Spring，这里只做调度与 IO。
  */
@@ -48,29 +44,17 @@ public class SimulationService {
     private final ExperimentMetricRepository metricRepository;
     private final CurrentUser currentUser;
     private final AuditService auditService;
+    private final int maxConcurrent;
 
     private final Object lock = new Object();
-
-    private SimulationEngine engine;
-    private ScheduledExecutorService scheduler;
-    private ScheduledFuture<?> loop;
-
-    private volatile boolean paused;
-    private volatile double speed = 1.0;
-    private volatile String status = "IDLE";
-
-    private Long experimentId;
-    private Long roadnetId;
-    private Long taskSetId;
-    private String algorithm;
-    private Integer agvCount;
-    private Long seed;
+    private final Map<Long, SimulationRunner> runners = new ConcurrentHashMap<>();
 
     public SimulationService(RoadNetService roadNetService, TaskSetService taskSetService,
                              TaskSetValidator taskSetValidator, SimSocketHandler socketHandler,
                              ExperimentRepository experimentRepository,
                              ExperimentMetricRepository metricRepository, CurrentUser currentUser,
-                             AuditService auditService) {
+                             AuditService auditService,
+                             @Value("${agv.sim.max-concurrent:5}") int maxConcurrent) {
         this.roadNetService = roadNetService;
         this.taskSetService = taskSetService;
         this.taskSetValidator = taskSetValidator;
@@ -79,194 +63,139 @@ public class SimulationService {
         this.metricRepository = metricRepository;
         this.currentUser = currentUser;
         this.auditService = auditService;
+        this.maxConcurrent = Math.max(1, maxConcurrent);
     }
 
     public Map<String, Object> start(StartSimRequest request) {
-        synchronized (lock) {
-            stopInternal();
-            abortExperiment("ABORTED");
-            RoadNet net = roadNetService.toModel(roadNetService.detail(request.roadnetId()));
-            TaskSet taskSet = taskSetService.require(request.taskSetId());
-            requireMatchingMap(taskSet, request.roadnetId());
-            TaskSetPayload payload = taskSetService.detail(request.taskSetId());
-            taskSetValidator.validateOrThrow(net, payload.tasks());
-            List<Task> tasks = toTasks(payload);
-            long actualSeed = request.seed() == null ? System.currentTimeMillis() : request.seed();
-            int count = request.agvCount() == null ? 3 : request.agvCount();
+        Long userId = currentUser.id();
 
-            try {
-                engine = new SimulationEngine(net, tasks, SimConfig.defaults(count, actualSeed, request.algorithm()));
-            } catch (IllegalArgumentException ex) {
-                throw new BusinessException(4004, "无法启动仿真：" + ex.getMessage());
+        RoadNet net = roadNetService.toModel(roadNetService.detail(request.roadnetId()));
+        TaskSet taskSet = taskSetService.require(request.taskSetId());
+        requireMatchingMap(taskSet, request.roadnetId());
+        TaskSetPayload payload = taskSetService.detail(request.taskSetId());
+        taskSetValidator.validateOrThrow(net, payload.tasks());
+        List<Task> tasks = toTasks(payload);
+        long actualSeed = request.seed() == null ? System.currentTimeMillis() : request.seed();
+        int count = request.agvCount() == null ? 3 : request.agvCount();
+
+        SimulationEngine engine;
+        try {
+            engine = new SimulationEngine(net, tasks, SimConfig.defaults(count, actualSeed, request.algorithm()));
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException(4004, "无法启动仿真：" + ex.getMessage());
+        }
+
+        String roadnetJson = roadNetService.rawJson(request.roadnetId());
+        String tasksetJson = taskSetService.rawJson(request.taskSetId());
+
+        synchronized (lock) {
+            long runningOthers = runners.entrySet().stream()
+                    .filter(entry -> !entry.getKey().equals(userId))
+                    .filter(entry -> entry.getValue().isRunning())
+                    .count();
+            if (runningOthers >= maxConcurrent) {
+                throw new BusinessException(4290,
+                        "并发仿真数已达上限（" + maxConcurrent + "），请稍后再试");
             }
 
-            roadnetId = request.roadnetId();
-            taskSetId = request.taskSetId();
-            algorithm = request.algorithm();
-            agvCount = count;
-            seed = actualSeed;
-            paused = false;
-            speed = 1.0;
-            status = "RUNNING";
+            SimulationRunner existing = runners.remove(userId);
+            if (existing != null) {
+                existing.stopAndAbort("ABORTED", "replaced");
+            }
 
-            experimentId = persistExperiment("RUNNING").getId();
-            auditService.success("SIM_START", "SIM", experimentId);
-            startScheduler();
-            return statusPayload();
+            Experiment experiment = persistExperiment("RUNNING", userId, request, count, actualSeed,
+                    roadnetJson, tasksetJson);
+            auditService.success("SIM_START", "SIM", experiment.getId());
+
+            SimulationRunner runner = new SimulationRunner(userId, engine, experiment.getId(),
+                    request.roadnetId(), request.taskSetId(), request.algorithm(), count, actualSeed,
+                    socketHandler, experimentRepository, metricRepository);
+            runners.put(userId, runner);
+            runner.start();
+            return runner.statusPayload();
         }
     }
 
     public Map<String, Object> pause() {
-        paused = true;
-        broadcastStatus("paused");
-        return statusPayload();
+        return requireRunning().pause();
     }
 
     public Map<String, Object> resume() {
-        paused = false;
-        broadcastStatus("resumed");
-        return statusPayload();
+        return requireRunning().resume();
     }
 
     public Map<String, Object> reset() {
+        Long userId = currentUser.id();
         synchronized (lock) {
-            stopInternal();
-            abortExperiment("ABORTED");
-            if (experimentId != null) {
-                auditService.success("SIM_RESET", "SIM", experimentId);
+            SimulationRunner runner = runners.remove(userId);
+            if (runner != null) {
+                runner.stopAndAbort("ABORTED", "reset");
+                auditService.success("SIM_RESET", "SIM", runner.experimentId());
             }
-            status = "IDLE";
-            experimentId = null;
-            broadcastStatus("reset");
-            return statusPayload();
+            return idlePayload();
         }
     }
 
     public Map<String, Object> setSpeed(double value) {
-        synchronized (lock) {
-            if (!Double.isFinite(value)) {
-                throw new BusinessException(4000, "速度倍率必须是有限数值");
-            }
-            speed = Math.max(0.25, Math.min(8.0, value));
-            if (scheduler != null && !scheduler.isShutdown() && engine != null && !engine.finished()) {
-                if (loop != null) {
-                    loop.cancel(false);
-                }
-                loop = scheduler.scheduleAtFixedRate(this::tickSafely, 0, intervalMillis(), TimeUnit.MILLISECONDS);
-            }
-            broadcastStatus("speed");
-            return statusPayload();
+        if (!Double.isFinite(value)) {
+            throw new BusinessException(4000, "速度倍率必须是有限数值");
         }
+        return requireRunning().setSpeed(value);
     }
 
     public Map<String, Object> status() {
-        return statusPayload();
+        SimulationRunner runner = runners.get(currentUser.id());
+        return runner == null ? idlePayload() : runner.statusPayload();
     }
 
-    private long intervalMillis() {
-        return Math.max(10L, (long) (SimConfig.TICK_MILLIS / speed));
-    }
-
-    private void startScheduler() {
-        scheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "agv-sim");
-            thread.setDaemon(true);
-            return thread;
-        });
-        loop = scheduler.scheduleAtFixedRate(this::tickSafely, 0, intervalMillis(), TimeUnit.MILLISECONDS);
-    }
-
-    private void tickSafely() {
-        if (paused) {
-            return;
-        }
-        SimulationEngine current = engine;
-        if (current == null || current.finished()) {
-            return;
-        }
-
-        SimFrame frame;
-        try {
-            frame = current.step();
-        } catch (RuntimeException ex) {
-            log.error("仿真推进失败", ex);
-            status = "FAILED";
-            stopScheduler();
-            abortExperiment("FAILED");
-            return;
-        }
-
-        // 推送失败属于传输层问题，不能影响仿真本身
-        try {
-            Map<String, Object> message = new LinkedHashMap<>();
-            message.put("type", "frame");
-            message.put("frame", frame);
-            message.put("speed", speed);
-            message.put("paused", paused);
-            socketHandler.broadcast(message);
-        } catch (RuntimeException ex) {
-            log.warn("帧推送失败，已忽略本次推送：{}", ex.getMessage());
-        }
-
-        if (frame.finished()) {
-            finish(current);
-        }
-    }
-
-    private void finish(SimulationEngine finishedEngine) {
-        status = "FINISHED";
-        stopScheduler();
-        try {
-            Experiment experiment = experimentRepository.findById(experimentId).orElse(null);
-            if (experiment != null) {
-                experiment.setStatus("FINISHED");
-                experimentRepository.save(experiment);
-                SimFrame.Metrics metrics = finishedEngine.metrics();
-                ExperimentMetric metric = new ExperimentMetric();
-                metric.setExperimentId(experimentId);
-                metric.setMakespan(metrics.makespan());
-                metric.setTotalPathLen(metrics.totalPathLen());
-                metric.setTotalWaitTick(metrics.totalWaitTick());
-                metric.setConflictCount(metrics.conflictCount());
-                metricRepository.save(metric);
+    /** 测试与停机用：停掉全部用户的仿真，不依赖 SecurityContext。 */
+    public void resetAll() {
+        synchronized (lock) {
+            for (SimulationRunner runner : runners.values()) {
+                runner.stopAndAbort("ABORTED", "reset");
             }
-        } catch (RuntimeException ex) {
-            log.warn("实验指标落库失败", ex);
+            runners.clear();
         }
-        broadcastStatus("finished");
     }
 
-    private Experiment persistExperiment(String state) {
+    private SimulationRunner requireRunning() {
+        SimulationRunner runner = runners.get(currentUser.id());
+        if (runner == null || !runner.isRunning()) {
+            throw new BusinessException(4004, "当前没有运行中的仿真");
+        }
+        return runner;
+    }
+
+    private Experiment persistExperiment(String state, Long userId, StartSimRequest request,
+                                         int count, long actualSeed,
+                                         String roadnetJson, String tasksetJson) {
         Experiment experiment = new Experiment();
-        experiment.setRoadnetId(roadnetId);
-        experiment.setTaskSetId(taskSetId);
-        experiment.setAlgorithm(algorithm);
-        experiment.setAgvCount(agvCount);
-        experiment.setSeed(seed);
+        experiment.setRoadnetId(request.roadnetId());
+        experiment.setTaskSetId(request.taskSetId());
+        experiment.setAlgorithm(request.algorithm());
+        experiment.setAgvCount(count);
+        experiment.setSeed(actualSeed);
         experiment.setStatus(state);
-        experiment.setCreateUser(currentUser.id());
-        experiment.setRoadnetSnapshot(roadNetService.rawJson(roadnetId));
-        experiment.setTasksetSnapshot(taskSetService.rawJson(taskSetId));
+        experiment.setCreateUser(userId);
+        experiment.setRoadnetSnapshot(roadnetJson);
+        experiment.setTasksetSnapshot(tasksetJson);
         return experimentRepository.save(experiment);
     }
 
-    /**
-     * 被新仿真替换、手动重置或推进失败时，把仍处于 RUNNING 的实验落一个终态，
-     * 避免历史列表里出现永远「运行中」的僵尸记录。
-     */
-    private void abortExperiment(String state) {
-        Long id = experimentId;
-        if (id == null) return;
-        try {
-            experimentRepository.findById(id).ifPresent(experiment -> {
-                if ("RUNNING".equals(experiment.getStatus())) {
-                    experiment.setStatus(state);
-                    experimentRepository.save(experiment);
-                }
-            });
-        } catch (RuntimeException ex) {
-            log.warn("实验状态更新失败：{}", ex.getMessage());
-        }
+    private Map<String, Object> idlePayload() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("status", "IDLE");
+        payload.put("paused", false);
+        payload.put("speed", 1.0);
+        payload.put("experimentId", null);
+        payload.put("roadnetId", null);
+        payload.put("taskSetId", null);
+        payload.put("algorithm", null);
+        payload.put("agvCount", null);
+        payload.put("seed", null);
+        payload.put("tick", 0);
+        payload.put("metrics", null);
+        return payload;
     }
 
     /**
@@ -304,53 +233,8 @@ public class SimulationService {
         }
     }
 
-    private void stopScheduler() {
-        if (loop != null) {
-            loop.cancel(false);
-            loop = null;
-        }
-        if (scheduler != null) {
-            scheduler.shutdownNow();
-            scheduler = null;
-        }
-    }
-
-    private void stopInternal() {
-        stopScheduler();
-        engine = null;
-    }
-
-    private void broadcastStatus(String reason) {
-        Map<String, Object> message = new LinkedHashMap<>();
-        message.put("type", "status");
-        message.put("reason", reason);
-        message.putAll(statusPayload());
-        socketHandler.broadcast(message);
-    }
-
-    private Map<String, Object> statusPayload() {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("status", status);
-        payload.put("paused", paused);
-        payload.put("speed", speed);
-        payload.put("experimentId", experimentId);
-        payload.put("roadnetId", roadnetId);
-        payload.put("taskSetId", taskSetId);
-        payload.put("algorithm", algorithm);
-        payload.put("agvCount", agvCount);
-        payload.put("seed", seed);
-        SimulationEngine current = engine;
-        if (current == null) {
-            payload.put("tick", 0);
-            payload.put("metrics", null);
-        } else {
-            payload.put("tick", current.tick());
-            payload.put("metrics", current.metrics());
-        }
-        return payload;
-    }
     @PreDestroy
     public void shutdown() {
-        stopScheduler();
+        resetAll();
     }
 }

@@ -1,4 +1,5 @@
 import { onBeforeUnmount, ref } from 'vue'
+import { simSocketUrl } from '@/utils/ws'
 
 /**
  * 仿真帧通道。W1 只做 echo 验证；W6 起接收 { tick, agvs, events } 帧并驱动 3D 场景。
@@ -12,8 +13,7 @@ export function useSimSocket() {
     if (socket && socket.readyState === WebSocket.OPEN) {
       return
     }
-    const protocol = location.protocol === 'https:' ? 'wss' : 'ws'
-    socket = new WebSocket(`${protocol}://${location.host}/ws/sim`)
+    socket = new WebSocket(simSocketUrl())
     socket.onopen = () => {
       connected.value = true
     }

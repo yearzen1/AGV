@@ -48,7 +48,7 @@ class ExperimentReplayTest {
 
     @BeforeEach
     void resetState() {
-        simulationService.reset();
+        simulationService.resetAll();
         metricRepository.deleteAll();
         experimentRepository.deleteAll();
     }

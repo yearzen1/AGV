@@ -25,3 +25,5 @@ agv:
   jwt:
     secret: ${AGV_JWT_SECRET:agv-sim-secret-key-change-me-in-production-2026-11}
     expire-hours: 12
+  sim:
+    max-concurrent: ${AGV_SIM_MAX_CONCURRENT:5}
