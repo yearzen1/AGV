@@ -94,6 +94,8 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 - **演示账号**：`admin/admin123`、`dispatcher/dispatcher123` 会在首次启动时自动初始化。部署前必须修改密码，或移除 `DataInitializer` 中的初始化逻辑。
 - **H2 控制台**：`dev` profile 下 `/h2-console` 免鉴权，H2 用户 `sa` 密码为空。不要用 `dev` profile 公网启动；生产使用 `mysql` profile。
 - **端口**：公网只暴露前端或反向代理，不要把 `8080` 直接暴露出去。
+- **WebSocket**：`/ws/sim?token=<jwt>` 的令牌会出现在代理访问日志里，生产环境建议缩短令牌有效期或改为一次性票据。
+- **并发上限**：`AGV_SIM_MAX_CONCURRENT` 控制同时运行的仿真数（默认 5）。按单机 CPU 和内存调整，不要直接放开。
 
 ## 接口约定
 
@@ -134,6 +136,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 | 4030 | 403 | 无权限 |
 | 4040 | 404 | 资源或接口不存在 |
 | 4090 | 409 | 数据冲突（唯一键或引用约束） |
+| 4290 | 429 | 并发仿真数已达上限 |
 | 5000 | 500 | 服务器内部错误，消息附带请求编号 |
 
 主要端点：
@@ -160,7 +163,7 @@ GET    /api/experiment/list?page=0&size=20  实验历史（分页）
 GET    /api/admin/users         用户管理（仅管理员）
 GET    /api/admin/dict          字典管理（仅管理员）
 GET    /api/admin/audit?page=0&size=20  审计日志（仅管理员，分页）
-WS     /ws/sim                  仿真帧通道（推送帧与状态，支持 echo 自检）
+WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧与状态，支持 echo 自检）
 ```
 
 ### 实验快照与回放
@@ -181,14 +184,27 @@ WS     /ws/sim                  仿真帧通道（推送帧与状态，支持 ec
 审计写入失败只记服务端警告，不影响业务操作。管理员用 `GET /api/admin/audit` 分页查询。
 动作清单与字段见 [审计日志](docs/reference/审计日志.md)。
 
+### 多用户并发仿真
+
+后端按用户隔离仿真运行态，多个调度人员可以同时启动各自的仿真：
+
+- 每个用户同一时刻只有一个仿真；再次启动只替换自己的，**不会中断别人的仿真**。
+- `pause` / `resume` / `reset` / `speed` / `status` 都只作用于当前登录用户。
+- 帧只推送给仿真发起人已连接的 WebSocket 会话；同一用户打开多个标签页，每个标签页都能收到。
+- 全局并发上限由 `agv.sim.max-concurrent` 控制，默认 5；超过返回 `code = 4290` / HTTP 429，不排队。
+- 仿真运行态保存在内存中，因此当前版本按**单后端实例**部署；多实例需要粘性会话或把运行态外置。
+
+细节见 [多用户仿真](docs/reference/多用户仿真.md)。
+
 ### 实时推送（WebSocket）
 
-- 连接 `/ws/sim` 后，服务端先回一条 `{"type":"connected"}`；发送任意文本会收到 `{"type":"echo"}`，用于连通性自检。
-- 仿真运行期间，每个 tick 推送 `{"type":"frame","frame":{...},"speed":1.0,"paused":false}`；控制类操作推送 `{"type":"status",...}`。
+- 连接 `/ws/sim?token=<jwt>`。握手时校验 JWT 与账号状态，失败返回 401 并拒绝连接；连接成功后服务端先回一条 `{"type":"connected"}`。
+- 发送任意文本会收到 `{"type":"echo"}`，用于连通性自检。
+- 仿真运行期间，每个 tick 只向**仿真发起人**推送 `{"type":"frame","frame":{...},"speed":1.0,"paused":false}`；控制类操作推送 `{"type":"status",...}`。
 - 每个会话的发送由 Spring 的 `ConcurrentWebSocketSessionDecorator` 串行化，避免同一连接上并发写导致 `TEXT_PARTIAL_WRITING`。
 - 单个会话发送失败只移除该会话并记一条警告，**不会中断仿真**，也不会把仿真状态置为失败。
 - 事件不落库，只在帧里推送；实验结束后仅保存四项汇总指标。
-- 页面刷新或重新进入「仿真运行」时，前端调用 `GET /api/sim/status` 恢复运行状态；`status` 为 `RUNNING` / `FINISHED` / `FAILED` 时同步启动参数、速度、暂停状态、tick 与指标。
+- 页面刷新或重新进入「仿真运行」时，前端调用 `GET /api/sim/status` 恢复**当前用户**的运行状态；`status` 为 `RUNNING` / `FINISHED` / `FAILED` 时同步启动参数、速度、暂停状态、tick 与指标。
 - 历史实验列表用 `RUNNING` / `FINISHED` / `FAILED` / `ABORTED` 标记状态；被新仿真替换或手动重置的旧实验记为 `ABORTED`（已中断），未完成实验的汇总指标显示为 `-`。后端重启时，遗留的 `RUNNING` 实验也会在启动时标记为 `ABORTED`。列表时间统一格式化为 `YYYY-MM-DD HH:mm:ss`。
 
 ## 进度
@@ -255,4 +271,6 @@ npm run e2e:roadnet
 - `ExperimentReplayTest`：同 seed 回放指标一致、缺快照与缺指标的回放拒绝
 - `AuditLogTest`：动作记录、登录失败记录、管理员分页查询与权限拦截
 - `TaskSetValidationTest`：任务集绑定路网、工位校验、跨图启动拦截、删除保护
-- `SimSocketHandlerTest`：WebSocket 连接、echo 与广播
+- `SimSocketHandlerTest`：WebSocket 连接、echo、按用户路由与坏会话隔离
+- `MultiUserSimulationTest`：两个用户并发仿真互不干扰，暂停/重置只影响自己
+- `SimulationConcurrencyLimitTest`：并发上限拦截与 4290 错误码
