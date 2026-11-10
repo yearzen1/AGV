@@ -76,7 +76,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 ```
 
 建表由 Hibernate `ddl-auto=update` 自动完成，共 6 张表：
-`sys_user`、`sys_dict`、`warehouse_map`、`task_set`、`experiment`、`experiment_metric`。
+`sys_user`、`sys_dict`、`roadnet`、`task_set`、`experiment`、`experiment_metric`。
 （`sim_event` 为可选降级项，默认不建，事件只走 WebSocket。）
 
 ## 部署与安全
