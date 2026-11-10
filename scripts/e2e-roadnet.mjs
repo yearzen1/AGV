@@ -148,10 +148,20 @@ async function main() {
         }),
         minimap: box('.minimap'),
         legend: box('.map-legend'),
-        fullscreen: box('.fullscreen-btn')
+        fullscreen: box('.fullscreen-btn'),
+        border: box('.map-border'),
+        zoom: document.querySelector('.zoom-group .el-button:nth-child(2)')?.innerText
       }
     })
     assert(metrics.scrollHeight <= metrics.viewportHeight + 1, '页面没有纵向滚动')
+    assert(metrics.zoom === '100%', '默认显示整张画布（100%）')
+    assert(
+      metrics.border.x >= metrics.canvas.x - 1 &&
+        metrics.border.y >= metrics.canvas.y - 1 &&
+        metrics.border.x + metrics.border.width <= metrics.canvas.x + metrics.canvas.width + 1 &&
+        metrics.border.y + metrics.border.height <= metrics.canvas.y + metrics.canvas.height + 1,
+      '可画布边框完整出现在画布内'
+    )
     assert(metrics.canvas.height >= 420, `画布高度 ${Math.round(metrics.canvas.height)}px ≥ 420px`)
     assert(
       metrics.toolbarRows.every((row) => row.height <= 44),
@@ -220,10 +230,10 @@ async function main() {
     const beforeEdges = await page.locator('.edge-hit').count()
     await page.locator('.toolbar').getByText('连路段', { exact: true }).click()
     const j2 = await nodeCenter(page, 'J2')
-    const j3 = await nodeCenter(page, 'J3')
     await page.mouse.click(j2.x, j2.y)
     await page.waitForTimeout(250)
     assert((await page.locator('.connect-hint').innerText()).includes('已选起点 J2'), '显示连接起点提示')
+    const j3 = await nodeCenter(page, 'J3')
     await page.mouse.click(j3.x, j3.y)
     await page.waitForTimeout(250)
     assert((await page.locator('body').innerText()).includes('已有路段'), '重复连边给出提示')
