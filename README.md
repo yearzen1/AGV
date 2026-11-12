@@ -210,7 +210,8 @@ WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧�
 - 每个会话的发送由 Spring 的 `ConcurrentWebSocketSessionDecorator` 串行化，避免同一连接上并发写导致 `TEXT_PARTIAL_WRITING`。
 - 单个会话发送失败只移除该会话并记一条警告，**不会中断仿真**，也不会把仿真状态置为失败。
 - 事件不落库，只在帧里推送；实验结束后仅保存四项汇总指标。
-- 页面刷新或重新进入「仿真运行」时，前端调用 `GET /api/sim/status` 恢复**当前用户**的运行状态；`status` 为 `RUNNING` / `FINISHED` / `FAILED` 时同步启动参数、速度、暂停状态、tick 与指标。
+- 页面刷新或重新进入「仿真运行」时，前端调用 `GET /api/sim/status` 恢复**当前用户**的运行状态；`status` 为 `RUNNING` / `FINISHED` / `FAILED` 时同步启动参数、速度、暂停状态、tick 与指标。`RUNNING`（含暂停）时 `status` 还带当前帧的 `agvs` 快照，刷新后 3D 场景与「车辆状态」不会丢车；结束后返回空数组。
+- 仿真自然结束时会收到 `status = FINISHED` 的状态消息，随后连接保持可用；离开页面会主动断开，意外断开时每 2 秒自动重连。
 - 历史实验列表用 `RUNNING` / `FINISHED` / `FAILED` / `ABORTED` 标记状态；被新仿真替换或手动重置的旧实验记为 `ABORTED`（已中断），未完成实验的汇总指标显示为 `-`。后端重启时，遗留的 `RUNNING` 实验也会在启动时标记为 `ABORTED`。列表时间统一格式化为 `YYYY-MM-DD HH:mm:ss`。
 
 ## 进度
@@ -268,7 +269,14 @@ cd agv-frontend
 npm run e2e:roadnet
 ```
 
-首次运行需安装浏览器：`npx playwright install chromium`。脚本会验证布局、编辑、连边、搜索、页签、任务聚合、3D 与全屏，并把截图写到 `.playwright-mcp/e2e/`。
+仿真运行页回归（同样需要前后端已启动）：
+
+```bash
+cd agv-frontend
+npm run e2e:sim
+```
+
+首次运行需安装浏览器：`npx playwright install chromium`。两个脚本都会把截图写到 `.playwright-mcp/e2e/`。`e2e:roadnet` 验证布局、编辑、连边、搜索、页签、任务聚合、3D 与全屏；`e2e:sim` 验证参数标签、运行时参数锁定、暂停冻结、暂停后刷新恢复车辆位置、继续与重置，最后完整跑完 20 单（约 2 分钟）确认结束态与实时通道。
 
 - `AStarPlannerTest`：直线路网、不可达、封锁绕行、转弯惩罚、与状态空间 Bellman-Ford 对拍
 - `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区
