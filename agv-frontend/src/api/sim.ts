@@ -50,6 +50,8 @@ export interface SimStatus {
   seed: number | null
   tick: number
   metrics: SimMetrics | null
+  /** RUNNING（含暂停）时返回当前帧车辆快照；其他状态为空数组 */
+  agvs?: AgvSnapshot[]
 }
 
 export function startSim(payload: {

@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -136,9 +137,11 @@ final class SimulationRunner {
         if (current == null) {
             payload.put("tick", tick);
             payload.put("metrics", lastMetrics);
+            payload.put("agvs", List.of());
         } else {
             payload.put("tick", current.tick());
             payload.put("metrics", current.metrics());
+            payload.put("agvs", current.snapshots());
         }
         return payload;
     }
@@ -277,6 +280,7 @@ final class SimulationRunner {
         message.put("seed", null);
         message.put("tick", 0);
         message.put("metrics", null);
+        message.put("agvs", List.of());
         socketHandler.sendToUser(userId, message);
     }
 }

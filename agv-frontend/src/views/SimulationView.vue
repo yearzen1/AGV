@@ -190,6 +190,7 @@ async function syncStatus() {
     speed.value = current.speed
     tick.value = current.tick
     metrics.value = current.metrics
+    agvs.value = current.agvs ?? []
     if (current.roadnetId) {
       selectedRoadnetId.value = current.roadnetId
       await loadRoadNet(current.roadnetId)

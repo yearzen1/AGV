@@ -195,6 +195,7 @@ public class SimulationService {
         payload.put("seed", null);
         payload.put("tick", 0);
         payload.put("metrics", null);
+        payload.put("agvs", List.of());
         return payload;
     }
 
