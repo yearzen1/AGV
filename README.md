@@ -79,7 +79,12 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 `sys_user`、`sys_dict`、`roadnet`、`task_set`、`experiment`、`experiment_metric`、`sys_audit_log`。
 （`sim_event` 为可选降级项，默认不建，事件只走 WebSocket。）
 
+所有表的主键 `id` 都是 `BIGINT NOT NULL PRIMARY KEY`，由应用侧雪花算法生成，**数据库不使用自增**。
+雪花 ID 为 53 位（41 位毫秒 + 2 位 worker + 10 位序列），前端可直接当 `number` 使用；
+多实例部署时用 `AGV_WORKER_ID`（0～3）区分实例。详见 [数据库设计](docs/reference/数据库设计.md)。
+
 升级已有数据库时 Flyway 会自动 `baseline`，不会清空数据；脚本只做增量变更。
+本次主键改造修改了 V1/V3 的建表脚本，已有的 H2 或 MySQL 库需要按数据库设计文档重建。
 
 ## 部署与安全
 
@@ -96,6 +101,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 - **端口**：公网只暴露前端或反向代理，不要把 `8080` 直接暴露出去。
 - **WebSocket**：`/ws/sim?token=<jwt>` 的令牌会出现在代理访问日志里，生产环境建议缩短令牌有效期或改为一次性票据。
 - **并发上限**：`AGV_SIM_MAX_CONCURRENT` 控制同时运行的仿真数（默认 5）。按单机 CPU 和内存调整，不要直接放开。
+- **雪花 ID 实例号**：多实例部署时设置 `AGV_WORKER_ID`（0～3），每个实例必须不同；单实例保持默认 0 即可。
 
 ## 接口约定
 
