@@ -205,15 +205,25 @@ function rebuildRoadNet(net: RoadNetPayload | null) {
   }
 }
 
-function makeLabel(text: string): THREE.Sprite {
+function makeLabel(text: string, badge = false): THREE.Sprite {
   const canvas = document.createElement('canvas')
   canvas.width = 128
   canvas.height = 64
   const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = 'rgba(0,0,0,0)'
-  ctx.fillRect(0, 0, 128, 64)
+  ctx.clearRect(0, 0, 128, 64)
+  if (badge) {
+    // 车辆编号加圆角底色：等待或充电时车辆会停在节点上，避免和节点标签糊在一起
+    ctx.fillStyle = 'rgba(31, 59, 115, 0.88)'
+    ctx.strokeStyle = 'rgba(120, 180, 255, 0.9)'
+    ctx.lineWidth = 3
+    const radius = 16
+    ctx.beginPath()
+    ctx.roundRect(6, 10, 116, 44, radius)
+    ctx.fill()
+    ctx.stroke()
+  }
   ctx.font = 'bold 34px "Microsoft YaHei", sans-serif'
-  ctx.fillStyle = '#dbe6f5'
+  ctx.fillStyle = badge ? '#e8f2ff' : '#dbe6f5'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(text, 64, 32)
@@ -243,9 +253,9 @@ function createAgvMesh(id: string): AgvMesh {
   nose.position.set(1.0, 0.45, 0)
   group.add(nose)
 
-  const sprite = makeLabel(id)
-  sprite.position.set(0, 1.7, 0)
-  sprite.scale.set(2.8, 1.4, 1)
+  const sprite = makeLabel(id, true)
+  sprite.position.set(0, 2.1, 0)
+  sprite.scale.set(3.0, 1.5, 1)
   group.add(sprite)
 
   agvGroup.add(group)
