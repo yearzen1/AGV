@@ -45,10 +45,15 @@ const running = ref(false)
 const finished = ref(false)
 const paused = ref(false)
 const speed = ref(1)
-const socketState = ref<'closed' | 'open'>('closed')
+const socketState = ref<'closed' | 'open' | 'failed'>('closed')
+
+/** 自动重连上限与退避间隔；耗尽后停止，等待用户手动重试。 */
+const MAX_RECONNECT_ATTEMPTS = 5
+const RECONNECT_DELAYS = [2000, 4000, 8000, 16000, 30000]
 
 let socket: WebSocket | null = null
 let reconnectTimer: number | null = null
+let reconnectAttempts = 0
 let disposed = false
 
 const hasSim = computed(() => running.value || finished.value)
@@ -137,14 +142,15 @@ function connectSocket() {
   socket = ws
   ws.onopen = () => {
     socketState.value = 'open'
+    reconnectAttempts = 0
   }
   ws.onclose = () => {
     if (socket === ws) socket = null
-    socketState.value = 'closed'
+    if (socketState.value !== 'failed') socketState.value = 'closed'
     scheduleReconnect()
   }
   ws.onerror = () => {
-    socketState.value = 'closed'
+    if (socketState.value !== 'failed') socketState.value = 'closed'
   }
   ws.onmessage = (messageEvent) => {
     try {
@@ -177,13 +183,31 @@ function connectSocket() {
   }
 }
 
-/** 连接意外断开时每隔 2 秒重试一次；离开页面后不再重连。 */
+/** 连接意外断开时按退避间隔重试；达到上限后停止，离开页面后不再重连。 */
 function scheduleReconnect() {
-  if (disposed || reconnectTimer !== null) return
+  if (disposed || reconnectTimer !== null || socketState.value === 'failed') return
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    socketState.value = 'failed'
+    ElMessage.warning('实时通道连接失败，请检查网络或登录状态后点击「重试」')
+    return
+  }
+  const delay = RECONNECT_DELAYS[reconnectAttempts]
+  reconnectAttempts += 1
   reconnectTimer = window.setTimeout(() => {
     reconnectTimer = null
     connectSocket()
-  }, 2000)
+  }, delay)
+}
+
+/** 手动重连或重新开始仿真：清掉待执行定时器并重置重试次数。 */
+function retrySocket() {
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  reconnectAttempts = 0
+  if (socketState.value === 'failed') socketState.value = 'closed'
+  connectSocket()
 }
 
 /**
@@ -223,7 +247,7 @@ async function start() {
     ElMessage.warning('请先选择路网与任务集')
     return
   }
-  connectSocket()
+  retrySocket()
   try {
     const result = await startSim({
       roadnetId: selectedRoadnetId.value,
@@ -388,10 +412,21 @@ onBeforeUnmount(() => {
         <el-radio-button :value="4">4x</el-radio-button>
       </el-radio-group>
       <el-tag v-if="simState" :type="simState.type" size="small">{{ simState.label }}</el-tag>
-      <el-tag :type="socketState === 'open' ? 'success' : 'info'" size="small">
-        {{ socketState === 'open' ? '实时通道已连接' : '实时通道未连接' }}
+      <el-tag
+        :type="socketState === 'open' ? 'success' : socketState === 'failed' ? 'danger' : 'info'"
+        size="small"
+      >
+        {{
+          socketState === 'open'
+            ? '实时通道已连接'
+            : socketState === 'failed'
+              ? '实时通道已断开'
+              : '实时通道未连接'
+        }}
       </el-tag>
-      <el-button v-if="socketState !== 'open'" size="small" @click="connectSocket">重连</el-button>
+      <el-button v-if="socketState !== 'open'" size="small" @click="retrySocket">
+        {{ socketState === 'failed' ? '重试' : '重连' }}
+      </el-button>
     </div>
 
     <div class="body">
