@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import RoadNetScene from '@/components/RoadNetScene.vue'
 import type { AgvView } from '@/types'
@@ -48,6 +48,8 @@ const speed = ref(1)
 const socketState = ref<'closed' | 'open'>('closed')
 
 let socket: WebSocket | null = null
+let reconnectTimer: number | null = null
+let disposed = false
 
 const hasSim = computed(() => running.value || finished.value)
 
@@ -129,7 +131,8 @@ async function onMapChange(id: number) {
 }
 
 function connectSocket() {
-  if (socket && socket.readyState === WebSocket.OPEN) return
+  if (disposed) return
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return
   const ws = new WebSocket(simSocketUrl())
   socket = ws
   ws.onopen = () => {
@@ -138,6 +141,7 @@ function connectSocket() {
   ws.onclose = () => {
     if (socket === ws) socket = null
     socketState.value = 'closed'
+    scheduleReconnect()
   }
   ws.onerror = () => {
     socketState.value = 'closed'
@@ -171,6 +175,15 @@ function connectSocket() {
       // 忽略非 JSON 消息
     }
   }
+}
+
+/** 连接意外断开时每隔 2 秒重试一次；离开页面后不再重连。 */
+function scheduleReconnect() {
+  if (disposed || reconnectTimer !== null) return
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null
+    connectSocket()
+  }, 2000)
 }
 
 /**
@@ -313,6 +326,16 @@ onMounted(async () => {
   await loadOptions()
   await syncStatus()
   connectSocket()
+})
+
+onBeforeUnmount(() => {
+  disposed = true
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  socket?.close()
+  socket = null
 })
 </script>
 
