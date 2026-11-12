@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getRoadNet,
@@ -28,7 +28,9 @@ const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
 const mapLoading = ref(false)
 const dialogRoadnet = ref<RoadNetPayload | null>(null)
-const invalidTaskId = ref<number | null>(null)
+const invalidTaskIds = ref<Set<number>>(new Set())
+const formErrors = ref<string[]>([])
+const saving = ref(false)
 const form = reactive<{ name: string; roadnetId: number | null; tasks: TaskDto[] }>({
   name: '',
   roadnetId: null,
@@ -79,9 +81,37 @@ async function loadDialogMap(roadnetId: number | null) {
   }
 }
 
+function clearErrors() {
+  invalidTaskIds.value = new Set()
+  formErrors.value = []
+}
+
+/** 任务编号与行号保持一致，删除后不会留下空洞。 */
+function renumberTasks() {
+  form.tasks.forEach((task, index) => {
+    task.id = index + 1
+  })
+}
+
 function defaultTasks(): TaskDto[] {
   if (stationNodes.value.length < 2) return []
   return [{ id: 1, from: stationNodes.value[0].id, to: stationNodes.value[1].id }]
+}
+
+/** 新行优先选一组没出现过的起终点，避免连续点击得到重复任务。 */
+function nextTaskPair(): { from: string; to: string } | null {
+  const stations = stationNodes.value
+  if (stations.length < 2) return null
+  const used = new Set(form.tasks.map((task) => `${task.from}->${task.to}`))
+  for (const from of stations) {
+    for (const to of stations) {
+      if (from.id === to.id) continue
+      if (!used.has(`${from.id}->${to.id}`)) {
+        return { from: from.id, to: to.id }
+      }
+    }
+  }
+  return { from: stations[0].id, to: stations[1].id }
 }
 
 async function openCreate() {
@@ -90,7 +120,7 @@ async function openCreate() {
     return
   }
   editingId.value = null
-  invalidTaskId.value = null
+  clearErrors()
   form.name = '新任务集'
   form.roadnetId = maps.value[0].id
   lastRoadnetId = form.roadnetId
@@ -103,12 +133,13 @@ async function openEdit(row: TaskSetSummary) {
   try {
     const payload = await getTaskSet(row.id)
     editingId.value = row.id
-    invalidTaskId.value = null
+    clearErrors()
     form.name = row.name
     form.roadnetId = row.roadnetId ?? maps.value[0]?.id ?? null
     lastRoadnetId = form.roadnetId
     await loadDialogMap(form.roadnetId)
     form.tasks = payload.tasks.map((task) => ({ ...task }))
+    renumberTasks()
     dialogVisible.value = true
   } catch (error: any) {
     ElMessage.error(error.message || '读取任务集失败')
@@ -131,31 +162,56 @@ async function onMapChange(roadnetId: number) {
   lastRoadnetId = roadnetId
   await loadDialogMap(roadnetId)
   form.tasks = defaultTasks()
-  invalidTaskId.value = null
+  clearErrors()
 }
 
 function addTask() {
-  if (stationNodes.value.length < 2) {
+  const pair = nextTaskPair()
+  if (!pair) {
     ElMessage.warning('该路网至少需要两个工位才能创建任务')
     return
   }
-  const nextId = form.tasks.length === 0 ? 1 : Math.max(...form.tasks.map((task) => task.id)) + 1
-  form.tasks.push({
-    id: nextId,
-    from: stationNodes.value[0].id,
-    to: stationNodes.value[1].id
-  })
+  form.tasks.push({ id: form.tasks.length + 1, ...pair })
+  clearErrors()
 }
 
 function removeTask(index: number) {
   form.tasks.splice(index, 1)
+  renumberTasks()
+  clearErrors()
 }
 
-function fillDemo() {
+async function clearTasks() {
+  if (form.tasks.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `确定清空当前 ${form.tasks.length} 条任务吗？`,
+      '清空任务',
+      { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' }
+    )
+  } catch {
+    return
+  }
+  form.tasks = []
+  clearErrors()
+}
+
+async function fillDemo() {
   const stations = stationNodes.value
   if (stations.length < 2) {
     ElMessage.warning('该路网至少需要两个工位才能填充演示数据')
     return
+  }
+  if (form.tasks.length > 0) {
+    try {
+      await ElMessageBox.confirm(
+        `填充演示数据会覆盖当前 ${form.tasks.length} 条任务，确定继续吗？`,
+        '填充演示数据',
+        { type: 'warning', confirmButtonText: '覆盖并填充', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
   }
   form.tasks = Array.from({ length: 20 }, (_, i) => {
     const from = stations[i % stations.length].id
@@ -165,6 +221,7 @@ function fillDemo() {
     }
     return { id: i + 1, from, to }
   })
+  clearErrors()
 }
 
 function openPicker(index: number, field: 'from' | 'to') {
@@ -178,6 +235,7 @@ function applyPickedNode(nodeId: string) {
   const task = form.tasks[pickerIndex.value]
   if (!task) return
   task[pickerField.value] = nodeId
+  clearErrors()
 }
 
 function closePicker() {
@@ -186,7 +244,7 @@ function closePicker() {
 }
 
 function rowClassName({ row }: { row: TaskDto }) {
-  return invalidTaskId.value === row.id ? 'invalid-row' : ''
+  return invalidTaskIds.value.has(row.id) ? 'invalid-row' : ''
 }
 
 async function submit() {
@@ -210,7 +268,8 @@ async function submit() {
     ElMessage.warning('起点与终点不能相同')
     return
   }
-  invalidTaskId.value = null
+  clearErrors()
+  saving.value = true
   try {
     const payload = { name: form.name, roadnetId: form.roadnetId, taskSet: { tasks: form.tasks } }
     if (editingId.value) {
@@ -224,9 +283,30 @@ async function submit() {
     await load()
   } catch (error: any) {
     const message = error.message || '保存失败'
-    const matched = /任务 (\d+)/.exec(message)
-    invalidTaskId.value = matched ? Number(matched[1]) : null
-    ElMessage.error(message)
+    const errors = message
+      .split(/[；;]/)
+      .map((item: string) => item.trim())
+      .filter(Boolean)
+    formErrors.value = errors.length > 0 ? errors : [message]
+    const ids = new Set<number>()
+    for (const item of formErrors.value) {
+      const matched = /任务\s*(\d+)/g
+      let current = matched.exec(item)
+      while (current) {
+        ids.add(Number(current[1]))
+        current = matched.exec(item)
+      }
+    }
+    invalidTaskIds.value = ids
+    if (ids.size > 0) {
+      ElMessage.error('保存失败，请检查标红的任务行')
+      await nextTick()
+      document.querySelector('.el-dialog .invalid-row')?.scrollIntoView({ block: 'center' })
+    } else {
+      ElMessage.error(message)
+    }
+  } finally {
+    saving.value = false
   }
 }
 
@@ -293,21 +373,52 @@ onMounted(load)
         </el-form-item>
       </el-form>
 
+      <el-alert
+        v-if="formErrors.length > 0"
+        class="form-errors"
+        type="error"
+        :closable="true"
+        show-icon
+        @close="clearErrors"
+      >
+        <template #title>保存失败，共 {{ formErrors.length }} 个问题</template>
+        <ul class="error-list">
+          <li v-for="(message, index) in formErrors" :key="index">{{ message }}</li>
+        </ul>
+      </el-alert>
+
       <div class="tools">
         <el-button size="small" @click="addTask">加一条</el-button>
-        <el-button size="small" @click="fillDemo">填充 20 单演示数据</el-button>
+        <el-button size="small" :disabled="form.tasks.length === 0" @click="fillDemo">
+          填充 20 单演示数据
+        </el-button>
+        <el-button size="small" :disabled="form.tasks.length === 0" @click="clearTasks">清空</el-button>
         <span class="muted">共 {{ form.tasks.length }} 条</span>
         <span v-if="stationNodes.length < 2" class="warning">
           当前路网只有 {{ stationNodes.length }} 个工位，至少需要两个
         </span>
       </div>
 
-      <el-table :data="form.tasks" height="360" size="small" :row-class-name="rowClassName">
+      <el-table
+        :data="form.tasks"
+        row-key="id"
+        height="360"
+        size="small"
+        empty-text="暂无任务，点「加一条」或「填充 20 单演示数据」"
+        :row-class-name="rowClassName"
+      >
         <el-table-column prop="id" label="序号" width="70" />
         <el-table-column label="起点" min-width="190">
           <template #default="{ row, $index }">
             <div class="station-cell">
-              <el-select v-model="row.from" filterable size="small" style="width: 100%">
+              <el-select
+                v-model="row.from"
+                filterable
+                size="small"
+                style="width: 100%"
+                :aria-label="`第 ${$index + 1} 行起点`"
+                @change="clearErrors"
+              >
                 <el-option
                   v-for="node in stationNodes"
                   :key="node.id"
@@ -324,7 +435,14 @@ onMounted(load)
         <el-table-column label="终点" min-width="190">
           <template #default="{ row, $index }">
             <div class="station-cell">
-              <el-select v-model="row.to" filterable size="small" style="width: 100%">
+              <el-select
+                v-model="row.to"
+                filterable
+                size="small"
+                style="width: 100%"
+                :aria-label="`第 ${$index + 1} 行终点`"
+                @change="clearErrors"
+              >
                 <el-option
                   v-for="node in stationNodes"
                   :key="node.id"
@@ -346,8 +464,8 @@ onMounted(load)
       </el-table>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="submit">保存</el-button>
+        <el-button :disabled="saving" @click="dialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
       </template>
     </el-dialog>
 
@@ -368,6 +486,16 @@ onMounted(load)
   align-items: center;
   gap: 10px;
   margin-bottom: 10px;
+}
+
+.form-errors {
+  margin-bottom: 12px;
+}
+
+.error-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  line-height: 1.7;
 }
 
 .station-cell {
