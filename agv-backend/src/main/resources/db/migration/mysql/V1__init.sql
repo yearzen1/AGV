@@ -3,7 +3,7 @@
 -- 布尔列使用 BIT(1)：Hibernate 6 MySQL 方言把 Boolean 映射为 BIT。
 
 CREATE TABLE IF NOT EXISTS sys_user (
-    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id          BIGINT      NOT NULL PRIMARY KEY,
     username    VARCHAR(64)  NOT NULL,
     password    VARCHAR(100) NOT NULL,
     real_name   VARCHAR(64),
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS sys_dict (
-    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id         BIGINT      NOT NULL PRIMARY KEY,
     dict_type  VARCHAR(32)  NOT NULL,
     dict_code  VARCHAR(64)  NOT NULL,
     dict_value VARCHAR(128) NOT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS sys_dict (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS roadnet (
-    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id           BIGINT      NOT NULL PRIMARY KEY,
     name         VARCHAR(128) NOT NULL,
     roadnet_json LONGTEXT     NOT NULL,
     is_template  BIT(1)       NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS roadnet (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS task_set (
-    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id          BIGINT      NOT NULL PRIMARY KEY,
     name        VARCHAR(128) NOT NULL,
     roadnet_id  BIGINT,
     tasks_json  LONGTEXT     NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS task_set (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS experiment (
-    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id          BIGINT      NOT NULL PRIMARY KEY,
     roadnet_id  BIGINT      NOT NULL,
     task_set_id BIGINT      NOT NULL,
     algorithm   VARCHAR(32) NOT NULL,
@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS experiment (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS experiment_metric (
-    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id              BIGINT      NOT NULL PRIMARY KEY,
     experiment_id   BIGINT NOT NULL,
     makespan        BIGINT NOT NULL,
     total_path_len  DOUBLE NOT NULL,

@@ -34,7 +34,7 @@ class PrimaryKeySchemaTest {
 
         Integer bigintColumns = jdbcTemplate.queryForObject("""
                 select count(*) from information_schema.columns
-                where table_schema = 'public' and column_name = 'id' and data_type = 'BIGINT'
+                where table_schema = 'public' and column_name = 'id' and upper(data_type) = 'BIGINT'
                 """, Integer.class);
         assertEquals(7, bigintColumns, "主键必须是 BIGINT 数字类型");
     }

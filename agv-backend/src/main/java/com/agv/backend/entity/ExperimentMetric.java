@@ -2,9 +2,6 @@ package com.agv.backend.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 /**
@@ -12,11 +9,7 @@ import jakarta.persistence.Table;
  */
 @Entity
 @Table(name = "experiment_metric")
-public class ExperimentMetric {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+public class ExperimentMetric extends BaseEntity {
 
     @Column(name = "experiment_id", nullable = false, unique = true)
     private Long experimentId;
@@ -36,14 +29,6 @@ public class ExperimentMetric {
     /** 冲突次数：预约失败导致停车的事件次数，一次连续等待记 1 次 */
     @Column(name = "conflict_count", nullable = false)
     private Integer conflictCount;
-
-    public Long getId() {
-        return id;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
 
     public Long getExperimentId() {
         return experimentId;

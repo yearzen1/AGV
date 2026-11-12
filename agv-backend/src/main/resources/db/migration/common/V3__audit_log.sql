@@ -1,6 +1,6 @@
 -- 业务审计日志。H2 与 MySQL 都支持这些类型，脚本放在 common 目录。
 CREATE TABLE IF NOT EXISTS sys_audit_log (
-    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id          BIGINT      NOT NULL PRIMARY KEY,
     username    VARCHAR(64),
     action      VARCHAR(48) NOT NULL,
     target_type VARCHAR(32),

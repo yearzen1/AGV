@@ -2,7 +2,7 @@
 -- JSON 列使用 CLOB：Hibernate 的 @Lob String 在 H2 方言下按 CLOB 校验。
 
 CREATE TABLE IF NOT EXISTS sys_user (
-    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id          BIGINT      NOT NULL PRIMARY KEY,
     username    VARCHAR(64)  NOT NULL,
     password    VARCHAR(100) NOT NULL,
     real_name   VARCHAR(64),
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS sys_user (
 );
 
 CREATE TABLE IF NOT EXISTS sys_dict (
-    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id         BIGINT      NOT NULL PRIMARY KEY,
     dict_type  VARCHAR(32)  NOT NULL,
     dict_code  VARCHAR(64)  NOT NULL,
     dict_value VARCHAR(128) NOT NULL,
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS sys_dict (
 );
 
 CREATE TABLE IF NOT EXISTS roadnet (
-    id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id            BIGINT      NOT NULL PRIMARY KEY,
     name          VARCHAR(128) NOT NULL,
     roadnet_json  CLOB         NOT NULL,
     is_template   BOOLEAN      NOT NULL,
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS roadnet (
 );
 
 CREATE TABLE IF NOT EXISTS task_set (
-    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id          BIGINT      NOT NULL PRIMARY KEY,
     name        VARCHAR(128) NOT NULL,
     roadnet_id  BIGINT,
     tasks_json  CLOB         NOT NULL,
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS task_set (
 );
 
 CREATE TABLE IF NOT EXISTS experiment (
-    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id          BIGINT      NOT NULL PRIMARY KEY,
     roadnet_id  BIGINT      NOT NULL,
     task_set_id BIGINT      NOT NULL,
     algorithm   VARCHAR(32) NOT NULL,
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS experiment (
 );
 
 CREATE TABLE IF NOT EXISTS experiment_metric (
-    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    id              BIGINT      NOT NULL PRIMARY KEY,
     experiment_id   BIGINT NOT NULL,
     makespan        BIGINT NOT NULL,
     total_path_len  DOUBLE NOT NULL,

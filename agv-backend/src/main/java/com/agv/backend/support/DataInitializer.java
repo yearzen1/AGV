@@ -26,6 +26,11 @@ public class DataInitializer implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DataInitializer.class);
 
+    /** 预置数据固定 ID，保持论文与 README 的复现参数 roadnetId=1、taskSetId=1 稳定。 */
+    private static final long STANDARD_WORKSHOP_ID = 1L;
+    private static final long LINE_WORKSHOP_ID = 2L;
+    private static final long DEMO_TASK_SET_ID = 1L;
+
     private final SysUserRepository userRepository;
     private final SysDictRepository dictRepository;
     private final RoadNetRepository mapRepository;
@@ -89,12 +94,12 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedTemplates() {
-        upsertTemplate("标准车间（双充电位）", RoadNetTemplates.STANDARD_WORKSHOP);
-        upsertTemplate("直线车间（快速上手）", RoadNetTemplates.LINE_WORKSHOP);
+        upsertTemplate("标准车间（双充电位）", RoadNetTemplates.STANDARD_WORKSHOP, STANDARD_WORKSHOP_ID);
+        upsertTemplate("直线车间（快速上手）", RoadNetTemplates.LINE_WORKSHOP, LINE_WORKSHOP_ID);
     }
 
     /** 模板按名称幂等更新：已有库也会同步到最新的标准布局。 */
-    private void upsertTemplate(String name, String json) {
+    private void upsertTemplate(String name, String json, long id) {
         for (RoadNetEntity map : mapRepository.findAllByOrderByIdAsc()) {
             if (name.equals(map.getName()) && Boolean.TRUE.equals(map.getIsTemplate())) {
                 if (!json.equals(map.getRoadnetJson())) {
@@ -105,12 +110,13 @@ public class DataInitializer implements CommandLineRunner {
                 return;
             }
         }
-        mapRepository.save(template(name, json));
+        mapRepository.save(template(name, json, id));
         log.info("初始化预置模板 {}", name);
     }
 
-    private RoadNetEntity template(String name, String json) {
+    private RoadNetEntity template(String name, String json, long id) {
         RoadNetEntity map = new RoadNetEntity();
+        map.setId(id);
         map.setName(name);
         map.setRoadnetJson(json);
         map.setIsTemplate(true);
@@ -167,6 +173,7 @@ public class DataInitializer implements CommandLineRunner {
         }
         try {
             TaskSet set = new TaskSet();
+            set.setId(DEMO_TASK_SET_ID);
             set.setName("演示任务集（20 单）");
             set.setRoadnetId(standardWorkshopId());
             set.setTasksJson(objectMapper.writeValueAsString(new TaskSetPayload(tasks)));
