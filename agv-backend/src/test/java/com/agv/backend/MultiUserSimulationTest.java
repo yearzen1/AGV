@@ -74,6 +74,12 @@ class MultiUserSimulationTest {
         mockMvc.perform(post("/api/sim/pause").header("Authorization", "Bearer " + admin))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.paused").value(true));
+        // 暂停后刷新要能恢复车辆位置：status 必须带当前帧的 agvs 快照
+        mockMvc.perform(get("/api/sim/status").header("Authorization", "Bearer " + admin))
+                .andExpect(jsonPath("$.data.status").value("RUNNING"))
+                .andExpect(jsonPath("$.data.agvs.length()").value(1))
+                .andExpect(jsonPath("$.data.agvs[0].id").value("AGV-1"))
+                .andExpect(jsonPath("$.data.agvs[0].x").isNumber());
         mockMvc.perform(get("/api/sim/status").header("Authorization", "Bearer " + dispatcher))
                 .andExpect(jsonPath("$.data.paused").value(false))
                 .andExpect(jsonPath("$.data.status").value("RUNNING"));
@@ -88,7 +94,8 @@ class MultiUserSimulationTest {
 
         mockMvc.perform(post("/api/sim/reset").header("Authorization", "Bearer " + dispatcher))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.status").value("IDLE"));
+                .andExpect(jsonPath("$.data.status").value("IDLE"))
+                .andExpect(jsonPath("$.data.agvs.length()").value(0));
 
         assertEquals("ABORTED", experimentRepository.findById(adminExperiment).orElseThrow().getStatus());
         assertEquals("ABORTED", experimentRepository.findById(dispatcherExperiment).orElseThrow().getStatus());
