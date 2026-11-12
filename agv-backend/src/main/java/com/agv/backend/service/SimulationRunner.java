@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -136,9 +137,11 @@ final class SimulationRunner {
         if (current == null) {
             payload.put("tick", tick);
             payload.put("metrics", lastMetrics);
+            payload.put("agvs", List.of());
         } else {
             payload.put("tick", current.tick());
             payload.put("metrics", current.metrics());
+            payload.put("agvs", current.snapshots());
         }
         return payload;
     }
@@ -171,9 +174,13 @@ final class SimulationRunner {
         } catch (RuntimeException ex) {
             log.error("用户 {} 的仿真推进失败", userId, ex);
             status = "FAILED";
-            stopScheduler();
-            abortExperiment("FAILED");
+            lastMetrics = current.metrics();
+            tick = current.tick();
+            engine = null;
+            // 先推送失败状态，再停调度线程；shutdownNow 会中断当前线程，先停会让这次推送失败并踢掉会话
             broadcastStatus("failed");
+            abortExperiment("FAILED");
+            stopScheduler();
             return;
         }
 
@@ -199,7 +206,6 @@ final class SimulationRunner {
         status = "FINISHED";
         tick = finishedEngine.tick();
         lastMetrics = finishedEngine.metrics();
-        stopScheduler();
         engine = null;
         try {
             Experiment experiment = experimentRepository.findById(experimentId).orElse(null);
@@ -218,7 +224,9 @@ final class SimulationRunner {
         } catch (RuntimeException ex) {
             log.warn("实验指标落库失败", ex);
         }
+        // 必须先推送结束状态再停线程：shutdownNow 会中断当前调度线程，先停会让结束消息推送失败并移除会话
         broadcastStatus("finished");
+        stopScheduler();
     }
 
     /**
@@ -277,6 +285,7 @@ final class SimulationRunner {
         message.put("seed", null);
         message.put("tick", 0);
         message.put("metrics", null);
+        message.put("agvs", List.of());
         socketHandler.sendToUser(userId, message);
     }
 }

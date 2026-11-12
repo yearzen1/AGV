@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import RoadNetScene from '@/components/RoadNetScene.vue'
 import type { AgvView } from '@/types'
@@ -48,6 +48,8 @@ const speed = ref(1)
 const socketState = ref<'closed' | 'open'>('closed')
 
 let socket: WebSocket | null = null
+let reconnectTimer: number | null = null
+let disposed = false
 
 const hasSim = computed(() => running.value || finished.value)
 
@@ -129,7 +131,8 @@ async function onMapChange(id: number) {
 }
 
 function connectSocket() {
-  if (socket && socket.readyState === WebSocket.OPEN) return
+  if (disposed) return
+  if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) return
   const ws = new WebSocket(simSocketUrl())
   socket = ws
   ws.onopen = () => {
@@ -138,6 +141,7 @@ function connectSocket() {
   ws.onclose = () => {
     if (socket === ws) socket = null
     socketState.value = 'closed'
+    scheduleReconnect()
   }
   ws.onerror = () => {
     socketState.value = 'closed'
@@ -173,6 +177,15 @@ function connectSocket() {
   }
 }
 
+/** 连接意外断开时每隔 2 秒重试一次；离开页面后不再重连。 */
+function scheduleReconnect() {
+  if (disposed || reconnectTimer !== null) return
+  reconnectTimer = window.setTimeout(() => {
+    reconnectTimer = null
+    connectSocket()
+  }, 2000)
+}
+
 /**
  * 刷新页面或切换菜单后，后端可能仍在运行仿真。
  * 用 /api/sim/status 把运行状态、参数和指标同步回页面，避免显示成「未开始」。
@@ -190,6 +203,7 @@ async function syncStatus() {
     speed.value = current.speed
     tick.value = current.tick
     metrics.value = current.metrics
+    agvs.value = current.agvs ?? []
     if (current.roadnetId) {
       selectedRoadnetId.value = current.roadnetId
       await loadRoadNet(current.roadnetId)
@@ -261,6 +275,7 @@ async function reset() {
     events.value = []
     metrics.value = null
     tick.value = 0
+    speed.value = 1
     status.value = null
   } catch (error: any) {
     ElMessage.error(error.message || '重置失败')
@@ -313,15 +328,33 @@ onMounted(async () => {
   await syncStatus()
   connectSocket()
 })
+
+onBeforeUnmount(() => {
+  disposed = true
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer)
+    reconnectTimer = null
+  }
+  socket?.close()
+  socket = null
+})
 </script>
 
 <template>
   <div class="sim-page">
     <div class="toolbar panel">
-      <el-select v-model="selectedRoadnetId" style="width: 200px" placeholder="路网" @change="onMapChange">
+      <span class="field-label">路网</span>
+      <el-select
+        v-model="selectedRoadnetId"
+        style="width: 200px"
+        placeholder="路网"
+        :disabled="running"
+        @change="onMapChange"
+      >
         <el-option v-for="map in maps" :key="map.id" :label="map.name" :value="map.id" />
       </el-select>
-      <el-select v-model="selectedTaskSetId" style="width: 190px" placeholder="任务集">
+      <span class="field-label">任务集</span>
+      <el-select v-model="selectedTaskSetId" style="width: 190px" placeholder="任务集" :disabled="running">
         <el-option
           v-for="set in mapTaskSets"
           :key="set.id"
@@ -330,16 +363,25 @@ onMounted(async () => {
         />
       </el-select>
       <span v-if="selectedRoadnetId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
-      <el-select v-model="algorithm" style="width: 150px">
+      <span class="field-label">算法</span>
+      <el-select v-model="algorithm" style="width: 150px" :disabled="running">
         <el-option v-for="item in algorithms" :key="item.dictCode" :label="item.dictValue" :value="item.dictCode" />
       </el-select>
-      <el-input-number v-model="agvCount" :min="1" :max="12" style="width: 120px" />
-      <el-input-number v-model="seed" :min="0" :controls="false" style="width: 140px" />
+      <span class="field-label">AGV 数量</span>
+      <el-input-number v-model="agvCount" :min="1" :max="12" style="width: 120px" :disabled="running" />
+      <span class="field-label">随机种子</span>
+      <el-input-number v-model="seed" :min="0" :controls="false" style="width: 140px" :disabled="running" />
       <el-button type="primary" :disabled="running || !selectedTaskSetId" @click="start">开始</el-button>
       <el-button :disabled="!running || paused" @click="pause">暂停</el-button>
       <el-button :disabled="!running || !paused" @click="resume">继续</el-button>
       <el-button :disabled="!hasSim" @click="reset">重置</el-button>
-      <el-radio-group :model-value="speed" size="small" @change="onSpeedChange">
+      <el-radio-group
+        class="speed-group"
+        :model-value="speed"
+        size="small"
+        :disabled="!running"
+        @change="onSpeedChange"
+      >
         <el-radio-button :value="0.5">0.5x</el-radio-button>
         <el-radio-button :value="1">1x</el-radio-button>
         <el-radio-button :value="2">2x</el-radio-button>
@@ -393,13 +435,21 @@ onMounted(async () => {
         <div class="panel agv-panel">
           <div class="panel-title">车辆状态</div>
           <div v-if="agvs.length === 0" class="muted">
-            {{ finished ? '仿真已结束，车辆位置只在运行中可见' : '尚未启动仿真' }}
+            {{
+              running
+                ? '正在等待第一帧车辆数据…'
+                : finished
+                  ? '仿真已结束，车辆位置只在运行中可见'
+                  : '尚未启动仿真'
+            }}
           </div>
           <div v-for="agv in agvs" :key="agv.id" class="agv-row">
             <span class="agv-id">{{ agv.id }}</span>
             <el-tag size="small" :type="statusTagType(agv.status)">{{ statusText(agv.status) }}</el-tag>
             <span class="muted">任务 {{ agv.taskId > 0 ? agv.taskId : '-' }}</span>
-            <span class="muted">{{ agv.arcId ?? '节点' }} {{ agv.s.toFixed(1) }}m</span>
+            <span class="muted">
+              {{ agv.arcId ? `${agv.arcId} ${agv.s.toFixed(1)}m` : `节点 ${agv.nodeId ?? '-'}` }}
+            </span>
           </div>
         </div>
 
@@ -434,6 +484,12 @@ onMounted(async () => {
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
+}
+
+.field-label {
+  font-size: 13px;
+  color: #606266;
+  white-space: nowrap;
 }
 
 .body {
