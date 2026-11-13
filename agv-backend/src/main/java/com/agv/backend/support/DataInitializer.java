@@ -91,6 +91,7 @@ public class DataInitializer implements CommandLineRunner {
     private void seedTemplates() {
         upsertTemplate("标准车间（双充电位）", RoadNetTemplates.STANDARD_WORKSHOP);
         upsertTemplate("直线车间（快速上手）", RoadNetTemplates.LINE_WORKSHOP);
+        upsertTemplate("双车道车间（会车演示）", RoadNetTemplates.DUAL_LANE_WORKSHOP);
     }
 
     /** 模板按名称幂等更新：已有库也会同步到最新的标准布局。 */
