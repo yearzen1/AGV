@@ -3,8 +3,8 @@
 // 首次运行需安装浏览器：cd agv-frontend && npx playwright install chromium
 // 用法：cd agv-frontend && npm run e2e:sim
 //
-// 覆盖：参数标签、空闲时倍速禁用、启动后参数锁定、暂停冻结、刷新恢复车辆位置、
-// 继续、重置回初始状态。仿真只跑前若干个 tick，不等自然结束。
+// 覆盖：参数标签、1366×768 布局无页面滚动条、空闲时倍速禁用、启动后参数锁定、
+// 暂停冻结、刷新恢复车辆位置、继续、重置回初始状态。仿真只跑前若干个 tick，不等自然结束。
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -73,6 +73,16 @@ async function main() {
     await page.goto(`${BASE}/simulation`, { waitUntil: 'networkidle' })
     await page.waitForFunction(() => document.querySelector('.toolbar') != null, null, { timeout: 15000 })
 
+    console.log('清理上一次仿真状态')
+    const resetButton = page.getByRole('button', { name: '重置', exact: true })
+    if (await resetButton.isEnabled()) {
+      await resetButton.click()
+      await page.waitForTimeout(500)
+    }
+    // 重新加载后按默认路网与任务集初始化，避免沿用上一次实验的参数和倍速
+    await page.reload({ waitUntil: 'networkidle' })
+    await page.waitForFunction(() => document.querySelector('.toolbar') != null, null, { timeout: 15000 })
+
     console.log('检查参数标签')
     const labels = await page.locator('.toolbar .field-label').allInnerTexts()
     assert(
@@ -80,6 +90,27 @@ async function main() {
         JSON.stringify(['路网', '任务集', '算法', 'AGV 数量', '随机种子']),
       `工具栏五个参数都有文字标签：${labels.join(' / ')}`
     )
+
+    console.log('检查 1366×768 布局')
+    await page.setViewportSize({ width: 1366, height: 768 })
+    await page.waitForTimeout(500)
+    const compact = await page.evaluate(() => {
+      const main = document.querySelector('.el-main')
+      const scene = document.querySelector('.scene-panel')
+      const canvas = scene?.querySelector('canvas')
+      return {
+        pageScrollDelta: main ? main.scrollHeight - main.clientHeight : -1,
+        sceneHeight: scene ? Math.round(scene.getBoundingClientRect().height) : 0,
+        canvasHeight: canvas?.clientHeight ?? 0
+      }
+    })
+    assert(compact.pageScrollDelta === 0, '1366×768 下页面不出现纵向滚动条')
+    assert(
+      compact.sceneHeight > 0 && Math.abs(compact.canvasHeight - compact.sceneHeight) <= 1,
+      '3D 场景随窗口高度缩放'
+    )
+    await page.setViewportSize(VIEWPORT)
+    await page.waitForTimeout(300)
 
     console.log('检查空闲状态')
     const idle = await page.evaluate(() => ({
