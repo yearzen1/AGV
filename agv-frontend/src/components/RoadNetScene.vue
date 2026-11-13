@@ -31,8 +31,18 @@ const emit = defineEmits<{
   viewMode: [topView: boolean]
 }>()
 
+interface SceneDebug {
+  road: RoadNetRender['stats'] | null
+  agvs: Array<{ id: string; arcId: string | null; laneOffset: number }>
+}
+
 const container = ref<HTMLDivElement | null>(null)
 const pathGroup = new THREE.Group()
+const debug: SceneDebug = { road: null, agvs: [] }
+
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __AGV_SCENE_DEBUG__?: SceneDebug }).__AGV_SCENE_DEBUG__ = debug
+}
 
 let viewer: SceneViewer | null = null
 let fleet: AgvFleet | null = null
@@ -51,7 +61,10 @@ function init() {
   viewer.scene.add(pathGroup)
   viewer.setPickTargets(fleet.group)
   viewer.followProvider = (id) => fleet?.positionOf(id) ?? null
-  viewer.onFrame = (dt, now) => fleet?.update(dt, now)
+  viewer.onFrame = (dt, now) => {
+    fleet?.update(dt, now)
+    if (import.meta.env.DEV && fleet) debug.agvs = fleet.laneState()
+  }
   viewer.onSelect = (id) => {
     fleet?.setSelected(id)
     emit('select', id)
@@ -72,10 +85,12 @@ function rebuildRoadNet(net: RoadNetPayload | null) {
   fleet.clear()
   fleet.setRoadNet(new Map())
   clearPath()
+  debug.road = null
 
   if (!net || net.nodes.length === 0) return
 
   netRender = buildRoadNet(net, labels!)
+  debug.road = netRender.stats
   viewer.scene.add(netRender.group)
   fleet.setRoadNet(netRender.edges)
   fleet.setLabelsVisible(props.showLabels)
@@ -177,6 +192,10 @@ onBeforeUnmount(() => {
   clearPath()
   labels?.dispose()
   viewer?.dispose()
+  if (import.meta.env.DEV) {
+    const holder = window as unknown as { __AGV_SCENE_DEBUG__?: SceneDebug }
+    if (holder.__AGV_SCENE_DEBUG__ === debug) delete holder.__AGV_SCENE_DEBUG__
+  }
   fleet = null
   labels = null
   viewer = null

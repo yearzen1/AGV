@@ -44,3 +44,23 @@ export function laneOffsetForArc(
   if (!edge || !isDualLane(edge)) return 0
   return LANE.offset
 }
+
+export interface Pose2D {
+  x: number
+  y: number
+  /** 朝向，单位度，0 指向 +x。 */
+  heading: number
+}
+
+/**
+ * 把车辆从弧中心线移到「前进方向右侧」。二维 y 向下，
+ * 所以右手边是 (-sinθ, cosθ)，和路网铺装使用同一套规则。
+ */
+export function offsetAlongRight(pose: Pose2D, offset: number): { x: number; y: number } {
+  if (!offset) return { x: pose.x, y: pose.y }
+  const radians = (pose.heading * Math.PI) / 180
+  return {
+    x: pose.x - Math.sin(radians) * offset,
+    y: pose.y + Math.cos(radians) * offset
+  }
+}

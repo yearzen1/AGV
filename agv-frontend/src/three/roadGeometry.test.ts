@@ -7,7 +7,7 @@ interface TestNode {
   id: string
   x: number
   y: number
-  type: string
+  type: 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION'
   capacity?: number
 }
 

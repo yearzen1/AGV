@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { NetEdge } from '@/api/roadnet'
 import { AGV_SIZE, AGV_Y, STATUS_COLORS } from './constants'
-import { laneOffsetForArc, type LaneEdge } from './lane'
+import { laneOffsetForArc, offsetAlongRight, type LaneEdge } from './lane'
 import { expSmooth, PoseBuffer, type AgvPose } from './motion'
 import type { LabelFactory } from './labels'
 
@@ -13,6 +13,7 @@ interface AgvEntry {
   ring: THREE.Mesh
   label: THREE.Sprite
   laneOffset: number
+  arcId: string | null
   status: string
 }
 
@@ -164,13 +165,11 @@ export class AgvFleet {
       const entry = this.entries.get(pose.id) ?? this.createEntry(pose.id)
       const targetOffset = laneOffsetForArc(this.edges, pose.arcId)
       entry.laneOffset = expSmooth(entry.laneOffset, targetOffset, 9, dt)
+      entry.arcId = pose.arcId ?? null
 
       const radians = THREE.MathUtils.degToRad(pose.heading || 0)
-      entry.group.position.set(
-        pose.x - Math.sin(radians) * entry.laneOffset,
-        AGV_Y,
-        pose.y + Math.cos(radians) * entry.laneOffset
-      )
+      const position = offsetAlongRight(pose, entry.laneOffset)
+      entry.group.position.set(position.x, AGV_Y, position.y)
       entry.group.rotation.y = -radians
 
       if (entry.status !== pose.status) {
@@ -273,6 +272,7 @@ export class AgvFleet {
       ring,
       label,
       laneOffset: 0,
+      arcId: null,
       status: ''
     }
     this.entries.set(id, entry)
@@ -296,6 +296,15 @@ export class AgvFleet {
   /** 相机跟随需要的实时位置；返回内部向量，调用方只读。 */
   positionOf(id: string): THREE.Vector3 | null {
     return this.entries.get(id)?.group.position ?? null
+  }
+
+  /** 开发期调试快照：端到端测试用它确认车辆确实落在视觉车道上。 */
+  laneState(): Array<{ id: string; arcId: string | null; laneOffset: number }> {
+    return [...this.entries].map(([id, entry]) => ({
+      id,
+      arcId: entry.arcId,
+      laneOffset: entry.laneOffset
+    }))
   }
 
   pick(raycaster: THREE.Raycaster): string | null {
