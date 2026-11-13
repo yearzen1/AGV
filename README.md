@@ -282,6 +282,15 @@ npm run e2e:taskset
 
 脚本会新建并清理一条临时任务集，验证行号连续、加行不重复、批量填充与清空确认、保存失败时列出全部错误并标红多行。截图同样写到 `.playwright-mcp/e2e/`。
 
+双车道 3D 场景回归（同样需要后端 8080 和前端 dev server）：
+
+```bash
+cd agv-frontend
+npm run e2e:scene
+```
+
+脚本通过接口创建一张临时双车道路网，打开 3D 预览，核对路面、分隔线和箭头数量，截图写到 `.playwright-mcp/e2e/dual-scene.png`，结束后删除临时路网。前端不在 5173 时用 `AGV_WEB=http://localhost:5188 npm run e2e:scene` 指定地址；该脚本依赖开发模式的场景统计，生产构建不暴露。
+
 - `AStarPlannerTest`：直线路网、不可达、封锁绕行、转弯惩罚、与状态空间 Bellman-Ford 对拍
 - `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区
 - `RoadNetValidatorTest`：8 条校验规则
