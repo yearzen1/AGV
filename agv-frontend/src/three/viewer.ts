@@ -270,6 +270,19 @@ export class SceneViewer {
 
     this.setEnvironment(settings.environment)
     this.setBloom(settings.bloom)
+    this.refreshMaterials()
+  }
+
+  /** 阴影和环境开关会改变着色器宏，切档后必须让已编译的材质重新编译。 */
+  private refreshMaterials() {
+    this.scene.traverse((object) => {
+      const mesh = object as THREE.Mesh
+      if (!mesh.isMesh) return
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      for (const material of materials) {
+        if (material) material.needsUpdate = true
+      }
+    })
   }
 
   private setShadowMapSize(size: number) {
