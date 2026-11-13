@@ -39,8 +39,12 @@ function arrowsOn(length) {
   return count
 }
 
+/** 与 constants.ts 的 LANE 保持一致：直角路口铺装沿每条边伸出的距离。 */
+const CORNER_TRIM = 0.7 + 1.3 / 2
+
 function expectedStats(net) {
   const nodeMap = new Map(net.nodes.map((node) => [node.id, node]))
+  const degree = new Map()
   let ribbons = 0
   let dividers = 0
   let arrows = 0
@@ -52,23 +56,29 @@ function expectedStats(net) {
     const length = Math.hypot(to.x - from.x, to.y - from.y)
     if (length < 0.01) continue
     const dual = edge.direction === 'TWO_WAY' && edge.laneMode === 'DUAL'
+    degree.set(edge.from, (degree.get(edge.from) ?? 0) + 1)
+    degree.set(edge.to, (degree.get(edge.to) ?? 0) + 1)
 
+    // 这张网每个节点都是直角转角，标线两端各裁掉一个铺装半径
+    const markingLength = Math.max(0, length - CORNER_TRIM * 2)
     if (dual) {
       ribbons += 2
       dividers += 1
-      arrows += arrowsOn(length) * 2
+      arrows += arrowsOn(markingLength) * 2
     } else {
       ribbons += 1
       if (edge.direction === 'TWO_WAY') {
         dividers += 1
         arrows += 2
       } else {
-        arrows += arrowsOn(length)
+        arrows += arrowsOn(markingLength)
       }
     }
   }
 
-  return { ribbons, dividers, arrows }
+  // 直角节点度数 ≥ 2 就生成一块铺装；直行贯通的节点不生成
+  const junctions = [...degree.values()].filter((count) => count >= 2).length
+  return { ribbons, dividers, arrows, junctions }
 }
 
 /** 一张 10 米见方的临时双车道路网：三边 DUAL、一边 SINGLE。 */
@@ -162,8 +172,10 @@ async function main() {
     close(stats.ribbons, expected.ribbons, '路面数量')
     close(stats.dividers, expected.dividers, '分隔线数量')
     close(stats.arrows, expected.arrows, '箭头数量')
+    close(stats.junctions, expected.junctions, '路口铺装数量')
     assert(stats.ribbons === 7, '三条双车道边各 2 条路面，单车道边 1 条')
     assert(stats.dividers === 4, '三条双车道和一条单车道双向各有分隔线')
+    assert(stats.junctions === 4, '四个直角节点各有一块路口铺装')
     assert(agvs.length === 0, '3D 预览不渲染车辆')
 
     const canvas = await page.locator('canvas').boundingBox()

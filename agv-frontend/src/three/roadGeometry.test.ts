@@ -92,6 +92,39 @@ function assertIndexBounds(buffer: MeshArrays) {
   }
 }
 
+function distanceTo(buffer: MeshArrays, x: number, z: number): number {
+  let closest = Infinity
+  for (let i = 0; i < buffer.positions.length; i += 3) {
+    const dx = buffer.positions[i] - x
+    const dz = buffer.positions[i + 2] - z
+    closest = Math.min(closest, Math.hypot(dx, dz))
+  }
+  return closest
+}
+
+/** 判断平面三角形网格是否覆盖某个点（重心坐标）。 */
+function coversPoint(buffer: MeshArrays, x: number, z: number): boolean {
+  for (let i = 0; i < buffer.indices.length; i += 3) {
+    const a = buffer.indices[i] * 3
+    const b = buffer.indices[i + 1] * 3
+    const c = buffer.indices[i + 2] * 3
+    const ax = buffer.positions[a]
+    const az = buffer.positions[a + 2]
+    const bx = buffer.positions[b]
+    const bz = buffer.positions[b + 2]
+    const cx = buffer.positions[c]
+    const cz = buffer.positions[c + 2]
+
+    const denominator = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz)
+    if (Math.abs(denominator) < 1e-9) continue
+    const first = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / denominator
+    const second = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / denominator
+    const third = 1 - first - second
+    if (first >= -1e-9 && second >= -1e-9 && third >= -1e-9) return true
+  }
+  return false
+}
+
 test('buildRoadGeometry splits a dual edge into two lanes and a divider', () => {
   const result = buildRoadGeometry(
     makeNet(
@@ -202,7 +235,7 @@ test('buildRoadGeometry skips missing endpoints and zero-length edges', () => {
       [edge({ to: 'Z' })]
     )
   )
-  assert.deepEqual(missing.stats, { ribbons: 0, dividers: 0, arrows: 0 })
+  assert.deepEqual(missing.stats, { ribbons: 0, dividers: 0, arrows: 0, junctions: 0 })
 
   const zero = buildRoadGeometry(
     makeNet(
@@ -213,5 +246,73 @@ test('buildRoadGeometry skips missing endpoints and zero-length edges', () => {
       [edge({ length: 0 })]
     )
   )
-  assert.deepEqual(zero.stats, { ribbons: 0, dividers: 0, arrows: 0 })
+  assert.deepEqual(zero.stats, { ribbons: 0, dividers: 0, arrows: 0, junctions: 0 })
+})
+
+test('a right-angle corner gets one apron that covers the crossing strips', () => {
+  const result = buildRoadGeometry(
+    makeNet(
+      [
+        { id: 'A', x: 0, y: 0, type: 'JUNCTION' },
+        { id: 'B', x: 10, y: 0, type: 'JUNCTION' },
+        { id: 'C', x: 10, y: 10, type: 'JUNCTION' }
+      ],
+      [edge({ id: 'E1', from: 'A', to: 'B' }), edge({ id: 'E2', from: 'B', to: 'C' })]
+    )
+  )
+
+  assert.equal(result.stats.junctions, 1)
+  // 两条 1.3 米宽的车道带在 B 处叠出的交叉区，铺装必须盖住
+  assert.ok(coversPoint(result.junctions, 9.5, 0.5), '铺装没有盖住交叉区中心')
+  assert.ok(coversPoint(result.junctions, 9.6, 1.2), '铺装没有盖住交叉区外角')
+  assert.ok(!coversPoint(result.junctions, 7, -3), '铺装不应延伸到路口之外')
+
+  // 标线在铺装边缘断开，不会穿进路口
+  assert.ok(distanceTo(result.dividers, 10, 0) > 1.3, '分隔线穿进了路口')
+  assert.ok(distanceTo(result.arrows, 10, 0) > 1.3, '箭头穿进了路口')
+
+  assertUpward(result.junctions)
+  assertIndexBounds(result.junctions)
+  assert.equal(result.junctions.uvs.length, (result.junctions.positions.length / 3) * 2)
+})
+
+test('a straight pass-through node keeps the lanes continuous without an apron', () => {
+  const result = buildRoadGeometry(
+    makeNet(
+      [
+        { id: 'A', x: 0, y: 0, type: 'JUNCTION' },
+        { id: 'B', x: 5, y: 0, type: 'JUNCTION' },
+        { id: 'C', x: 10, y: 0, type: 'JUNCTION' }
+      ],
+      [edge({ id: 'E1', from: 'A', to: 'B' }), edge({ id: 'E2', from: 'B', to: 'C' })]
+    )
+  )
+
+  assert.equal(result.stats.junctions, 0)
+  assert.equal(result.stats.dividers, 2)
+  // 直行节点只在节点处留一个缺口，不需要铺装
+  assert.ok(distanceTo(result.dividers, 5, 0) > 0.3)
+})
+
+test('a T junction between dual lanes and a single branch gets an apron too', () => {
+  const result = buildRoadGeometry(
+    makeNet(
+      [
+        { id: 'A', x: 0, y: 0, type: 'JUNCTION' },
+        { id: 'B', x: 10, y: 0, type: 'JUNCTION' },
+        { id: 'C', x: 20, y: 0, type: 'JUNCTION' },
+        { id: 'D', x: 10, y: 10, type: 'WORKSTATION' }
+      ],
+      [
+        edge({ id: 'E1', from: 'A', to: 'B' }),
+        edge({ id: 'E2', from: 'B', to: 'C' }),
+        edge({ id: 'E3', from: 'B', to: 'D', laneMode: 'SINGLE' })
+      ]
+    )
+  )
+
+  assert.equal(result.stats.junctions, 1)
+  assert.ok(coversPoint(result.junctions, 9.6, 0.5), '铺装没有盖住支路与主路的交叉区')
+  assert.ok(coversPoint(result.junctions, 10.4, 0.5), '铺装没有盖住支路与主路的交叉区')
+  assertUpward(result.junctions)
 })
