@@ -20,6 +20,7 @@ specs/           实施计划、时间安排、参考文献
 - 术语、限界上下文、聚合边界、不变量和状态机：[docs/reference/领域模型与术语.md](docs/reference/领域模型与术语.md)
 - 为什么这样建模、持久化模型与领域模型的偏差：[docs/explanation/领域模型说明.md](docs/explanation/领域模型说明.md)
 - `WarehouseMap` / `mapId` 等历史命名的分阶段迁移计划：[docs/how-to/统一领域命名.md](docs/how-to/统一领域命名.md)
+- 三维场景的坐标、插值、画质档位与取舍：[docs/explanation/三维场景渲染.md](docs/explanation/三维场景渲染.md)
 
 代码、接口、页面、论文出现术语歧义时，以 reference 文档为准。
 
@@ -214,6 +215,7 @@ WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧�
 | P0 环境搭建（登录、双角色、路网 CRUD、WebSocket） | 已完成 |
 | P1a 3D 场景渲染 | 已完成 |
 | P1b 画布建图编辑器 | 已完成 |
+| P1c 仿真三维真实感（实体路面、阴影、画质档位、选中跟随） | 已完成 |
 | P2 算法核心（A\* + 时间窗引擎 + 死锁处理） | 已完成 |
 | P3 联调（实时推送、暂停调速、事件日志） | 已完成 |
 | P4 调度对比（双算法 + 指标报表 + 历史回看） | 已完成 |
@@ -253,6 +255,13 @@ python scripts/build-ppt.py           # 生成 pptx
 
 ```bash
 mvn test
+```
+
+前端三维渲染单元测试（使用 Node 自带 test runner，无需浏览器；需要 Node 22+ 的类型剥离能力）：
+
+```bash
+cd agv-frontend
+npm test
 ```
 
 前端地图编辑器回归（需要先启动后端 8080 和前端 5173）：
