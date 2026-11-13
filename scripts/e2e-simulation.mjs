@@ -132,7 +132,7 @@ async function main() {
     await page.waitForFunction(() => document.querySelectorAll('.agv-row').length === 3, null, { timeout: 15000 })
     assert((await page.locator('.agv-row').count()) === 3, '车辆状态显示 3 台车')
     const runningState = await page.evaluate(() => ({
-      selects: [...document.querySelectorAll('.toolbar .el-select')].map(
+      selects: [...document.querySelectorAll('.toolbar .param-select')].map(
         (el) => el.querySelector('.el-select__wrapper.is-disabled') != null
       ),
       numbers: [...document.querySelectorAll('.toolbar .el-input-number')].map((el) => el.classList.contains('is-disabled')),

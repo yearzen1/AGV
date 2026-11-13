@@ -439,6 +439,7 @@ onBeforeUnmount(() => {
       <span class="field-label">路网</span>
       <el-select
         v-model="selectedRoadnetId"
+        class="param-select"
         style="width: 200px"
         placeholder="路网"
         :disabled="running"
@@ -447,7 +448,13 @@ onBeforeUnmount(() => {
         <el-option v-for="map in maps" :key="map.id" :label="map.name" :value="map.id" />
       </el-select>
       <span class="field-label">任务集</span>
-      <el-select v-model="selectedTaskSetId" style="width: 190px" placeholder="任务集" :disabled="running">
+      <el-select
+        v-model="selectedTaskSetId"
+        class="param-select"
+        style="width: 190px"
+        placeholder="任务集"
+        :disabled="running"
+      >
         <el-option
           v-for="set in mapTaskSets"
           :key="set.id"
@@ -457,7 +464,7 @@ onBeforeUnmount(() => {
       </el-select>
       <span v-if="selectedRoadnetId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
       <span class="field-label">算法</span>
-      <el-select v-model="algorithm" style="width: 150px" :disabled="running">
+      <el-select v-model="algorithm" class="param-select" style="width: 150px" :disabled="running">
         <el-option v-for="item in algorithms" :key="item.dictCode" :label="item.dictValue" :value="item.dictCode" />
       </el-select>
       <span class="field-label">AGV 数量</span>
