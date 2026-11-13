@@ -42,7 +42,11 @@ export const AGV_SIZE = {
 export const LANE = {
   width: 1.3,
   offset: 0.7,
-  textureTileMeters: 2
+  textureTileMeters: 2,
+  /** 路口凸包沿每条边回缩的距离，避免直角转角的凸包退化成一条线。 */
+  junctionSetback: 0.35,
+  /** 相邻边方向延伸小于该值的节点按直行处理，不铺路口。 */
+  junctionMinReach: 0.6
 } as const
 
 /** 场景基座高度：路面略高于地面，车辆轮胎贴路面。 */

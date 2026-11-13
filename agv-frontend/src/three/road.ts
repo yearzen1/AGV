@@ -32,19 +32,30 @@ export function buildRoadNet(net: RoadNetPayload, labels: LabelFactory): RoadNet
   const bounds = computeBounds(net.nodes)
   const geometry = buildRoadGeometry(net)
 
+  // 路面和路口铺装共用一套沥青材质，只在几何上分开，方便统计和单测
+  let roadMaterial: THREE.MeshStandardMaterial | null = null
+  const ensureRoadMaterial = () => {
+    roadMaterial ??= new THREE.MeshStandardMaterial({
+      map: makeRoadTexture(),
+      color: 0xffffff,
+      roughness: 0.92,
+      metalness: 0.02
+    })
+    return roadMaterial
+  }
+
   if (geometry.stats.ribbons > 0) {
-    const road = new THREE.Mesh(
-      buildMesh(geometry.ribbons),
-      new THREE.MeshStandardMaterial({
-        map: makeRoadTexture(),
-        color: 0xffffff,
-        roughness: 0.92,
-        metalness: 0.02
-      })
-    )
+    const road = new THREE.Mesh(buildMesh(geometry.ribbons), ensureRoadMaterial())
     road.name = 'road'
     road.receiveShadow = true
     group.add(road)
+  }
+
+  if (geometry.stats.junctions > 0) {
+    const apron = new THREE.Mesh(buildMesh(geometry.junctions), ensureRoadMaterial())
+    apron.name = 'road-junctions'
+    apron.receiveShadow = true
+    group.add(apron)
   }
 
   if (geometry.stats.arrows > 0) {
