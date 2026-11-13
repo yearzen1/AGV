@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import RoadNetScene from '@/components/RoadNetScene.vue'
 import type { AgvView } from '@/types'
+import { isSceneQuality, loadQuality, saveQuality, type SceneQuality } from '@/three/quality'
 import { getRoadNet, listDict, listRoadNets, type RoadNetPayload, type RoadNetSummary } from '@/api/roadnet'
 import {
   listTaskSets,
@@ -51,6 +52,19 @@ const socketState = ref<'closed' | 'open' | 'failed'>('closed')
 const MAX_RECONNECT_ATTEMPTS = 5
 const RECONNECT_DELAYS = [2000, 4000, 8000, 16000, 30000]
 
+const quality = ref<SceneQuality>(loadQuality())
+const showLabels = ref(true)
+const topView = ref(false)
+const selectedAgvId = ref<string | null>(null)
+
+interface SceneHandle {
+  fitView: () => void
+  setTopView: (on: boolean) => void
+  focus: (id: string | null) => void
+}
+
+const sceneRef = ref<SceneHandle | null>(null)
+
 let socket: WebSocket | null = null
 let reconnectTimer: number | null = null
 let reconnectAttempts = 0
@@ -79,7 +93,8 @@ const agvViews = computed<AgvView[]>(() =>
     y: a.y,
     heading: a.heading,
     status: a.status,
-    taskId: a.taskId
+    taskId: a.taskId,
+    arcId: a.arcId
   }))
 )
 
@@ -265,6 +280,8 @@ async function start() {
     finished.value = false
     paused.value = false
     speed.value = result.speed ?? 1
+    selectedAgvId.value = null
+    sceneRef.value?.focus(null)
     ElMessage.success('仿真已启动')
   } catch (error: any) {
     ElMessage.error(error.message || '启动失败')
@@ -301,6 +318,8 @@ async function reset() {
     tick.value = 0
     speed.value = 1
     status.value = null
+    selectedAgvId.value = null
+    sceneRef.value?.focus(null)
   } catch (error: any) {
     ElMessage.error(error.message || '重置失败')
   }
@@ -347,13 +366,61 @@ function statusTagType(value: string) {
   )
 }
 
+function onQualityChange(value: string | number | boolean | undefined) {
+  const next = String(value)
+  if (!isSceneQuality(next)) return
+  quality.value = next
+  saveQuality(next)
+}
+
+function toggleTopView() {
+  sceneRef.value?.setTopView(!topView.value)
+}
+
+function onViewMode(top: boolean) {
+  topView.value = top
+}
+
+function onSelectAgv(id: string | null) {
+  selectedAgvId.value = id
+}
+
+function focusAgv(id: string) {
+  selectedAgvId.value = id
+  sceneRef.value?.focus(id)
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.ctrlKey || event.metaKey || event.altKey) return
+  const target = event.target as HTMLElement | null
+  if (
+    target &&
+    (target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' ||
+      target.isContentEditable)
+  ) {
+    return
+  }
+  const key = event.key.toLowerCase()
+  if (key === 'f' && selectedAgvId.value) {
+    sceneRef.value?.focus(selectedAgvId.value)
+  } else if (key === 't') {
+    toggleTopView()
+  } else if (key === 'r') {
+    sceneRef.value?.fitView()
+  }
+}
+
 onMounted(async () => {
   await loadOptions()
   await syncStatus()
   connectSocket()
+  window.addEventListener('keydown', onKeydown)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeydown)
   disposed = true
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer)
@@ -411,6 +478,13 @@ onBeforeUnmount(() => {
         <el-radio-button :value="2">2x</el-radio-button>
         <el-radio-button :value="4">4x</el-radio-button>
       </el-radio-group>
+      <el-select v-model="quality" size="small" style="width: 108px" @change="onQualityChange">
+        <el-option label="低画质" value="low" />
+        <el-option label="中画质" value="medium" />
+        <el-option label="高画质" value="high" />
+      </el-select>
+      <el-checkbox v-model="showLabels" size="small">标签</el-checkbox>
+      <el-button size="small" :type="topView ? 'primary' : ''" @click="toggleTopView">俯视</el-button>
       <el-tag v-if="simState" :type="simState.type" size="small">{{ simState.label }}</el-tag>
       <el-tag
         :type="socketState === 'open' ? 'success' : socketState === 'failed' ? 'danger' : 'info'"
@@ -431,7 +505,17 @@ onBeforeUnmount(() => {
 
     <div class="body">
       <div class="panel scene-panel">
-        <RoadNetScene :roadnet="roadnet" :agvs="agvViews" />
+        <RoadNetScene
+          ref="sceneRef"
+          :roadnet="roadnet"
+          :agvs="agvViews"
+          :tick="tick"
+          :quality="quality"
+          :show-labels="showLabels"
+          :selected-id="selectedAgvId"
+          @select="onSelectAgv"
+          @view-mode="onViewMode"
+        />
       </div>
 
       <div class="side">
@@ -478,7 +562,7 @@ onBeforeUnmount(() => {
                   : '尚未启动仿真'
             }}
           </div>
-          <div v-for="agv in agvs" :key="agv.id" class="agv-row">
+          <div v-for="agv in agvs" :key="agv.id" class="agv-row" :class="{ selected: selectedAgvId === agv.id }" @click="focusAgv(agv.id)">
             <span class="agv-id">{{ agv.id }}</span>
             <el-tag size="small" :type="statusTagType(agv.status)">{{ statusText(agv.status) }}</el-tag>
             <span class="muted">任务 {{ agv.taskId > 0 ? agv.taskId : '-' }}</span>
@@ -581,6 +665,11 @@ onBeforeUnmount(() => {
   padding: 6px 0;
   border-bottom: 1px dashed #ebeef5;
   font-size: 13px;
+  cursor: pointer;
+}
+
+.agv-row.selected {
+  background: #ecf5ff;
 }
 
 .agv-id {

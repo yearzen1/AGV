@@ -29,6 +29,7 @@ public class DataInitializer implements CommandLineRunner {
     /** 预置数据固定 ID，保持论文与 README 的复现参数 roadnetId=1、taskSetId=1 稳定。 */
     private static final long STANDARD_WORKSHOP_ID = 1L;
     private static final long LINE_WORKSHOP_ID = 2L;
+    private static final long DUAL_LANE_WORKSHOP_ID = 3L;
     private static final long DEMO_TASK_SET_ID = 1L;
 
     private final SysUserRepository userRepository;
@@ -96,6 +97,7 @@ public class DataInitializer implements CommandLineRunner {
     private void seedTemplates() {
         upsertTemplate("标准车间（双充电位）", RoadNetTemplates.STANDARD_WORKSHOP, STANDARD_WORKSHOP_ID);
         upsertTemplate("直线车间（快速上手）", RoadNetTemplates.LINE_WORKSHOP, LINE_WORKSHOP_ID);
+        upsertTemplate("双车道车间（会车演示）", RoadNetTemplates.DUAL_LANE_WORKSHOP, DUAL_LANE_WORKSHOP_ID);
     }
 
     /** 模板按名称幂等更新：已有库也会同步到最新的标准布局。 */

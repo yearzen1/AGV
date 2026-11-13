@@ -20,6 +20,7 @@ specs/           实施计划、时间安排、参考文献
 - 术语、限界上下文、聚合边界、不变量和状态机：[docs/reference/领域模型与术语.md](docs/reference/领域模型与术语.md)
 - 为什么这样建模、持久化模型与领域模型的偏差：[docs/explanation/领域模型说明.md](docs/explanation/领域模型说明.md)
 - `WarehouseMap` / `mapId` 等历史命名的分阶段迁移计划：[docs/how-to/统一领域命名.md](docs/how-to/统一领域命名.md)
+- 三维场景的坐标、插值、画质档位与取舍：[docs/explanation/三维场景渲染.md](docs/explanation/三维场景渲染.md)
 
 代码、接口、页面、论文出现术语歧义时，以 reference 文档为准。
 
@@ -225,6 +226,7 @@ WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧�
 | P0 环境搭建（登录、双角色、路网 CRUD、WebSocket） | 已完成 |
 | P1a 3D 场景渲染 | 已完成 |
 | P1b 画布建图编辑器 | 已完成 |
+| P1c 仿真三维真实感（实体路面、阴影、画质档位、选中跟随） | 已完成 |
 | P2 算法核心（A\* + 时间窗引擎 + 死锁处理） | 已完成 |
 | P3 联调（实时推送、暂停调速、事件日志） | 已完成 |
 | P4 调度对比（双算法 + 指标报表 + 历史回看） | 已完成 |
@@ -266,6 +268,13 @@ python scripts/build-ppt.py           # 生成 pptx
 mvn test
 ```
 
+前端三维渲染单元测试（使用 Node 自带 test runner，无需浏览器；需要 Node 22+ 的类型剥离能力）：
+
+```bash
+cd agv-frontend
+npm test
+```
+
 前端地图编辑器回归（需要先启动后端 8080 和前端 5173）：
 
 ```bash
@@ -287,7 +296,14 @@ cd agv-frontend
 npm run e2e:sim
 ```
 
-首次运行需安装浏览器：`npx playwright install chromium`。三个脚本都会把截图写到 `.playwright-mcp/e2e/`。`e2e:roadnet` 验证布局、编辑、连边、搜索、页签、任务聚合、3D 与全屏；`e2e:taskset` 新建并清理一条临时任务集，验证行号连续、加行不重复、批量填充与清空确认、保存失败时列出全部错误并标红多行；`e2e:sim` 验证参数标签、运行时参数锁定、暂停冻结、暂停后刷新恢复车辆位置、继续与重置，最后完整跑完 20 单（约 2 分钟）确认结束态与实时通道。
+双车道 3D 场景回归（同样需要前后端已启动）：
+
+```bash
+cd agv-frontend
+npm run e2e:scene
+```
+
+首次运行需安装浏览器：`npx playwright install chromium`。四个脚本都会把截图写到 `.playwright-mcp/e2e/`。`e2e:roadnet` 验证布局、编辑、连边、搜索、页签、任务聚合、3D 与全屏；`e2e:taskset` 新建并清理一条临时任务集，验证行号连续、加行不重复、批量填充与清空确认、保存失败时列出全部错误并标红多行；`e2e:sim` 验证参数标签、运行时参数锁定、暂停冻结、暂停后刷新恢复车辆位置、继续与重置，最后完整跑完 20 单（约 2 分钟）确认结束态与实时通道；`e2e:scene` 通过接口创建一张临时双车道路网，打开 3D 预览，核对路面、分隔线和箭头数量，结束后删除临时路网。前端不在 5173 时用 `AGV_WEB=http://localhost:5188` 指定地址；`e2e:scene` 依赖开发模式的场景统计，生产构建不暴露。
 
 - `AStarPlannerTest`：直线路网、不可达、封锁绕行、转弯惩罚、与状态空间 Bellman-Ford 对拍
 - `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区

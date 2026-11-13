@@ -17,6 +17,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -57,7 +58,7 @@ class ApiSmokeTest {
         mockMvc.perform(get("/api/roadnet/list").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data.length()").value(3))
                 .andExpect(jsonPath("$.data[0].isTemplate").value(true));
     }
 
@@ -190,6 +191,47 @@ class ApiSmokeTest {
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(roadnetJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.length()").value(0));
+    }
+
+    @Test
+    @DisplayName("双车道模板已初始化，包含 DUAL 路段并通过校验")
+    void dualLaneTemplateIsValid() throws Exception {
+        String token = login("admin", "admin123");
+        String listResponse = mockMvc.perform(get("/api/roadnet/list")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        long dualId = -1;
+        for (JsonNode item : objectMapper.readTree(listResponse).path("data")) {
+            if ("双车道车间（会车演示）".equals(item.path("name").asText())) {
+                dualId = item.path("id").asLong();
+            }
+        }
+        assertTrue(dualId > 0, "应存在「双车道车间（会车演示）」模板");
+
+        String detail = mockMvc.perform(get("/api/roadnet/" + dualId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        JsonNode payload = objectMapper.readTree(detail).path("data");
+
+        boolean hasDual = false;
+        for (JsonNode edge : payload.path("edges")) {
+            if ("DUAL".equals(edge.path("laneMode").asText())) {
+                hasDual = true;
+                break;
+            }
+        }
+        assertTrue(hasDual, "双车道模板至少包含一条 DUAL 路段");
+
+        mockMvc.perform(post("/api/roadnet/validate")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.length()").value(0));

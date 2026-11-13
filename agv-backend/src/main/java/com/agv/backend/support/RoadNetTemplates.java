@@ -67,4 +67,40 @@ public final class RoadNetTemplates {
               ]
             }
             """;
+
+    /**
+     * 双车道车间：和标准车间同一套拓扑，主环路 E1–E8 为双向双车道，通往工位和缓存位的分支保持单车道。
+     * 用于演示对向会车、双车道预约和 3D 视觉车道。
+     */
+    public static final String DUAL_LANE_WORKSHOP = """
+            {
+              "nodes": [
+                {"id": "CH1", "x": 2,  "y": 2,  "type": "CHARGER",   "capacity": 4},
+                {"id": "CH2", "x": 18, "y": 2,  "type": "CHARGER",   "capacity": 4},
+                {"id": "J1",  "x": 2,  "y": 8,  "type": "JUNCTION",  "capacity": 1},
+                {"id": "J5",  "x": 6,  "y": 8,  "type": "JUNCTION",  "capacity": 1},
+                {"id": "J2",  "x": 10, "y": 8,  "type": "JUNCTION",  "capacity": 1},
+                {"id": "J3",  "x": 18, "y": 8,  "type": "JUNCTION",  "capacity": 1},
+                {"id": "J4",  "x": 10, "y": 2,  "type": "JUNCTION",  "capacity": 1},
+                {"id": "B1",  "x": 6,  "y": 6,  "type": "BUFFER",    "capacity": 1},
+                {"id": "W1",  "x": 2,  "y": 16, "type": "WORKSTATION", "capacity": 1},
+                {"id": "W2",  "x": 10, "y": 16, "type": "WORKSTATION", "capacity": 1},
+                {"id": "W3",  "x": 18, "y": 16, "type": "WORKSTATION", "capacity": 1}
+              ],
+              "edges": [
+                {"id": "E1",  "from": "CH1", "to": "J1", "length": 6,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "DUAL"},
+                {"id": "E2",  "from": "J1",  "to": "J5", "length": 4,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "DUAL"},
+                {"id": "E3",  "from": "J5",  "to": "J2", "length": 4,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "DUAL"},
+                {"id": "E4",  "from": "J2",  "to": "J3", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "DUAL"},
+                {"id": "E5",  "from": "J3",  "to": "CH2", "length": 6,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "DUAL"},
+                {"id": "E6",  "from": "CH1", "to": "J4", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "DUAL"},
+                {"id": "E7",  "from": "J4",  "to": "CH2", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "DUAL"},
+                {"id": "E8",  "from": "J4",  "to": "J2", "length": 6,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "DUAL"},
+                {"id": "E9",  "from": "J1",  "to": "W1", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"},
+                {"id": "E10", "from": "J2",  "to": "W2", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"},
+                {"id": "E11", "from": "J3",  "to": "W3", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"},
+                {"id": "E12", "from": "J5",  "to": "B1", "length": 2,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"}
+              ]
+            }
+            """;
 }
