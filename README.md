@@ -163,14 +163,18 @@ GET    /api/taskset/{id}        任务集详情
 POST   /api/taskset             新建任务集
 PUT    /api/taskset/{id}        保存任务集
 DELETE /api/taskset/{id}        删除任务集
-GET    /api/dict/{dictType}     下拉字典（algorithm / metric）
+GET    /api/dict/{dictType}     下拉字典（只返回启用项；algorithm 已接入，metric 预留）
 POST   /api/experiment/{id}/replay  按实验输入快照重跑并比对指标
 GET    /api/experiment/list?page=0&size=20  实验历史（分页）
 GET    /api/admin/users         用户管理（仅管理员）
-GET    /api/admin/dict          字典管理（仅管理员）
+GET    /api/admin/dict          字典项列表（仅管理员）
+PUT    /api/admin/dict/{id}     修改显示名/排序/启停（仅管理员）
+DELETE /api/admin/dict/{id}     删除字典项（仅管理员；界面不提供新增）
 GET    /api/admin/audit?page=0&size=20  审计日志（仅管理员，分页）
 WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧与状态，支持 echo 自检）
 ```
+
+数字字典的维护范围与限制见 [维护数字字典](docs/how-to/维护数字字典.md)。
 
 ### 实验快照与回放
 
