@@ -276,7 +276,7 @@ cd agv-frontend
 npm run e2e:sim
 ```
 
-首次运行需安装浏览器：`npx playwright install chromium`。两个脚本都会把截图写到 `.playwright-mcp/e2e/`。`e2e:roadnet` 验证布局、编辑、连边、搜索、页签、任务聚合、3D 与全屏；`e2e:sim` 验证参数标签、运行时参数锁定、暂停冻结、暂停后刷新恢复车辆位置、继续与重置，最后完整跑完 20 单（约 2 分钟）确认结束态与实时通道。
+首次运行需安装浏览器：`npx playwright install chromium`。两个脚本都会把截图写到 `.playwright-mcp/e2e/`。`e2e:roadnet` 验证布局、编辑、连边、搜索、页签、任务聚合、3D 与全屏；`e2e:sim` 验证参数标签、`1366×768` 下页面不出现纵向滚动条、运行时参数锁定、暂停冻结、暂停后刷新恢复车辆位置、继续与重置，最后完整跑完 20 单（约 2 分钟）确认结束态与实时通道。
 
 - `AStarPlannerTest`：直线路网、不可达、封锁绕行、转弯惩罚、与状态空间 Bellman-Ford 对拍
 - `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区
