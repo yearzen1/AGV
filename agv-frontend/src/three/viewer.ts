@@ -410,7 +410,8 @@ export class SceneViewer {
 
     const id = this.pickAgv(event)
     this.onSelect?.(id)
-    this.setFollow(id)
+    if (id && id === this.followId) this.setFollow(null)
+    else this.setFollow(id)
   }
 
   private pickAgv(event: PointerEvent): string | null {
