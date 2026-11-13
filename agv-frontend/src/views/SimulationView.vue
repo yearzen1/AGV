@@ -171,6 +171,8 @@ function connectSocket() {
     try {
       const payload = JSON.parse(String(messageEvent.data))
       if (payload.type === 'frame') {
+        // 重置后仍可能收到停止瞬间的在途帧，忽略它，避免已清空的指标和车辆列表回跳
+        if (!running.value && !finished.value) return
         const frame = payload.frame
         agvs.value = frame.agvs
         metrics.value = frame.metrics
