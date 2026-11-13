@@ -476,6 +476,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  height: 100%;
+  min-height: 0;
 }
 
 .toolbar {
@@ -484,6 +486,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   padding: 14px 16px;
+  flex-shrink: 0;
 }
 
 .field-label {
@@ -495,20 +498,29 @@ onBeforeUnmount(() => {
 .body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-rows: minmax(0, 1fr);
   gap: 16px;
-  min-height: 620px;
+  flex: 1;
+  min-height: 0;
 }
 
 .scene-panel {
   padding: 0;
   overflow: hidden;
-  min-height: 620px;
+  min-height: 0;
+}
+
+/* 场景组件自身保留 420px 最小高度，仿真页跟随窗口缩短时需放开来 */
+.scene-panel :deep(.scene) {
+  min-height: 0;
 }
 
 .side {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .metric-grid {
@@ -583,9 +595,19 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-@media (max-width: 1280px) {
+@media (max-width: 1100px) {
+  .sim-page {
+    height: auto;
+  }
+
   .body {
+    flex: none;
     grid-template-columns: 1fr;
+    grid-template-rows: 420px auto;
+  }
+
+  .side {
+    overflow: visible;
   }
 }
 </style>
