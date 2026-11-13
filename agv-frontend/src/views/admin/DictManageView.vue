@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  createDict,
   deleteDict,
   listDictAdmin,
   updateDict,
@@ -22,6 +21,12 @@ const typeOptions = [
   { value: 'metric', label: '评价指标' }
 ]
 
+const typeHint = computed(() =>
+  dictType.value === 'metric'
+    ? '评价指标字典暂未接入实验页显示，修改不影响现有页面'
+    : '编码与后端算法实现绑定，此处只调整显示名、排序与启停'
+)
+
 async function load() {
   loading.value = true
   try {
@@ -31,15 +36,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-function openCreate() {
-  editing.value = null
-  form.dictCode = ''
-  form.dictValue = ''
-  form.sort = 0
-  form.status = 1
-  dialogVisible.value = true
 }
 
 function openEdit(row: DictItem) {
@@ -52,6 +48,7 @@ function openEdit(row: DictItem) {
 }
 
 async function submit() {
+  if (!editing.value) return
   const payload = {
     dictType: dictType.value,
     dictCode: form.dictCode,
@@ -60,13 +57,8 @@ async function submit() {
     status: form.status
   }
   try {
-    if (editing.value) {
-      await updateDict(editing.value.id, payload)
-      ElMessage.success('已保存')
-    } else {
-      await createDict(payload)
-      ElMessage.success('已创建')
-    }
+    await updateDict(editing.value.id, payload)
+    ElMessage.success('已保存')
     dialogVisible.value = false
     await load()
   } catch (error: any) {
@@ -76,7 +68,11 @@ async function submit() {
 
 async function remove(row: DictItem) {
   try {
-    await ElMessageBox.confirm(`确定删除字典项「${row.dictValue}」吗？`, '删除确认', { type: 'warning' })
+    await ElMessageBox.confirm(
+      `确定删除字典项「${row.dictValue}」吗？删除后不可恢复，建议优先使用「停用」。`,
+      '删除确认',
+      { type: 'warning' }
+    )
     await deleteDict(row.id)
     ElMessage.success('已删除')
     await load()
@@ -99,8 +95,7 @@ onMounted(load)
         <el-select v-model="dictType" style="width: 180px" @change="load">
           <el-option v-for="option in typeOptions" :key="option.value" :value="option.value" :label="option.label" />
         </el-select>
-        <el-button type="primary" @click="openCreate">新增字典项</el-button>
-        <span class="muted">本期只维护调度算法与评价指标两类</span>
+        <span class="muted">{{ typeHint }}</span>
       </el-space>
 
       <el-table v-loading="loading" :data="items" style="margin-top: 16px">
@@ -124,13 +119,14 @@ onMounted(load)
       </el-table>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑字典项' : '新增字典项'" width="460px">
+    <el-dialog v-model="dialogVisible" title="编辑字典项" width="460px">
       <el-form label-width="90px">
         <el-form-item label="字典类型">
           <el-input :model-value="typeOptions.find((o) => o.value === dictType)?.label" disabled />
         </el-form-item>
         <el-form-item label="编码">
-          <el-input v-model="form.dictCode" placeholder="如 nearest" />
+          <el-input :model-value="form.dictCode" disabled />
+          <div class="muted hint">编码与后端实现绑定，不可修改</div>
         </el-form-item>
         <el-form-item label="显示名">
           <el-input v-model="form.dictValue" placeholder="如 就近分配" />
@@ -152,3 +148,10 @@ onMounted(load)
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.hint {
+  margin-top: 4px;
+  line-height: 1.4;
+}
+</style>
