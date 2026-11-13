@@ -18,11 +18,18 @@ interface PadDefinition {
   height: number
 }
 
+interface MeshArrays {
+  positions: number[]
+  uvs: number[]
+  normals: number[]
+  indices: number[]
+}
+
 /**
- * 把路网载荷转换成三维场景：实体路面、车道分隔线、按类型实例化的节点地台和编号。
+ * 把路网载荷转换成三维场景：实体路面、方向箭头、车道分隔线、按类型实例化的节点地台和编号。
  *
- * 路面按「行驶方向」铺装，双车道各铺一条，UV 的 v 方向就是前进方向，
- * 因此纹理里的箭头天然指向通行方向，不再需要每条边放锥体。
+ * 路面按「行驶方向」铺装，双车道各铺一条；方向箭头单独合并成一个网格，
+ * 所以箭头长度固定、短路段也不会被贴图裁切，draw call 仍保持常数级。
  */
 export function buildRoadNet(net: RoadNetPayload, labels: LabelFactory): RoadNetRender {
   const group = new THREE.Group()
@@ -33,6 +40,7 @@ export function buildRoadNet(net: RoadNetPayload, labels: LabelFactory): RoadNet
 
   const ribbons: THREE.BufferGeometry[] = []
   const dividers: THREE.BufferGeometry[] = []
+  const arrows: MeshArrays = { positions: [], uvs: [], normals: [], indices: [] }
 
   for (const edge of net.edges) {
     const from = nodeMap.get(edge.from)
@@ -40,14 +48,26 @@ export function buildRoadNet(net: RoadNetPayload, labels: LabelFactory): RoadNet
     if (!from || !to) continue
     const start: LanePoint = { x: from.x, y: from.y }
     const end: LanePoint = { x: to.x, y: to.y }
-    if (Math.hypot(end.x - start.x, end.y - start.y) < 0.01) continue
+    const length = Math.hypot(end.x - start.x, end.y - start.y)
+    if (length < 0.01) continue
 
     const lanes = lanesForEdge(edge, start, end)
     for (const lane of lanes) {
       const geometry = buildRibbon(lane.start, lane.end, LANE.width, lane.offset, ROAD_Y)
       if (geometry) ribbons.push(geometry)
     }
+
     if (lanes.length === 2) {
+      // 双向双车道：两条车道各按自己的方向画箭头，中间加虚线分隔。
+      for (const lane of lanes) addArrowsAlong(arrows, lane.start, lane.end)
+      const divider = buildRibbon(start, end, 0.12, 0, ROAD_Y + 0.012)
+      if (divider) dividers.push(divider)
+    } else if (edge.direction === 'ONE_WAY') {
+      addArrowsAlong(arrows, start, end)
+    } else {
+      // 单车道双向：一条路面无法同时画两个方向的箭头，用前后错开的反向箭头表示。
+      addArrow(arrows, start, end, 1 / 3)
+      addArrow(arrows, end, start, 1 / 3)
       const divider = buildRibbon(start, end, 0.12, 0, ROAD_Y + 0.012)
       if (divider) dividers.push(divider)
     }
@@ -67,6 +87,22 @@ export function buildRoadNet(net: RoadNetPayload, labels: LabelFactory): RoadNet
     road.receiveShadow = true
     group.add(road)
     for (const geometry of ribbons) geometry.dispose()
+  }
+
+  if (arrows.positions.length > 0) {
+    const arrowMesh = new THREE.Mesh(
+      buildMesh(arrows),
+      new THREE.MeshBasicMaterial({
+        map: makeArrowTexture(),
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        toneMapped: false
+      })
+    )
+    arrowMesh.name = 'lane-arrows'
+    arrowMesh.renderOrder = 1
+    group.add(arrowMesh)
   }
 
   if (dividers.length > 0) {
@@ -133,9 +169,9 @@ function buildRibbon(
 
   const dirX = dx / length
   const dirY = dy / length
-  // 二维里「前进方向的右侧」是 (dy, -dx)，映射到三维就是 (x + rightX, z + rightY)。
-  const rightX = dirY
-  const rightY = -dirX
+  // 二维坐标的 y 向下，前进方向的右手边是 (-dirY, dirX)。
+  const rightX = -dirY
+  const rightY = dirX
   const half = width / 2
 
   const a = new THREE.Vector3(start.x + rightX * offset, height, start.y + rightY * offset)
@@ -155,8 +191,8 @@ function buildRibbon(
   const uvs = new Float32Array([
     0, 0,
     1, 0,
-    0, length / LANE.arrowTileMeters,
-    1, length / LANE.arrowTileMeters
+    0, length / LANE.textureTileMeters,
+    1, length / LANE.textureTileMeters
   ])
   const normals = new Float32Array([
     0, 1, 0,
@@ -164,7 +200,7 @@ function buildRibbon(
     0, 1, 0,
     0, 1, 0
   ])
-  const indices = [0, 2, 1, 1, 2, 3]
+  const indices = [0, 1, 2, 2, 1, 3]
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
@@ -236,23 +272,93 @@ function makeRoadTexture(): THREE.CanvasTexture {
   ctx.fillRect(4, 0, 3, height)
   ctx.fillRect(width - 7, 0, 3, height)
 
-  ctx.fillStyle = 'rgba(127, 157, 192, 0.5)'
-  ctx.beginPath()
-  ctx.moveTo(width / 2, 58)
-  ctx.lineTo(width / 2 + 17, 96)
-  ctx.lineTo(width / 2 + 6, 96)
-  ctx.lineTo(width / 2 + 6, 188)
-  ctx.lineTo(width / 2 - 6, 188)
-  ctx.lineTo(width / 2 - 6, 96)
-  ctx.lineTo(width / 2 - 17, 96)
-  ctx.closePath()
-  ctx.fill()
-
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.wrapS = THREE.ClampToEdgeWrapping
   texture.wrapT = THREE.RepeatWrapping
   texture.anisotropy = 4
+  return texture
+}
+
+function buildMesh(arrays: MeshArrays): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(arrays.positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(arrays.uvs, 2))
+  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(arrays.normals, 3))
+  geometry.setIndex(arrays.indices)
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
+/** 沿车道每隔几米放一个箭头；短于一个车位时至少放一个。 */
+function addArrowsAlong(buffer: MeshArrays, from: LanePoint, to: LanePoint, spacing = 4) {
+  const length = Math.hypot(to.x - from.x, to.y - from.y)
+  if (length < 0.5) return
+  const fractions: number[] = []
+  for (let distance = spacing / 2; distance <= length - 0.6; distance += spacing) {
+    fractions.push(distance / length)
+  }
+  if (fractions.length === 0 && length >= 1.4) fractions.push(0.5)
+  for (const fraction of fractions) addArrow(buffer, from, to, fraction)
+}
+
+/** 在 from→to 车道的 fraction 处放一个指向 to 的箭头。 */
+function addArrow(
+  buffer: MeshArrays,
+  from: LanePoint,
+  to: LanePoint,
+  fraction: number,
+  width = 0.42,
+  length = 1.5
+) {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const laneLength = Math.hypot(dx, dy)
+  if (laneLength < 0.01) return
+
+  const dirX = dx / laneLength
+  const dirY = dy / laneLength
+  const rightX = -dirY
+  const rightY = dirX
+  const centerX = from.x + dx * fraction
+  const centerY = from.y + dy * fraction
+  const halfLength = length / 2
+  const halfWidth = width / 2
+  const y = ROAD_Y + 0.008
+
+  const aLeft = [centerX - dirX * halfLength - rightX * halfWidth, y, centerY - dirY * halfLength - rightY * halfWidth]
+  const aRight = [centerX - dirX * halfLength + rightX * halfWidth, y, centerY - dirY * halfLength + rightY * halfWidth]
+  const bLeft = [centerX + dirX * halfLength - rightX * halfWidth, y, centerY + dirY * halfLength - rightY * halfWidth]
+  const bRight = [centerX + dirX * halfLength + rightX * halfWidth, y, centerY + dirY * halfLength + rightY * halfWidth]
+
+  const offset = buffer.positions.length / 3
+  buffer.positions.push(...aLeft, ...aRight, ...bLeft, ...bRight)
+  buffer.uvs.push(0, 0, 1, 0, 0, 1, 1, 1)
+  buffer.normals.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0)
+  buffer.indices.push(offset, offset + 1, offset + 2, offset + 2, offset + 1, offset + 3)
+}
+
+function makeArrowTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas')
+  canvas.width = 64
+  canvas.height = 128
+  const ctx = canvas.getContext('2d')!
+  ctx.clearRect(0, 0, 64, 128)
+  ctx.fillStyle = 'rgba(186, 210, 238, 0.9)'
+  ctx.beginPath()
+  ctx.moveTo(32, 8)
+  ctx.lineTo(56, 52)
+  ctx.lineTo(40, 52)
+  ctx.lineTo(40, 118)
+  ctx.lineTo(24, 118)
+  ctx.lineTo(24, 52)
+  ctx.lineTo(8, 52)
+  ctx.closePath()
+  ctx.fill()
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.minFilter = THREE.LinearFilter
   return texture
 }
 

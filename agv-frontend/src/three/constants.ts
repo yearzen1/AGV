@@ -42,7 +42,7 @@ export const AGV_SIZE = {
 export const LANE = {
   width: 1.3,
   offset: 0.7,
-  arrowTileMeters: 8
+  textureTileMeters: 2
 } as const
 
 /** 场景基座高度：路面略高于地面，车辆轮胎贴路面。 */

@@ -28,9 +28,10 @@ export function lanesForEdge(edge: LaneEdge, from: LanePoint, to: LanePoint): La
   if (!isDualLane(edge)) {
     return [{ start: from, end: to, offset: 0 }]
   }
+  // 偏移量相对各自的前进方向取右，因此两条车道会分居物理中心线两侧。
   return [
     { start: from, end: to, offset: LANE.offset },
-    { start: to, end: from, offset: -LANE.offset }
+    { start: to, end: from, offset: LANE.offset }
   ]
 }
 
@@ -41,5 +42,5 @@ export function laneOffsetForArc(
   if (!arcId) return 0
   const edge = edges.get(arcId.replace(/[+-]$/, ''))
   if (!edge || !isDualLane(edge)) return 0
-  return arcId.endsWith('-') ? -LANE.offset : LANE.offset
+  return LANE.offset
 }

@@ -167,9 +167,9 @@ export class AgvFleet {
 
       const radians = THREE.MathUtils.degToRad(pose.heading || 0)
       entry.group.position.set(
-        pose.x + Math.sin(radians) * entry.laneOffset,
+        pose.x - Math.sin(radians) * entry.laneOffset,
         AGV_Y,
-        pose.y - Math.cos(radians) * entry.laneOffset
+        pose.y + Math.cos(radians) * entry.laneOffset
       )
       entry.group.rotation.y = -radians
 
