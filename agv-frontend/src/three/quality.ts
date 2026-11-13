@@ -9,7 +9,7 @@ function resolveStorage<T extends Pick<Storage, 'getItem'> | Pick<Storage, 'setI
 ): T | null {
   if (storage) return storage
   try {
-    return ((globalThis as { localStorage?: T }).localStorage ?? null) as T | null
+    return ((globalThis as unknown as { localStorage?: T }).localStorage ?? null) as T | null
   } catch {
     // 隐私模式或禁用存储时 localStorage 访问会抛异常，降级为默认档位。
     return null
