@@ -645,7 +645,7 @@ onBeforeUnmount(() => {
 }
 
 .list-item.active {
-  border-color: #1f3b73;
+  border-color: #4f46e5;
   background: #f2f6fc;
 }
 
@@ -676,7 +676,7 @@ onBeforeUnmount(() => {
 .side-title {
   font-size: 13px;
   font-weight: 600;
-  color: #1f3b73;
+  color: #4f46e5;
 }
 
 .editor-panel {

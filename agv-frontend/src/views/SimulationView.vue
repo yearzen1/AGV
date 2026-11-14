@@ -764,7 +764,7 @@ onBeforeUnmount(() => {
 .metric-value {
   font-size: 18px;
   font-weight: 600;
-  color: #1f3b73;
+  color: #4f46e5;
 }
 
 .panel-title {
@@ -789,7 +789,7 @@ onBeforeUnmount(() => {
 }
 
 .agv-row.selected {
-  background: #ecf5ff;
+  background: #eef2ff;
 }
 
 .agv-id {

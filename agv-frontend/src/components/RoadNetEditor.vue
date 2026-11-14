@@ -1491,7 +1491,7 @@ function clearHover() {
 
 function edgeStroke(edge: NetEdge) {
   if (errorEdgeIds.value.has(edge.id)) return '#f56c6c'
-  if (isSelectedEdge(edge.id)) return '#1f3b73'
+  if (isSelectedEdge(edge.id)) return '#4f46e5'
   return '#8fa3bd'
 }
 
@@ -2192,7 +2192,7 @@ defineExpose({
               markerHeight="12"
               orient="auto-start-reverse"
             >
-              <path d="M0,0 L10,5 L0,10 z" fill="#1f3b73" />
+              <path d="M0,0 L10,5 L0,10 z" fill="#4f46e5" />
             </marker>
             <marker
               id="arrow-error"
@@ -2368,7 +2368,7 @@ defineExpose({
                   connectFrom === node.id
                     ? '#ffd666'
                     : isSelectedNode(node.id)
-                      ? '#1f3b73'
+                      ? '#4f46e5'
                       : '#ffffff'
                 "
                 :stroke-width="connectFrom === node.id || isSelectedNode(node.id) ? 4 : 2"
@@ -3054,7 +3054,7 @@ defineExpose({
 
 .marquee {
   fill: rgba(31, 59, 115, 0.08);
-  stroke: #1f3b73;
+  stroke: #4f46e5;
   stroke-width: 1;
   stroke-dasharray: 4 3;
   pointer-events: none;
@@ -3156,7 +3156,7 @@ defineExpose({
   gap: 12px;
   padding-bottom: 2px;
   font-weight: 600;
-  color: #1f3b73;
+  color: #4f46e5;
 }
 
 .legend-head button {
@@ -3184,7 +3184,7 @@ defineExpose({
 }
 
 .overlay-toggle:hover {
-  color: #1f3b73;
+  color: #4f46e5;
   border-color: #b6cbe8;
 }
 
@@ -3312,7 +3312,7 @@ defineExpose({
 
 .mini-viewport {
   fill: rgba(31, 59, 115, 0.08);
-  stroke: #1f3b73;
+  stroke: #4f46e5;
   stroke-width: 1;
   pointer-events: none;
 }
@@ -3362,12 +3362,12 @@ defineExpose({
 }
 
 .side-tabs button:hover {
-  color: #1f3b73;
+  color: #4f46e5;
 }
 
 .side-tabs button.active {
   background: #fff;
-  color: #1f3b73;
+  color: #4f46e5;
   font-weight: 600;
   box-shadow: 0 1px 2px rgba(31, 59, 115, 0.12);
 }
@@ -3403,7 +3403,7 @@ defineExpose({
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 10px;
-  color: #1f3b73;
+  color: #4f46e5;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -3450,7 +3450,7 @@ defineExpose({
 }
 
 .error-row:hover {
-  color: #1f3b73;
+  color: #4f46e5;
 }
 
 .muted {
@@ -3526,7 +3526,7 @@ defineExpose({
 
 .context-menu button:hover {
   background: #f2f6fc;
-  color: #1f3b73;
+  color: #4f46e5;
 }
 
 .help-table {

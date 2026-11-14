@@ -163,7 +163,7 @@ function renderChart() {
         type: 'bar',
         barMaxWidth: 42,
         data: results.value.map((r) => Number(Number(r[item.key] ?? 0).toFixed(1))),
-        itemStyle: { color: ['#1f3b73', '#409eff', '#e6a23c', '#f56c6c'][index] },
+        itemStyle: { color: ['#4f46e5', '#6366f1', '#f59e0b', '#ef4444'][index] },
         label: { show: true, position: 'top', fontSize: 11 }
       }))
     },
@@ -411,7 +411,7 @@ onBeforeUnmount(() => {
   height: 52px;
   margin-bottom: 4px;
   color: var(--agv-brand);
-  background: #eef3fc;
+  background: #eef2ff;
   border-radius: 14px;
 }
 
@@ -424,7 +424,7 @@ onBeforeUnmount(() => {
 .verdict {
   padding: 3px 10px;
   color: var(--agv-brand);
-  background: #eef3fc;
+  background: #eef2ff;
   border-radius: 999px;
   font-size: 12px;
 }

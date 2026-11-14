@@ -102,7 +102,7 @@ onMounted(load)
       </div>
 
       <el-table v-loading="loading" :data="items">
-        <el-table-column prop="id" label="ID" width="70" />
+        <el-table-column prop="id" label="ID" width="140" />
         <el-table-column prop="dictCode" label="编码" min-width="160" />
         <el-table-column prop="dictValue" label="显示名" min-width="160" />
         <el-table-column prop="sort" label="排序" width="90" />
