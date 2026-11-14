@@ -436,80 +436,105 @@ onBeforeUnmount(() => {
 <template>
   <div class="sim-page">
     <div class="toolbar panel">
-      <span class="field-label">路网</span>
-      <el-select
-        v-model="selectedRoadnetId"
-        class="param-select"
-        style="width: 200px"
-        placeholder="路网"
-        :disabled="running"
-        @change="onMapChange"
-      >
-        <el-option v-for="map in maps" :key="map.id" :label="map.name" :value="map.id" />
-      </el-select>
-      <span class="field-label">任务集</span>
-      <el-select
-        v-model="selectedTaskSetId"
-        class="param-select"
-        style="width: 190px"
-        placeholder="任务集"
-        :disabled="running"
-      >
-        <el-option
-          v-for="set in mapTaskSets"
-          :key="set.id"
-          :label="taskSetLabel(set.name, set.taskCount)"
-          :value="set.id"
-        />
-      </el-select>
+      <div class="param">
+        <span class="field-label">路网</span>
+        <el-select
+          v-model="selectedRoadnetId"
+          class="param-select"
+          style="width: 200px"
+          placeholder="路网"
+          aria-label="路网"
+          :disabled="running"
+          @change="onMapChange"
+        >
+          <el-option v-for="map in maps" :key="map.id" :label="map.name" :value="map.id" />
+        </el-select>
+      </div>
+      <div class="param">
+        <span class="field-label">任务集</span>
+        <el-select
+          v-model="selectedTaskSetId"
+          class="param-select"
+          style="width: 190px"
+          placeholder="任务集"
+          aria-label="任务集"
+          :disabled="running"
+        >
+          <el-option
+            v-for="set in mapTaskSets"
+            :key="set.id"
+            :label="taskSetLabel(set.name, set.taskCount)"
+            :value="set.id"
+          />
+        </el-select>
+      </div>
       <span v-if="selectedRoadnetId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
-      <span class="field-label">算法</span>
-      <el-select v-model="algorithm" class="param-select" style="width: 150px" :disabled="running">
-        <el-option v-for="item in algorithms" :key="item.dictCode" :label="item.dictValue" :value="item.dictCode" />
-      </el-select>
-      <span class="field-label">AGV 数量</span>
-      <el-input-number v-model="agvCount" :min="1" :max="12" style="width: 120px" :disabled="running" />
-      <span class="field-label">随机种子</span>
-      <el-input-number v-model="seed" :min="0" :controls="false" style="width: 140px" :disabled="running" />
-      <el-button type="primary" :disabled="running || !selectedTaskSetId" @click="start">开始</el-button>
-      <el-button :disabled="!running || paused" @click="pause">暂停</el-button>
-      <el-button :disabled="!running || !paused" @click="resume">继续</el-button>
-      <el-button :disabled="!hasSim" @click="reset">重置</el-button>
-      <el-radio-group
-        class="speed-group"
-        :model-value="speed"
-        size="small"
-        :disabled="!running"
-        @change="onSpeedChange"
-      >
-        <el-radio-button :value="0.5">0.5x</el-radio-button>
-        <el-radio-button :value="1">1x</el-radio-button>
-        <el-radio-button :value="2">2x</el-radio-button>
-        <el-radio-button :value="4">4x</el-radio-button>
-      </el-radio-group>
-      <el-select v-model="quality" size="small" style="width: 108px" @change="onQualityChange">
-        <el-option label="低画质" value="low" />
-        <el-option label="中画质" value="medium" />
-        <el-option label="高画质" value="high" />
-      </el-select>
-      <el-checkbox v-model="showLabels" size="small">标签</el-checkbox>
-      <el-button size="small" :type="topView ? 'primary' : ''" @click="toggleTopView">俯视</el-button>
-      <el-tag v-if="simState" :type="simState.type" size="small">{{ simState.label }}</el-tag>
-      <el-tag
-        :type="socketState === 'open' ? 'success' : socketState === 'failed' ? 'danger' : 'info'"
-        size="small"
-      >
-        {{
-          socketState === 'open'
-            ? '实时通道已连接'
-            : socketState === 'failed'
-              ? '实时通道已断开'
-              : '实时通道未连接'
-        }}
-      </el-tag>
-      <el-button v-if="socketState !== 'open'" size="small" @click="retrySocket">
-        {{ socketState === 'failed' ? '重试' : '重连' }}
-      </el-button>
+      <div class="param">
+        <span class="field-label">算法</span>
+        <el-select v-model="algorithm" class="param-select" style="width: 150px" aria-label="算法" :disabled="running">
+          <el-option v-for="item in algorithms" :key="item.dictCode" :label="item.dictValue" :value="item.dictCode" />
+        </el-select>
+      </div>
+      <div class="param">
+        <span class="field-label">AGV 数量</span>
+        <el-input-number v-model="agvCount" :min="1" :max="12" style="width: 120px" aria-label="AGV 数量" :disabled="running" />
+      </div>
+      <div class="param">
+        <span class="field-label">随机种子</span>
+        <el-input-number v-model="seed" :min="0" :controls="false" style="width: 140px" aria-label="随机种子" :disabled="running" />
+      </div>
+
+      <span class="toolbar-sep" aria-hidden="true"></span>
+
+      <div class="play-actions">
+        <el-button type="primary" :disabled="running || !selectedTaskSetId" @click="start">开始</el-button>
+        <el-button :disabled="!running || paused" @click="pause">暂停</el-button>
+        <el-button :disabled="!running || !paused" @click="resume">继续</el-button>
+        <el-button :disabled="!hasSim" @click="reset">重置</el-button>
+        <el-radio-group
+          class="speed-group"
+          :model-value="speed"
+          size="small"
+          aria-label="播放速度"
+          :disabled="!running"
+          @change="onSpeedChange"
+        >
+          <el-radio-button :value="0.5">0.5x</el-radio-button>
+          <el-radio-button :value="1">1x</el-radio-button>
+          <el-radio-button :value="2">2x</el-radio-button>
+          <el-radio-button :value="4">4x</el-radio-button>
+        </el-radio-group>
+      </div>
+
+      <span class="toolbar-sep" aria-hidden="true"></span>
+
+      <div class="view-tools">
+        <el-select v-model="quality" size="small" style="width: 108px" aria-label="画质" @change="onQualityChange">
+          <el-option label="低画质" value="low" />
+          <el-option label="中画质" value="medium" />
+          <el-option label="高画质" value="high" />
+        </el-select>
+        <el-checkbox v-model="showLabels" size="small">标签</el-checkbox>
+        <el-button size="small" :type="topView ? 'primary' : ''" title="快捷键 T" @click="toggleTopView">俯视</el-button>
+        <div class="status-tags" role="status" aria-live="polite">
+          <el-tag v-if="simState" :type="simState.type" size="small">{{ simState.label }}</el-tag>
+          <el-tag
+            :type="socketState === 'open' ? 'success' : socketState === 'failed' ? 'danger' : 'info'"
+            size="small"
+          >
+            {{
+              socketState === 'open'
+                ? '实时通道已连接'
+                : socketState === 'failed'
+                  ? '实时通道已断开'
+                  : '实时通道未连接'
+            }}
+          </el-tag>
+        </div>
+        <el-button v-if="socketState !== 'open'" size="small" @click="retrySocket">
+          {{ socketState === 'failed' ? '重试' : '重连' }}
+        </el-button>
+      </div>
     </div>
 
     <div class="body">
@@ -525,6 +550,13 @@ onBeforeUnmount(() => {
           @select="onSelectAgv"
           @view-mode="onViewMode"
         />
+        <div class="scene-hint" aria-hidden="true">
+          <kbd>F</kbd> 跟随
+          <span class="hint-sep"></span>
+          <kbd>T</kbd> 俯视
+          <span class="hint-sep"></span>
+          <kbd>R</kbd> 重置视角
+        </div>
       </div>
 
       <div class="side">
@@ -561,14 +593,14 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="panel agv-panel">
-          <div class="panel-title">车辆状态</div>
-          <div v-if="agvs.length === 0" class="muted">
+          <h2 class="panel-title">车辆状态</h2>
+          <div v-if="agvs.length === 0" class="muted empty-text">
             {{
               running
                 ? '正在等待第一帧车辆数据…'
                 : finished
                   ? '仿真已结束，车辆位置只在运行中可见'
-                  : '尚未启动仿真'
+                  : '尚未启动仿真，选好参数后点「开始」'
             }}
           </div>
           <div v-for="agv in agvs" :key="agv.id" class="agv-row" :class="{ selected: selectedAgvId === agv.id }" @click="focusAgv(agv.id)">
@@ -582,8 +614,8 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="panel log-panel">
-          <div class="panel-title">事件日志</div>
-          <div v-if="events.length === 0" class="muted">
+          <h2 class="panel-title">事件日志</h2>
+          <div v-if="events.length === 0" class="muted empty-text">
             {{ finished ? '仿真已结束；事件只在运行期间推送，刷新后不保留' : '等待冲突、任务分配等事件会显示在这里' }}
           </div>
           <div v-for="(event, index) in events" :key="index" class="log-row">
@@ -612,15 +644,48 @@ onBeforeUnmount(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 8px 10px;
+  padding: 12px 14px;
   flex-shrink: 0;
+}
+
+.param {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolbar-sep {
+  width: 1px;
+  height: 24px;
+  margin-inline: 2px;
+  background: var(--agv-border);
+}
+
+.play-actions,
+.view-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.status-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .field-label {
   font-size: 13px;
   color: #606266;
   white-space: nowrap;
+}
+
+.empty-text {
+  margin: 0;
+  line-height: 1.6;
 }
 
 .body {
@@ -633,9 +698,43 @@ onBeforeUnmount(() => {
 }
 
 .scene-panel {
+  position: relative;
   padding: 0;
   overflow: hidden;
   min-height: 0;
+  border: 0;
+}
+
+.scene-hint {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  color: #cbd5e1;
+  background: rgba(8, 16, 30, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  font-size: 11px;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+
+.scene-hint kbd {
+  padding: 1px 5px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 4px;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 10px;
+}
+
+.hint-sep {
+  width: 1px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 /* 场景组件自身保留 420px 最小高度，仿真页跟随窗口缩短时需放开来 */
