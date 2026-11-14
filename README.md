@@ -21,6 +21,7 @@ specs/           实施计划、时间安排、参考文献
 - 为什么这样建模、持久化模型与领域模型的偏差：[docs/explanation/领域模型说明.md](docs/explanation/领域模型说明.md)
 - `WarehouseMap` / `mapId` 等历史命名的分阶段迁移计划：[docs/how-to/统一领域命名.md](docs/how-to/统一领域命名.md)
 - 三维场景的坐标、插值、画质档位与取舍：[docs/explanation/三维场景渲染.md](docs/explanation/三维场景渲染.md)
+- 布局断点、设计令牌、可访问性与页面状态约定：[docs/reference/界面与交互规范.md](docs/reference/界面与交互规范.md)
 
 代码、接口、页面、论文出现术语歧义时，以 reference 文档为准。
 
