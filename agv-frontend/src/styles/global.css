@@ -3,6 +3,24 @@
 }
 
 :root {
+  /* 品牌与中性色令牌：页面只引用变量，不直接写新的十六进制色值 */
+  --agv-brand: #1f3b73;
+  --agv-brand-strong: #101c33;
+  --agv-accent: #2f6fed;
+  --agv-success: #15803d;
+  --agv-warning: #b45309;
+  --agv-danger: #b91c1c;
+  --agv-surface: #ffffff;
+  --agv-surface-muted: #f4f6fb;
+  --agv-border: #e4e8f0;
+  --agv-border-strong: #cbd3e1;
+  --agv-text: #1f2937;
+  --agv-text-muted: #6b7280;
+  --agv-radius: 8px;
+  --agv-radius-lg: 12px;
+  --agv-shadow: 0 1px 2px rgba(16, 28, 51, 0.04), 0 8px 24px rgba(16, 28, 51, 0.06);
+  --agv-shadow-hover: 0 2px 6px rgba(16, 28, 51, 0.06), 0 14px 32px rgba(16, 28, 51, 0.1);
+
   --el-color-primary: #1f3b73;
   --el-color-primary-light-3: #49629b;
   --el-color-primary-light-5: #7c8fb8;
@@ -10,6 +28,9 @@
   --el-color-primary-light-8: #c7d0e2;
   --el-color-primary-light-9: #e4e9f2;
   --el-color-primary-dark-2: #172c58;
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+  --el-font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
 }
 
 html,
@@ -21,25 +42,171 @@ body,
 }
 
 body {
-  font-family: 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
-  color: #303133;
-  background: #f5f7fa;
+  font-family: var(--el-font-family);
+  color: var(--agv-text);
+  background: var(--agv-surface-muted);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  color: #fff;
+  background: var(--agv-brand);
+}
+
+/* 统一细滚动条，避免默认滚动条在深色侧栏旁显得突兀 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #c3ccda transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c3ccda;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9aa8bd;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+/* 键盘用户必须有可见焦点；鼠标点击不额外加描边 */
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--agv-accent);
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 3000;
+  padding: 10px 16px;
+  color: #fff;
+  background: var(--agv-brand);
+  border-radius: var(--agv-radius);
+  box-shadow: var(--agv-shadow-hover);
+  text-decoration: none;
+  font-size: 14px;
+  transform: translateY(-160%);
+  transition: transform 0.18s ease;
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
+}
+
+.visually-hidden:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
 }
 
 .page-title {
   margin: 0 0 16px;
   font-size: 20px;
   font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.page-lead {
+  margin: -8px 0 18px;
+  color: var(--agv-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .panel {
-  background: #fff;
-  border-radius: 8px;
+  background: var(--agv-surface);
+  border: 1px solid var(--agv-border);
+  border-radius: var(--agv-radius-lg);
   padding: 20px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: var(--agv-shadow);
+}
+
+.panel-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--agv-text);
 }
 
 .muted {
-  color: #909399;
+  color: var(--agv-text-muted);
   font-size: 13px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.section-head .panel-title {
+  margin: 0;
+}
+
+/* Element Plus 细节统一：圆角、表头、对话框与控件过渡 */
+.el-button {
+  font-weight: 500;
+}
+
+.el-tag {
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+.el-table {
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-header-text-color: #4b5563;
+  --el-table-border-color: #edf0f6;
+  --el-table-row-hover-bg-color: #f5f8ff;
+  border-radius: var(--agv-radius);
+}
+
+.el-table th.el-table__cell {
+  font-weight: 600;
+}
+
+.el-dialog,
+.el-message-box {
+  border-radius: 14px;
+}
+
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  transition: box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+.el-progress-bar__outer {
+  background: #eef2f8;
+}
+
+/* 减少动态效果时保留最终状态，不保留循环动画 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

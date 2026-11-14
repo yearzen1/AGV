@@ -8,7 +8,7 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: () => import('@/views/LoginView.vue'),
-      meta: { public: true }
+      meta: { public: true, title: '登录' }
     },
     {
       path: '/',
@@ -75,6 +75,12 @@ router.beforeEach((to) => {
   if (roles && !roles.includes(auth.role)) {
     return { name: 'dashboard' }
   }
+})
+
+/** 单页应用路由切换后同步浏览器标签页标题，便于多标签区分与读屏播报。 */
+router.afterEach((to) => {
+  const title = to.meta.title as string | undefined
+  document.title = title ? `${title} · 排策智演` : '排策智演'
 })
 
 export default router
