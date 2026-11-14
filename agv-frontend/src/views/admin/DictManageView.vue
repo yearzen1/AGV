@@ -88,17 +88,20 @@ onMounted(load)
 
 <template>
   <div>
-    <h2 class="page-title">数字字典</h2>
+    <p class="page-lead">维护下拉字典的显示名、排序与启停；编码由后端实现绑定，界面不提供新增或改编码。</p>
 
     <div class="panel">
-      <el-space wrap>
-        <el-select v-model="dictType" style="width: 180px" @change="load">
-          <el-option v-for="option in typeOptions" :key="option.value" :value="option.value" :label="option.label" />
-        </el-select>
-        <span class="muted">{{ typeHint }}</span>
-      </el-space>
+      <div class="section-head">
+        <h2 class="panel-title">字典项</h2>
+        <el-space wrap>
+          <el-select v-model="dictType" style="width: 180px" aria-label="字典类型" @change="load">
+            <el-option v-for="option in typeOptions" :key="option.value" :value="option.value" :label="option.label" />
+          </el-select>
+          <span class="muted">{{ typeHint }}</span>
+        </el-space>
+      </div>
 
-      <el-table v-loading="loading" :data="items" style="margin-top: 16px">
+      <el-table v-loading="loading" :data="items">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="dictCode" label="编码" min-width="160" />
         <el-table-column prop="dictValue" label="显示名" min-width="160" />

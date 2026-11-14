@@ -101,12 +101,15 @@ onMounted(load)
 
 <template>
   <div>
-    <h2 class="page-title">用户管理</h2>
+    <p class="page-lead">管理账号角色与启停状态；当前登录账号不能停用或删除自己。</p>
 
     <div class="panel">
-      <el-button type="primary" @click="openCreate">新建用户</el-button>
+      <div class="section-head">
+        <h2 class="panel-title">账号列表</h2>
+        <el-button type="primary" @click="openCreate">新建用户</el-button>
+      </div>
 
-      <el-table v-loading="loading" :data="users" style="margin-top: 16px">
+      <el-table v-loading="loading" :data="users">
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="username" label="用户名" min-width="140" />
         <el-table-column prop="realName" label="姓名" min-width="120" />
