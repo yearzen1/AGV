@@ -19,10 +19,22 @@ import {
 } from '@/api/sim'
 import { formatDateTime } from '@/utils/format'
 import StationPicker from '@/components/StationPicker.vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 const sets = ref<TaskSetSummary[]>([])
 const maps = ref<RoadNetSummary[]>([])
 const loading = ref(false)
+const keyword = ref('')
+
+const filteredSets = computed(() => {
+  const text = keyword.value.trim().toLowerCase()
+  if (!text) return sets.value
+  return sets.value.filter(
+    (set) =>
+      set.name.toLowerCase().includes(text) ||
+      (set.roadnetName ?? '').toLowerCase().includes(text)
+  )
+})
 
 const dialogVisible = ref(false)
 const editingId = ref<number | null>(null)
@@ -328,12 +340,39 @@ onMounted(load)
 
 <template>
   <div>
-    <h2 class="page-title">任务集</h2>
+    <p class="page-lead">
+      任务集必须绑定一张路网，起点与终点只能选该路网的工位。任务较多时用搜索按名称或路网过滤。
+    </p>
 
     <div class="panel">
-      <el-button type="primary" @click="openCreate">新建任务集</el-button>
+      <div class="list-head">
+        <div class="list-title">
+          <h2 class="panel-title">任务集列表</h2>
+          <span class="count">{{ filteredSets.length }} / {{ sets.length }}</span>
+        </div>
+        <div class="list-tools">
+          <div class="list-search" role="search" aria-label="搜索任务集">
+            <label class="visually-hidden" for="taskset-search">搜索任务集</label>
+            <el-input
+              id="taskset-search"
+              v-model="keyword"
+              clearable
+              placeholder="搜索名称或所属路网"
+            >
+              <template #prefix>
+                <AppIcon name="search" :size="15" />
+              </template>
+            </el-input>
+          </div>
+          <el-button type="primary" @click="openCreate">新建任务集</el-button>
+        </div>
+      </div>
 
-      <el-table v-loading="loading" :data="sets" style="margin-top: 16px">
+      <el-table
+        v-loading="loading"
+        :data="filteredSets"
+        empty-text="没有匹配的任务集，清空搜索后重试"
+      >
         <el-table-column prop="id" label="ID" width="70" />
         <el-table-column prop="name" label="名称" min-width="200" />
         <el-table-column label="所属路网" min-width="180">
@@ -354,7 +393,12 @@ onMounted(load)
       </el-table>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="editingId ? '编辑任务集' : '新建任务集'" width="860px">
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId ? '编辑任务集' : '新建任务集'"
+      width="min(860px, 94vw)"
+      :close-on-click-modal="!saving"
+    >
       <el-form label-width="80px">
         <el-form-item label="名称">
           <el-input v-model="form.name" />
@@ -481,6 +525,44 @@ onMounted(load)
 </template>
 
 <style scoped>
+.list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.list-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.list-title .panel-title {
+  margin: 0;
+}
+
+.count {
+  padding: 2px 8px;
+  color: var(--agv-text-muted);
+  background: #f1f4f9;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+.list-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.list-search {
+  width: 240px;
+}
+
 .tools {
   display: flex;
   align-items: center;
