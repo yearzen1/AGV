@@ -9,7 +9,7 @@
 ```
 agv-algorithm/   纯 Java 算法包：路网模型、A*、校验、时间窗、仿真引擎（零 Spring 依赖，可单测）
 agv-backend/     SpringBoot 后端：认证授权、路网/任务集 CRUD、实验记录、WebSocket 帧推送
-agv-frontend/    Vue3 + Element Plus + Three.js + ECharts
+agv-frontend/    Vue3 + Element Plus + Tailwind CSS + Three.js + ECharts
 specs/           实施计划、时间安排、参考文献
 ```
 
