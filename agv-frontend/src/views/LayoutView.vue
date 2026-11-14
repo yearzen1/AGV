@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppIcon from '@/components/AppIcon.vue'
@@ -27,35 +27,39 @@ const menus = computed(() => {
 
 const currentTitle = computed(() => (route.meta.title as string) || '')
 const currentSubtitle = computed(() => (route.meta.subtitle as string) || '')
+const initial = computed(() => (auth.displayName || auth.user?.username || 'U').slice(0, 1).toUpperCase())
+const roleLabel = computed(() => (auth.isAdmin ? '管理员' : '调度人员'))
 
-/** ≤900px 时侧边栏收进抽屉，避免窄屏被固定 220px 导航挤占主内容。 */
-const isCompact = ref(false)
-const drawerVisible = ref(false)
-let mediaQuery: MediaQueryList | null = null
-
-function syncCompact(event: MediaQueryList | MediaQueryListEvent) {
-  isCompact.value = event.matches
-  if (!event.matches) drawerVisible.value = false
-}
-
-onMounted(() => {
-  mediaQuery = window.matchMedia('(max-width: 900px)')
-  syncCompact(mediaQuery)
-  mediaQuery.addEventListener('change', syncCompact)
-})
-
-onBeforeUnmount(() => {
-  mediaQuery?.removeEventListener('change', syncCompact)
-})
+const mobileOpen = ref(false)
+const userMenuOpen = ref(false)
+const mobileClose = ref<HTMLButtonElement | null>(null)
 
 watch(
   () => route.path,
   () => {
-    drawerVisible.value = false
+    mobileOpen.value = false
+    userMenuOpen.value = false
   }
 )
 
+watch(mobileOpen, async (open) => {
+  if (open) {
+    await nextTick()
+    mobileClose.value?.focus()
+  }
+})
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  if (userMenuOpen.value) userMenuOpen.value = false
+  if (mobileOpen.value) mobileOpen.value = false
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
+
 function logout() {
+  userMenuOpen.value = false
   auth.logout()
   ElMessage.success('已退出登录')
   router.push('/login')
@@ -65,246 +69,136 @@ function logout() {
 <template>
   <a class="skip-link" href="#main-content">跳到主要内容</a>
 
-  <el-container class="layout">
-    <el-aside v-if="!isCompact" width="220px" class="aside">
-      <div class="logo">
-        <span class="logo-mark" aria-hidden="true">排</span>
-        <span class="logo-text">排策智演</span>
+  <div class="flex h-full min-h-0 bg-background">
+    <aside class="hidden w-[76px] shrink-0 flex-col border-r border-border bg-white md:flex lg:w-[232px]">
+      <div class="flex h-16 items-center justify-center gap-2.5 border-b border-border px-4 lg:justify-start">
+        <span
+          class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white shadow-sm"
+          aria-hidden="true"
+        >
+          排
+        </span>
+        <span class="hidden text-[17px] font-semibold tracking-wide text-slate-900 lg:inline">排策智演</span>
       </div>
+
       <NavMenu :menus="menus" />
-      <div class="aside-foot">
-        <span>AGV 调度仿真</span>
-        <span class="aside-version">v1.0</span>
+
+      <div class="border-t border-border p-3">
+        <div class="flex items-center justify-center gap-2 rounded-xl bg-emerald-50 px-3 py-2.5 text-xs font-semibold text-emerald-700 lg:justify-start">
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
+          <span class="hidden lg:inline">系统在线</span>
+        </div>
       </div>
-    </el-aside>
+    </aside>
 
-    <el-container class="content">
-      <el-header class="header">
-        <div class="header-left">
-          <button
-            v-if="isCompact"
-            type="button"
-            class="icon-button"
-            aria-label="打开菜单"
-            aria-controls="nav-drawer"
-            :aria-expanded="drawerVisible"
-            @click="drawerVisible = true"
-          >
-            <AppIcon name="menu" :size="20" />
-          </button>
-          <h1 class="header-title">
-            {{ currentTitle }}
-            <span v-if="currentSubtitle" class="header-subtitle">{{ currentSubtitle }}</span>
-          </h1>
-        </div>
-        <div class="header-right">
-          <el-tag size="small" :type="auth.isAdmin ? 'danger' : 'success'">
-            {{ auth.isAdmin ? '管理员' : '调度人员' }}
-          </el-tag>
-          <span class="username">{{ auth.displayName }}</span>
-          <el-button link type="primary" @click="logout">
-            <AppIcon name="logout" :size="16" />
-            <span class="logout-text">退出</span>
-          </el-button>
-        </div>
-      </el-header>
-
-      <el-main id="main-content" class="main" tabindex="-1">
-        <router-view />
-      </el-main>
-    </el-container>
-
-    <el-drawer
-      id="nav-drawer"
-      v-model="drawerVisible"
-      direction="ltr"
-      size="248px"
-      :with-header="false"
-      class="nav-drawer"
-    >
-      <div class="drawer-head">
-        <div class="logo">
-          <span class="logo-mark" aria-hidden="true">排</span>
-          <span class="logo-text">排策智演</span>
-        </div>
-        <button type="button" class="icon-button drawer-close" aria-label="关闭菜单" @click="drawerVisible = false">
-          <AppIcon name="close" :size="18" />
+    <div class="flex min-w-0 flex-1 flex-col">
+      <header class="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-white/85 px-4 backdrop-blur md:px-6">
+        <button
+          type="button"
+          class="grid h-9 w-9 place-items-center rounded-xl border border-border text-slate-600 transition hover:bg-slate-50 md:hidden"
+          aria-label="打开菜单"
+          @click="mobileOpen = true"
+        >
+          <AppIcon name="menu" :size="20" />
         </button>
-      </div>
-      <NavMenu :menus="menus" @select="drawerVisible = false" />
-    </el-drawer>
-  </el-container>
+
+        <h1 class="flex min-w-0 items-baseline gap-2 text-[17px] font-semibold tracking-tight text-slate-900">
+          <span class="truncate">{{ currentTitle }}</span>
+          <span v-if="currentSubtitle" class="header-subtitle hidden text-xs font-normal text-slate-500 sm:inline">
+            {{ currentSubtitle }}
+          </span>
+        </h1>
+
+        <div class="ml-auto flex items-center gap-2 sm:gap-3">
+          <span class="hidden items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 sm:inline-flex">
+            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true"></span>
+            实时通道在线
+          </span>
+
+          <span class="hidden rounded-full bg-primary-soft px-2.5 py-1 text-xs font-semibold text-indigo-700 sm:inline">
+            {{ roleLabel }}
+          </span>
+
+          <div class="relative">
+            <button
+              type="button"
+              class="flex items-center gap-2 rounded-full p-0.5 pr-2 transition hover:bg-slate-50"
+              :aria-expanded="userMenuOpen"
+              aria-haspopup="menu"
+              aria-label="用户菜单"
+              @click="userMenuOpen = !userMenuOpen"
+            >
+              <span class="grid h-8 w-8 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-xs font-bold text-white">
+                {{ initial }}
+              </span>
+              <span class="hidden text-sm font-medium text-slate-700 sm:inline">{{ auth.displayName }}</span>
+              <AppIcon name="arrow" :size="14" class="rotate-90 text-slate-400" />
+            </button>
+
+            <div v-if="userMenuOpen" class="fixed inset-0 z-40" @click="userMenuOpen = false"></div>
+            <div
+              v-if="userMenuOpen"
+              class="absolute right-0 top-full z-50 mt-2 w-48 rounded-xl border border-border bg-white p-1.5 shadow-float"
+              role="menu"
+            >
+              <div class="px-3 py-2">
+                <p class="text-sm font-semibold text-slate-900">{{ auth.displayName }}</p>
+                <p class="mt-0.5 text-xs text-slate-500">{{ roleLabel }}</p>
+              </div>
+              <div class="my-1 h-px bg-border"></div>
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-red-600 transition hover:bg-red-50"
+                role="menuitem"
+                @click="logout"
+              >
+                <AppIcon name="logout" :size="16" />
+                退出登录
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main id="main-content" class="el-main flex-1 overflow-auto bg-background p-4 md:p-6" tabindex="-1">
+        <router-view />
+      </main>
+    </div>
+
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition duration-200 ease-out"
+        enter-from-class="opacity-0"
+        leave-active-class="transition duration-150 ease-in"
+        leave-to-class="opacity-0"
+      >
+        <div v-if="mobileOpen" class="fixed inset-0 z-[60] md:hidden">
+          <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="mobileOpen = false"></div>
+          <aside
+            class="absolute inset-y-0 left-0 flex w-72 max-w-[86vw] flex-col bg-white shadow-float"
+            role="dialog"
+            aria-modal="true"
+            aria-label="导航菜单"
+          >
+            <div class="flex h-16 items-center gap-2.5 border-b border-border px-4">
+              <span class="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white">
+                排
+              </span>
+              <span class="text-[17px] font-semibold tracking-wide text-slate-900">排策智演</span>
+              <button
+                ref="mobileClose"
+                type="button"
+                class="ml-auto grid h-9 w-9 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-50"
+                aria-label="关闭菜单"
+                @click="mobileOpen = false"
+              >
+                <AppIcon name="close" :size="18" />
+              </button>
+            </div>
+            <NavMenu :menus="menus" always-show-labels @select="mobileOpen = false" />
+          </aside>
+        </div>
+      </Transition>
+    </Teleport>
+  </div>
 </template>
-
-<style scoped>
-.layout {
-  height: 100%;
-  background: var(--agv-surface-muted);
-}
-
-.aside {
-  display: flex;
-  flex-direction: column;
-  background: var(--agv-brand-strong);
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 62px;
-  padding: 0 18px;
-  color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.logo-mark {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--agv-brand);
-  color: #fff;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.logo-text {
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: 2px;
-}
-
-.aside-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 18px;
-  color: #7f8ca3;
-  font-size: 12px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.aside-version {
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.08);
-  font-family: Consolas, Monaco, monospace;
-}
-
-.content {
-  min-width: 0;
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  height: 62px;
-  background: var(--agv-surface);
-  border-bottom: 1px solid var(--agv-border);
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.header-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.header-subtitle {
-  color: var(--agv-text-muted);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.username {
-  color: #4b5563;
-  font-size: 14px;
-}
-
-.icon-button {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  color: var(--agv-brand);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.icon-button:hover {
-  background: var(--agv-surface-muted);
-  border-color: var(--agv-border);
-}
-
-.main {
-  padding: 20px;
-  scrollbar-gutter: stable;
-  outline: none;
-}
-
-@media (max-width: 900px) {
-  .header {
-    padding-inline: 12px;
-  }
-
-  .main {
-    padding: 12px;
-  }
-
-  .username {
-    display: none;
-  }
-}
-
-@media (max-width: 560px) {
-  .logout-text {
-    display: none;
-  }
-}
-
-/* Drawer 被 teleport 到 body，样式需要全局作用域 */
-:global(.nav-drawer) {
-  background: var(--agv-brand-strong);
-}
-
-:global(.nav-drawer .el-drawer__body) {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  background: var(--agv-brand-strong);
-}
-
-.drawer-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-inline-end: 10px;
-}
-
-.drawer-close {
-  color: #b8c4d9;
-}
-</style>
