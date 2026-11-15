@@ -52,9 +52,10 @@ class EngineScaleTest {
             for (String algorithm : new String[]{"nearest", "greedy-eta"}) {
                 SimulationResult result = new SimulationEngine(net, tasks,
                         SimConfig.defaults(count, 20261107L, algorithm)).runToCompletion();
-                lines.add(String.format("%d\t%s\tdone=%s\tcompleted=%d/%d\tmakespan=%d\tpath=%.1f\twait=%d\tconflict=%d\tticks=%d",
+                lines.add(String.format("%d\t%s\tdone=%s\tcompleted=%d/%d\tmakespan=%d\tpath=%.1f\twait=%d\tconflict=%d\tavgDelivery=%d\tticks=%d",
                         count, algorithm, result.finished(), result.completedTasks(), tasks.size(), result.makespan(),
-                        result.totalPathLen(), result.totalWaitTick(), result.conflictCount(), result.ticks()));
+                        result.totalPathLen(), result.totalWaitTick(), result.conflictCount(),
+                        result.avgDeliveryTick(), result.ticks()));
                 org.junit.jupiter.api.Assertions.assertTrue(result.finished(),
                         count + " 台车 + " + algorithm + " 未能跑完");
                 org.junit.jupiter.api.Assertions.assertEquals(20, result.completedTasks());
