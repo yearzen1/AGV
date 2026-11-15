@@ -206,6 +206,8 @@ class ApiSmokeTest {
             assertEquals("WARNING", item.path("severity").asText(),
                     "校验端点不应返回错误：" + item.path("message").asText());
         }
+        assertEquals(0, findings.size(),
+                "预置模板已给每个工位配缓存位，不应再有任何校验结论");
     }
 
     @Test
