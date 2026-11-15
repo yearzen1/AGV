@@ -39,18 +39,27 @@ async function launch() {
 async function waitForTick(page, predicate, timeout = 20000) {
   await page.waitForFunction(
     (source) => {
-      const value = Number(document.querySelector('.metric-grid .metric-value')?.textContent ?? -1)
+      const value = Number(document.querySelector('[data-tick]')?.getAttribute('data-tick') ?? -1)
       // eslint-disable-next-line no-new-func
       return new Function('tick', `return (${source})`)(value)
     },
     predicate,
     { timeout, polling: 200 }
   )
-  return page.evaluate(() => Number(document.querySelector('.metric-grid .metric-value')?.textContent))
+  return page.evaluate(() => Number(document.querySelector('[data-tick]')?.getAttribute('data-tick')))
 }
 
 async function tickOf(page) {
-  return page.evaluate(() => Number(document.querySelector('.metric-grid .metric-value')?.textContent ?? -1))
+  return page.evaluate(() => Number(document.querySelector('[data-tick]')?.getAttribute('data-tick') ?? -1))
+}
+
+/** 按指标名称读取数值，避免依赖指标卡片顺序。 */
+async function metricValue(page, label) {
+  return page.evaluate((name) => {
+    const tiles = [...document.querySelectorAll('.metric-grid .metric')]
+    const tile = tiles.find((el) => el.querySelector('.metric-label')?.textContent?.trim() === name)
+    return tile?.querySelector('.metric-value')?.textContent?.trim() ?? null
+  }, label)
 }
 
 async function main() {
@@ -123,6 +132,14 @@ async function main() {
     assert(idle.speedChecked === '1x', '空闲时倍速停在 1x')
     assert(idle.rows === 0 && idle.hint.includes('尚未启动仿真'), '空闲时不显示车辆')
 
+    const idleMetrics = await page.evaluate(() => {
+      const tiles = [...document.querySelectorAll('.metric-grid .metric')]
+      return tiles.map((el) => el.querySelector('.metric-label')?.textContent?.trim() ?? '')
+    })
+    assert(idleMetrics.length === 8, `指标面板有 8 项（实际 ${idleMetrics.length}）`)
+    assert(idleMetrics.includes('单均配送') && idleMetrics.includes('平均等待'), '指标包含单均配送与平均等待')
+    assert((await metricValue(page, '运行时长')) === '0.0 s', '空闲时运行时长显示为 0.0 s')
+
     await page.screenshot({ path: path.join(OUT, 'sim-idle-1440x900.png') })
 
     console.log('启动仿真')
@@ -142,6 +159,40 @@ async function main() {
     assert(runningState.numbers.length === 2 && runningState.numbers.every(Boolean), '运行时 AGV 数量与随机种子锁定')
     assert(runningState.speedDisabled === 0, '运行时倍速可选')
 
+    console.log('检查任务页签')
+    await page.getByRole('tab', { name: /任务/ }).click()
+    await page.waitForTimeout(300)
+    const taskPanel = await page.evaluate(() => ({
+      rows: document.querySelectorAll('.task-panel .task-row').length,
+      summary: document.querySelector('.task-summary')?.textContent?.trim() ?? '',
+      states: [...document.querySelectorAll('.task-panel .task-row .el-tag')].map((el) => el.textContent.trim())
+    }))
+    assert(taskPanel.rows === 20, `任务页签列出 20 条任务（实际 ${taskPanel.rows}）`)
+    assert(taskPanel.summary.includes('未分配') && taskPanel.summary.includes('已完成'), '任务页签给出未分配/进行中/已完成统计')
+    assert(
+      taskPanel.states.every((state) => ['未分配', '进行中', '已完成'].includes(state)),
+      '任务行状态只用三种文案'
+    )
+    await page.screenshot({ path: path.join(OUT, 'sim-tasks-1440x900.png') })
+
+    console.log('检查节点页签')
+    await page.getByRole('tab', { name: /节点/ }).click()
+    await page.waitForTimeout(300)
+    const nodePanel = await page.evaluate(() => ({
+      rows: [...document.querySelectorAll('.node-panel .node-row')].map((row) => ({
+        usage: row.querySelector('.node-usage')?.textContent?.trim() ?? '',
+        full: row.querySelector('.node-usage')?.classList.contains('full') ?? false
+      }))
+    }))
+    assert(
+      nodePanel.rows.every((row) => {
+        const [count, capacity] = row.usage.split('/').map((part) => Number(part.trim()))
+        return count >= 1 && count <= capacity && (row.full === (count === capacity))
+      }),
+      '节点占用不超过容量，满员才标红'
+    )
+    await page.getByRole('tab', { name: /车辆/ }).click()
+
     console.log('倍速与暂停')
     await page.locator('.speed-group').getByText('4x', { exact: true }).click()
     await page.waitForTimeout(800)
@@ -157,7 +208,7 @@ async function main() {
     await page.reload({ waitUntil: 'networkidle' })
     await page.waitForFunction(() => document.querySelectorAll('.agv-row').length > 0, null, { timeout: 15000 })
     const restored = await page.evaluate(() => ({
-      tick: Number(document.querySelector('.metric-grid .metric-value')?.textContent ?? -1),
+      tick: Number(document.querySelector('[data-tick]')?.getAttribute('data-tick') ?? -1),
       rows: document.querySelectorAll('.agv-row').length,
       paused: [...document.querySelectorAll('.el-tag')].some((el) => el.textContent.includes('已暂停')),
       speed: document.querySelector('.speed-group .el-radio-button.is-active')?.textContent?.trim()
@@ -175,7 +226,7 @@ async function main() {
     await page.getByRole('button', { name: '重置', exact: true }).click()
     await page.waitForTimeout(800)
     const reset = await page.evaluate(() => ({
-      tick: Number(document.querySelector('.metric-grid .metric-value')?.textContent ?? -1),
+      tick: Number(document.querySelector('[data-tick]')?.getAttribute('data-tick') ?? -1),
       rows: document.querySelectorAll('.agv-row').length,
       hint: document.querySelector('.agv-panel')?.textContent ?? '',
       speed: document.querySelector('.speed-group .el-radio-button.is-active')?.textContent?.trim(),
@@ -195,7 +246,6 @@ async function main() {
       { timeout: 240000, polling: 500 }
     )
     const finishedState = await page.evaluate(() => ({
-      done: document.querySelectorAll('.metric-grid .metric-value')[1]?.textContent?.trim(),
       progress: document.querySelector('.el-progress__text')?.textContent?.trim(),
       tags: [...document.querySelectorAll('.toolbar .el-tag')].map((el) => el.textContent.trim()),
       paramEnabled: [...document.querySelectorAll('.toolbar .el-select')].every(
@@ -203,12 +253,35 @@ async function main() {
       ),
       speedDisabled: document.querySelectorAll('.speed-group .el-radio-button.is-disabled').length
     }))
-    assert(finishedState.done === '20/20', `自然结束后完成数为 ${finishedState.done}`)
+    const doneText = await metricValue(page, '完成')
+    const avgDelivery = await metricValue(page, '单均配送')
+    assert(doneText === '20/20', `自然结束后完成数为 ${doneText}`)
     assert(finishedState.progress === '100%', '自然结束后进度条到 100%')
+    assert(/^\d+\.\d s$/.test(avgDelivery ?? ''), `自然结束后单均配送显示为秒（${avgDelivery}）`)
+    assert(Number.parseFloat(avgDelivery ?? '0') > 0, '自然结束后单均配送大于 0')
     assert(finishedState.tags.includes('已完成'), '自然结束后状态标签显示「已完成」')
     assert(finishedState.tags.includes('实时通道已连接'), '结束消息没有踢掉实时通道')
     assert(finishedState.paramEnabled, '结束后参数重新可编辑')
     assert(finishedState.speedDisabled === 4, '结束后倍速禁用')
+
+    console.log('检查结束后的任务用时')
+    await page.getByRole('tab', { name: /任务/ }).click()
+    await page.waitForTimeout(300)
+    const finishedTasks = await page.evaluate(() => ({
+      states: [...document.querySelectorAll('.task-panel .task-row .el-tag')].map((el) =>
+        el.textContent.trim()
+      ),
+      durations: [...document.querySelectorAll('.task-panel .task-row .muted')]
+        .map((el) => el.textContent.trim())
+        .filter((text) => /^\d+\.\d s$/.test(text))
+    }))
+    assert(
+      finishedTasks.states.length === 20 && finishedTasks.states.every((state) => state === '已完成'),
+      '结束后所有任务标记为已完成'
+    )
+    assert(finishedTasks.durations.length === 20, '每个任务都显示实际用时')
+    await page.screenshot({ path: path.join(OUT, 'sim-finished-tasks-1440x900.png') })
+
     await page.screenshot({ path: path.join(OUT, 'sim-finished-1440x900.png') })
     await page.getByRole('button', { name: '重置', exact: true }).click()
     await page.waitForTimeout(500)
