@@ -9,7 +9,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -132,6 +134,27 @@ class SimulationEngineTest {
 
         assertEquals(0, result.avgDeliveryTick());
         assertEquals(0, result.completedTasks());
+    }
+
+    @Test
+    @DisplayName("任务事件带任务号，其余事件用 -1")
+    void taskEventsCarryTaskId() {
+        SimulationEngine engine = new SimulationEngine(corridor(),
+                List.of(new Task(7, "W1", "W2")),
+                SimConfig.defaults(1, 42L, "nearest"));
+
+        Map<SimEvent.Type, Integer> taskIds = new EnumMap<>(SimEvent.Type.class);
+        int guard = 0;
+        while (!engine.finished() && guard++ < 20000) {
+            for (SimEvent event : engine.step().events()) {
+                taskIds.putIfAbsent(event.type(), event.taskId());
+            }
+        }
+
+        assertEquals(7, taskIds.get(SimEvent.Type.TASK_ASSIGNED), "分配事件应带任务号");
+        assertEquals(7, taskIds.get(SimEvent.Type.LOADING), "装货事件应带任务号");
+        assertEquals(7, taskIds.get(SimEvent.Type.TASK_DONE), "完成事件应带任务号");
+        assertEquals(-1, taskIds.get(SimEvent.Type.FINISHED), "结束事件不对应单个任务");
     }
 
     @Test
