@@ -99,6 +99,42 @@ class SimulationEngineTest {
     }
 
     @Test
+    @DisplayName("平均配送时长：等于单任务从分配到达成的 tick 数")
+    void averageDeliveryTickMatchesSingleTask() {
+        SimulationEngine engine = new SimulationEngine(corridor(),
+                List.of(new Task(1, "W1", "W2")),
+                SimConfig.defaults(1, 42L, "nearest"));
+
+        long assignedTick = -1;
+        long doneTick = -1;
+        int guard = 0;
+        while (!engine.finished() && guard++ < 20000) {
+            for (SimEvent event : engine.step().events()) {
+                if (event.type() == SimEvent.Type.TASK_ASSIGNED) {
+                    assignedTick = event.tick();
+                } else if (event.type() == SimEvent.Type.TASK_DONE) {
+                    doneTick = event.tick();
+                }
+            }
+        }
+
+        assertTrue(assignedTick > 0, "任务应被分配");
+        assertTrue(doneTick > assignedTick, "任务应在分配之后完成");
+        assertEquals(doneTick - assignedTick, engine.metrics().avgDeliveryTick(),
+                "单任务的平均配送时长就是完成 tick 减去分配 tick");
+    }
+
+    @Test
+    @DisplayName("平均配送时长：没有已完成任务时为 0")
+    void averageDeliveryTickIsZeroWithoutDoneTasks() {
+        SimulationResult result = new SimulationEngine(corridor(), List.of(),
+                SimConfig.defaults(1, 1L, "nearest")).runToCompletion();
+
+        assertEquals(0, result.avgDeliveryTick());
+        assertEquals(0, result.completedTasks());
+    }
+
+    @Test
     @DisplayName("同一 seed 两次运行结果完全一致")
     void deterministicWithSameSeed() {
         List<Task> tasks = List.of(

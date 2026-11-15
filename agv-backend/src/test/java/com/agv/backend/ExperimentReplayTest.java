@@ -1,6 +1,7 @@
 package com.agv.backend;
 
 import com.agv.backend.entity.Experiment;
+import com.agv.backend.entity.ExperimentMetric;
 import com.agv.backend.entity.SysUser;
 import com.agv.backend.repository.ExperimentMetricRepository;
 import com.agv.backend.repository.ExperimentRepository;
@@ -20,6 +21,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -75,6 +78,38 @@ class ExperimentReplayTest {
 
         org.junit.jupiter.api.Assertions.assertEquals(2, experimentRepository.count(),
                 "回放应新增一条实验记录，原记录不变");
+    }
+
+    @Test
+    @DisplayName("实验报表带平均配送时长，历史列表也能读到")
+    void reportCarriesAverageDeliveryTick() throws Exception {
+        String token = login("admin", "admin123");
+        long experimentId = runExperiment(token);
+
+        ExperimentMetric metric = metricRepository.findByExperimentId(experimentId).orElseThrow();
+        assertTrue(metric.getAvgDeliveryTick() > 0, "完成的实验应有平均配送时长");
+
+        mockMvc.perform(get("/api/experiment/list")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.records[0].avgDeliveryTick").isNumber());
+    }
+
+    @Test
+    @DisplayName("旧实验缺平均配送时长：回放跳过该字段，仍判一致")
+    void legacyMetricWithoutAverageReplaysConsistently() throws Exception {
+        String token = login("admin", "admin123");
+        long experimentId = runExperiment(token);
+
+        ExperimentMetric legacy = metricRepository.findByExperimentId(experimentId).orElseThrow();
+        legacy.setAvgDeliveryTick(null);
+        metricRepository.save(legacy);
+
+        mockMvc.perform(post("/api/experiment/" + experimentId + "/replay")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.consistent").value(true))
+                .andExpect(jsonPath("$.data.replay.avgDeliveryTick").isNumber());
     }
 
     @Test
