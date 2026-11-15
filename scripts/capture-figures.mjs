@@ -161,7 +161,7 @@ async function main() {
   <g font-size="20" fill="#606266">
     <rect x="60" y="800" width="1560" height="150" rx="14" fill="#f4f4f5" stroke="#c0c4cc" stroke-width="2"/>
     <text x="90" y="850" font-weight="bold" fill="#606266">论文数据来源</text>
-    <text x="90" y="896">30 个自动化测试：路网校验 7　A* 6　引擎 9　接口 7　规模矩阵 1</text>
+    <text x="90" y="896">84 个自动化测试：路网校验 9　A* 对拍 6　仿真引擎 12　后端接口/并发 54（含规模矩阵 1）</text>
     <text x="90" y="930">规模实验：2/3/5/8 台车 × 就近/贪心 ETA × 20 单，seed=20261107</text>
   </g>
 </svg></body></html>`
