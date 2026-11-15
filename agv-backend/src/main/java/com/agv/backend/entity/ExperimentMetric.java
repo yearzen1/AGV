@@ -30,6 +30,10 @@ public class ExperimentMetric extends BaseEntity {
     @Column(name = "conflict_count", nullable = false)
     private Integer conflictCount;
 
+    /** 平均配送时长：每单「完成 tick − 分配 tick」的平均值；历史实验为 null */
+    @Column(name = "avg_delivery_tick")
+    private Long avgDeliveryTick;
+
     public Long getExperimentId() {
         return experimentId;
     }
@@ -68,5 +72,13 @@ public class ExperimentMetric extends BaseEntity {
 
     public void setConflictCount(Integer conflictCount) {
         this.conflictCount = conflictCount;
+    }
+
+    public Long getAvgDeliveryTick() {
+        return avgDeliveryTick;
+    }
+
+    public void setAvgDeliveryTick(Long avgDeliveryTick) {
+        this.avgDeliveryTick = avgDeliveryTick;
     }
 }

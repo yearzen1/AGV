@@ -63,6 +63,9 @@ public final class SimulationEngine {
     private long totalWaitTicks;
     private int conflictCount;
     private boolean finished;
+    /** 任务分配时刻，用于算单均配送时长；任务完成时移除。 */
+    private final Map<Integer, Long> assignedTicks = new HashMap<>();
+    private long deliveryTicksSum;
 
     public SimulationEngine(RoadNet net, List<Task> tasks, SimConfig config) {
         if (net == null || net.isEmpty()) {
@@ -158,7 +161,7 @@ public final class SimulationEngine {
         // 路径长由逐 tick 累加得到，避免把浮点尾差带进报表
         double roundedLength = Math.round(totalPathLen * 10.0) / 10.0;
         return new SimulationResult(makespan, roundedLength, totalWaitTicks,
-                conflictCount, completedTasks, finished, tick);
+                conflictCount, completedTasks, avgDeliveryTick(), finished, tick);
     }
 
     public List<AgvSnapshot> snapshots() {
@@ -175,7 +178,15 @@ public final class SimulationEngine {
 
     public SimFrame.Metrics metrics() {
         return new SimFrame.Metrics(makespan, totalPathLen, totalWaitTicks,
-                conflictCount, completedTasks, allTasks.size());
+                conflictCount, completedTasks, allTasks.size(), avgDeliveryTick());
+    }
+
+    /** 单均配送时长 = Σ(完成 tick − 分配 tick) ÷ 已完成任务数；没有已完成任务记 0。 */
+    private long avgDeliveryTick() {
+        if (completedTasks == 0) {
+            return 0;
+        }
+        return Math.round((double) deliveryTicksSum / completedTasks);
     }
 
     // ---------------------------------------------------------------- 运动
@@ -272,6 +283,10 @@ public final class SimulationEngine {
     private void completeTask(Agv agv, List<SimEvent> events) {
         completedTasks++;
         makespan = tick;
+        Long assignedTick = assignedTicks.remove(agv.task.id());
+        if (assignedTick != null) {
+            deliveryTicksSum += tick - assignedTick;
+        }
         if (completedTasks >= allTasks.size()) {
             tasksDoneTick = tick;
         }
@@ -300,6 +315,7 @@ public final class SimulationEngine {
         pending.remove(chosen);
         agv.task = chosen;
         agv.leg = Leg.PICKUP;
+        assignedTicks.put(chosen.id(), tick);
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.TASK_ASSIGNED,
                 agv.currentNode, "任务 " + chosen.id() + "：" + chosen.from() + " → " + chosen.to()));
         planAndProceed(agv, chosen.from(), events);

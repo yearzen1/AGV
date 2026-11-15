@@ -129,7 +129,7 @@ public class ExperimentService {
     }
 
     /**
-     * 用实验输入快照重跑一次，并比较四项指标。
+     * 用实验输入快照重跑一次，并比较五项指标。
      * 回放会新增一条实验记录，原记录保持不变。
      * <p>
      * 不加事务：仿真可能跑很久，不应在整个计算期间占用数据库连接。
@@ -196,6 +196,7 @@ public class ExperimentService {
         metric.setTotalPathLen(round1(result.totalPathLen()));
         metric.setTotalWaitTick(result.totalWaitTick());
         metric.setConflictCount(result.conflictCount());
+        metric.setAvgDeliveryTick(result.avgDeliveryTick());
         return metricRepository.save(metric);
     }
 
@@ -203,7 +204,13 @@ public class ExperimentService {
         return Objects.equals(a.getMakespan(), b.getMakespan())
                 && Objects.equals(a.getTotalPathLen(), b.getTotalPathLen())
                 && Objects.equals(a.getTotalWaitTick(), b.getTotalWaitTick())
-                && Objects.equals(a.getConflictCount(), b.getConflictCount());
+                && Objects.equals(a.getConflictCount(), b.getConflictCount())
+                && sameIfPresent(a.getAvgDeliveryTick(), b.getAvgDeliveryTick());
+    }
+
+    /** 历史实验缺新列（为 null）时跳过该项比较，避免把旧记录误判为不可复现。 */
+    private boolean sameIfPresent(Long a, Long b) {
+        return a == null || b == null || a.equals(b);
     }
 
     private double round1(double value) {
@@ -278,6 +285,7 @@ public class ExperimentService {
                 m == null ? null : m.getTotalPathLen(),
                 m == null ? null : m.getTotalWaitTick(),
                 m == null ? null : m.getConflictCount(),
+                m == null ? null : m.getAvgDeliveryTick(),
                 experiment.getCreateTime());
     }
 }

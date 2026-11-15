@@ -15,8 +15,10 @@ public record SimFrame(long tick, List<AgvSnapshot> agvs, List<SimEvent> events,
 
     /**
      * 实时指标。{@code makespan} 在最后一件任务完成时定格，之后不变。
+     * {@code avgDeliveryTick} 是所有已完成任务的「完成 tick − 分配 tick」平均值，没有已完成任务时为 0。
      */
     public record Metrics(long makespan, double totalPathLen, long totalWaitTick,
-                          int conflictCount, int completedTasks, int totalTasks) {
+                          int conflictCount, int completedTasks, int totalTasks,
+                          long avgDeliveryTick) {
     }
 }
