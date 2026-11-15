@@ -263,7 +263,29 @@ async function main() {
     await page.getByRole('tab', { name: '统计' }).click()
     assert((await page.locator('.side-pane').filter({ hasText: '总长度' }).count()) === 1, '统计页签可见')
     await page.getByRole('tab', { name: '校验' }).click()
-    assert((await page.locator('.side-pane').filter({ hasText: '未发现问题' }).count()) === 1, '校验页签可见')
+    const validation = await page.evaluate(() => {
+      const pane = [...document.querySelectorAll('.side-pane')].find((el) =>
+        el.textContent?.includes('校验')
+      )
+      const rows = [...(pane?.querySelectorAll('.error-row') ?? [])]
+      return {
+        rows: rows.length,
+        warningTags: rows.filter((row) => row.querySelector('.el-tag--warning') != null).length,
+        hasErrorTag: rows.some((row) => row.querySelector('.el-tag--danger') != null)
+      }
+    })
+    assert(
+      validation.rows > 0 && validation.warningTags > 0,
+      `校验页签列出工位让位警告（${validation.warningTags} 条）`
+    )
+    assert(
+      !validation.hasErrorTag,
+      '标准模板只有警告、没有错误，不应标红'
+    )
+    assert(
+      (await page.locator('.editor-head .el-tag').filter({ hasText: '条提醒' }).count()) === 1,
+      '工具栏显示提醒数量'
+    )
     await page.getByRole('tab', { name: '属性' }).click()
 
     console.log('任务流向聚合')

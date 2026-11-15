@@ -181,15 +181,20 @@ async function main() {
     const nodePanel = await page.evaluate(() => ({
       rows: [...document.querySelectorAll('.node-panel .node-row')].map((row) => ({
         usage: row.querySelector('.node-usage')?.textContent?.trim() ?? '',
-        full: row.querySelector('.node-usage')?.classList.contains('full') ?? false
+        full: row.querySelector('.node-usage')?.classList.contains('full') ?? false,
+        yielded: row.querySelector('.node-yielded')?.textContent?.trim() ?? ''
       }))
     }))
     assert(
       nodePanel.rows.every((row) => {
-        const [count, capacity] = row.usage.split('/').map((part) => Number(part.trim()))
-        return count >= 1 && count <= capacity && (row.full === (count === capacity))
+        const [reserved, capacity] = row.usage.split('/').map((part) => Number(part.trim()))
+        return reserved >= 0 && reserved <= capacity && row.full === (reserved === capacity)
       }),
-      '节点占用不超过容量，满员才标红'
+      '预约占用不超过容量，满员才标红'
+    )
+    assert(
+      nodePanel.rows.every((row) => row.yielded === '' || /^让位 \d+$/.test(row.yielded)),
+      '让位等待单独标注，不混进预约数'
     )
     await page.getByRole('tab', { name: /车辆/ }).click()
 
