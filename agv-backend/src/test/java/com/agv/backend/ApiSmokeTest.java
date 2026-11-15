@@ -16,6 +16,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.charset.StandardCharsets;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -187,13 +188,24 @@ class ApiSmokeTest {
         JsonNode data = objectMapper.readTree(response).path("data");
         String roadnetJson = objectMapper.writeValueAsString(data);
 
-        mockMvc.perform(post("/api/roadnet/validate")
+        expectNoValidationErrors(roadnetJson, token);
+    }
+
+    /** 预置模板只该有警告（工位让位空间），不该有拦截保存的错误。 */
+    private void expectNoValidationErrors(String roadnetJson, String token) throws Exception {
+        String body = mockMvc.perform(post("/api/roadnet/validate")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(roadnetJson))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.length()").value(0));
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        JsonNode findings = objectMapper.readTree(body).path("data");
+        for (JsonNode item : findings) {
+            assertEquals("WARNING", item.path("severity").asText(),
+                    "校验端点不应返回错误：" + item.path("message").asText());
+        }
     }
 
     @Test
@@ -228,13 +240,7 @@ class ApiSmokeTest {
         }
         assertTrue(hasDual, "双车道模板至少包含一条 DUAL 路段");
 
-        mockMvc.perform(post("/api/roadnet/validate")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(payload)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.length()").value(0));
+        expectNoValidationErrors(objectMapper.writeValueAsString(payload), token);
     }
 
     @Test
