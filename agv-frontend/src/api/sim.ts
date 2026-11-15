@@ -7,6 +7,8 @@ export interface SimMetrics {
   conflictCount: number
   completedTasks: number
   totalTasks: number
+  /** 单均配送时长（tick）；没有已完成任务时为 0 */
+  avgDeliveryTick: number
 }
 
 export interface AgvSnapshot {
@@ -28,6 +30,8 @@ export interface SimEvent {
   type: string
   place: string
   detail: string
+  /** 相关任务号；不对应单个任务时为 -1 */
+  taskId?: number
 }
 
 export interface SimFrame {
@@ -138,6 +142,8 @@ export interface ExperimentReport {
   totalPathLen: number
   totalWaitTick: number
   conflictCount: number
+  /** 单均配送时长（tick）；旧实验为 null */
+  avgDeliveryTick: number | null
   createTime: string
 }
 

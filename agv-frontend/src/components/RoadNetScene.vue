@@ -19,10 +19,16 @@ const props = withDefaults(
     quality?: SceneQuality
     showLabels?: boolean
     selectedId?: string | null
+    /** 节点编号 → 当前停靠的 AGV 数；用于画占用圈 */
+    nodeOccupancy?: Record<string, number>
+    /** 当前高亮的节点编号 */
+    highlightNodeId?: string | null
   }>(),
   {
     showLabels: true,
-    selectedId: null
+    selectedId: null,
+    nodeOccupancy: () => ({}),
+    highlightNodeId: null
   }
 )
 
@@ -97,6 +103,7 @@ function rebuildRoadNet(net: RoadNetPayload | null) {
   viewer.setRoadNet(netRender.bounds)
   viewer.fitView()
   applyLabels()
+  applyOccupancy()
 }
 
 function applyLabels() {
@@ -105,6 +112,17 @@ function applyLabels() {
   netRender?.group.traverse((object) => {
     if (object instanceof THREE.Sprite) object.visible = visible
   })
+}
+
+/** 把节点占用映射传给场景；没有路网时忽略。 */
+function applyOccupancy() {
+  netRender?.setOccupancy(new Map(Object.entries(props.nodeOccupancy ?? {})))
+  netRender?.setHighlight(props.highlightNodeId ?? null)
+}
+
+/** 高亮某个节点（白色圈），传 null 取消。 */
+function highlightNode(id: string | null) {
+  netRender?.setHighlight(id)
 }
 
 /** 画一条规划路径（用于单车路径演示）。 */
@@ -178,6 +196,12 @@ watch(
   (id) => fleet?.setSelected(id ?? null)
 )
 
+watch(
+  () => [props.nodeOccupancy, props.highlightNodeId],
+  () => applyOccupancy(),
+  { deep: false }
+)
+
 onMounted(() => {
   init()
   rebuildRoadNet(props.roadnet)
@@ -201,7 +225,7 @@ onBeforeUnmount(() => {
   viewer = null
 })
 
-defineExpose({ drawPath, clearPath, fitView, setTopView, focus, setQuality })
+defineExpose({ drawPath, clearPath, fitView, setTopView, focus, setQuality, highlightNode })
 </script>
 
 <template>

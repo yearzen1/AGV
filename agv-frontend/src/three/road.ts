@@ -9,8 +9,19 @@ export interface RoadNetRender {
   edges: Map<string, NetEdge>
   bounds: THREE.Box3
   stats: RoadGeometryStats
+  /** 节点占用圈：键为节点编号，值为当前停靠的 AGV 数。 */
+  setOccupancy(occupancy: Map<string, number>): void
+  /** 高亮一个节点（白色圈）；传 null 取消。 */
+  setHighlight(nodeId: string | null): void
   dispose(): void
 }
+
+/** 占用圈配色：有车但未满用琥珀色，满员用红色，和右侧节点表一致。 */
+const OCCUPANCY_COLORS = {
+  partial: 0xe6a23c,
+  full: 0xf56c6c,
+  highlight: 0xffffff
+} as const
 
 interface PadDefinition {
   create: () => THREE.BufferGeometry
@@ -92,12 +103,15 @@ export function buildRoadNet(net: RoadNetPayload, labels: LabelFactory): RoadNet
 
   addNodePads(group, net.nodes)
   addNodeLabels(group, net.nodes, labels)
+  const occupancy = createOccupancyLayer(group, net.nodes)
 
   return {
     group,
     edges,
     bounds,
     stats: geometry.stats,
+    setOccupancy: occupancy.setOccupancy,
+    setHighlight: occupancy.setHighlight,
     dispose: () => disposeGroup(group)
   }
 }
@@ -278,6 +292,86 @@ function addNodePads(group: THREE.Group, nodes: NetNode[]) {
     rings.instanceMatrix.needsUpdate = true
     rings.name = 'charger-rings'
     group.add(rings)
+  }
+}
+
+interface OccupancyLayer {
+  setOccupancy(occupancy: Map<string, number>): void
+  setHighlight(nodeId: string | null): void
+}
+
+/**
+ * 节点占用圈：在节点地台上方画一圈光环，按占用率着色。
+ *
+ * 用独立的 InstancedMesh 而不是改地台颜色，既保留「按类型着色」的类型语义，
+ * 也不必每帧重建材质——只改实例矩阵和实例颜色。
+ */
+function createOccupancyLayer(group: THREE.Group, nodes: NetNode[]): OccupancyLayer {
+  const positions = new Map(nodes.map((node) => [node.id, node]))
+  const capacities = new Map(nodes.map((node) => [node.id, node.capacity ?? 1]))
+  const geometry = new THREE.RingGeometry(1.05, 1.32, 36)
+  const material = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    toneMapped: false
+  })
+  const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, nodes.length))
+  mesh.count = 0
+  mesh.name = 'node-occupancy'
+  mesh.renderOrder = 2
+  group.add(mesh)
+
+  const highlight = new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({
+      color: OCCUPANCY_COLORS.highlight,
+      transparent: true,
+      opacity: 0.95,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      toneMapped: false
+    })
+  )
+  highlight.name = 'node-highlight'
+  highlight.rotation.x = -Math.PI / 2
+  highlight.visible = false
+  highlight.renderOrder = 3
+  group.add(highlight)
+
+  const matrix = new THREE.Matrix4()
+  const rotation = new THREE.Matrix4().makeRotationX(-Math.PI / 2)
+  const color = new THREE.Color()
+  const max = mesh.instanceMatrix.count
+
+  return {
+    setOccupancy(occupancy) {
+      let index = 0
+      for (const [id, count] of occupancy) {
+        const node = positions.get(id)
+        if (!node || count <= 0 || index >= max) continue
+        matrix.makeTranslation(node.x, ROAD_Y + 0.05, node.y).multiply(rotation)
+        mesh.setMatrixAt(index, matrix)
+        color.setHex(
+          count >= (capacities.get(id) ?? 1) ? OCCUPANCY_COLORS.full : OCCUPANCY_COLORS.partial
+        )
+        mesh.setColorAt(index, color)
+        index += 1
+      }
+      mesh.count = index
+      mesh.instanceMatrix.needsUpdate = true
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    },
+    setHighlight(nodeId) {
+      const node = nodeId ? positions.get(nodeId) : null
+      if (!node) {
+        highlight.visible = false
+        return
+      }
+      highlight.position.set(node.x, ROAD_Y + 0.07, node.y)
+      highlight.visible = true
+    }
   }
 }
 

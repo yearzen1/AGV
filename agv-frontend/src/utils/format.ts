@@ -25,3 +25,9 @@ export function taskSetLabel(name: string, taskCount?: number | null): string {
   if (taskCount === null || taskCount === undefined) return name
   return name.includes(`${taskCount} 单`) ? name : `${name}（${taskCount} 单）`
 }
+
+/** tick 换秒文本，1 tick = 100 ms；空值显示 `-`。 */
+export function formatTicks(value?: number | null, digits = 1): string {
+  if (value === null || value === undefined || Number.isNaN(value)) return '-'
+  return `${(Number(value) / 10).toFixed(digits)} s`
+}

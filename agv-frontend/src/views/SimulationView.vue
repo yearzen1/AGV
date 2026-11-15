@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import RoadNetScene from '@/components/RoadNetScene.vue'
 import type { AgvView } from '@/types'
 import { isSceneQuality, loadQuality, saveQuality, type SceneQuality } from '@/three/quality'
 import { getRoadNet, listDict, listRoadNets, type RoadNetPayload, type RoadNetSummary } from '@/api/roadnet'
 import {
+  getTaskSet,
   listTaskSets,
   pauseSim,
   resetSim,
@@ -17,9 +18,10 @@ import {
   type SimEvent,
   type SimMetrics,
   type SimStatus,
+  type TaskDto,
   type TaskSetSummary
 } from '@/api/sim'
-import { taskSetLabel } from '@/utils/format'
+import { formatTicks, taskSetLabel } from '@/utils/format'
 import { simSocketUrl } from '@/utils/ws'
 
 const maps = ref<RoadNetSummary[]>([])
@@ -37,6 +39,7 @@ const mapTaskSets = computed(() =>
 )
 
 const roadnet = ref<RoadNetPayload | null>(null)
+const tasks = ref<TaskDto[]>([])
 const agvs = ref<AgvSnapshot[]>([])
 const events = ref<SimEvent[]>([])
 const metrics = ref<SimMetrics | null>(null)
@@ -45,6 +48,8 @@ const tick = ref(0)
 const running = ref(false)
 const finished = ref(false)
 const paused = ref(false)
+/** 已发出启动请求但还没拿到响应：此期间的帧仍属于本次运行，不能丢。 */
+const starting = ref(false)
 const speed = ref(1)
 const socketState = ref<'closed' | 'open' | 'failed'>('closed')
 
@@ -56,11 +61,22 @@ const quality = ref<SceneQuality>(loadQuality())
 const showLabels = ref(true)
 const topView = ref(false)
 const selectedAgvId = ref<string | null>(null)
+const highlightNodeId = ref<string | null>(null)
+const sideTab = ref<'agv' | 'task' | 'node' | 'log'>('agv')
+const eventTypeFilter = ref<string[]>([])
+
+/** 单个任务的分配/完成时刻，来源是本轮推送的事件；不落库，刷新后从当前帧重算。 */
+interface TaskTiming {
+  assigned: number | null
+  done: number | null
+}
+const taskTimings = ref<Record<number, TaskTiming>>({})
 
 interface SceneHandle {
   fitView: () => void
   setTopView: (on: boolean) => void
   focus: (id: string | null) => void
+  highlightNode: (id: string | null) => void
 }
 
 const sceneRef = ref<SceneHandle | null>(null)
@@ -103,6 +119,34 @@ const progress = computed(() => {
   return Math.round((metrics.value.completedTasks / metrics.value.totalTasks) * 100)
 })
 
+/** 平均等待：总等待 tick 摊到每台车上。不落库，前后端都不单独存这一列。 */
+const avgWaitTick = computed(() => {
+  const count = status.value?.agvCount ?? agvCount.value ?? 1
+  return Math.round((metrics.value?.totalWaitTick ?? 0) / Math.max(1, count))
+})
+
+const taskById = computed(() => new Map(tasks.value.map((task) => [task.id, task])))
+
+const nodeCapacity = computed(
+  () => new Map((roadnet.value?.nodes ?? []).map((node) => [node.id, node.capacity ?? 1]))
+)
+
+const nodeTypes = computed(
+  () => new Map((roadnet.value?.nodes ?? []).map((node) => [node.id, node.type]))
+)
+
+/** 弧编号带方向后缀（E2+ / E2-），长度按物理路段取。 */
+const edgeLengths = computed(
+  () => new Map((roadnet.value?.edges ?? []).map((edge) => [edge.id, edge.length]))
+)
+
+const nodeTypeLabel: Record<string, string> = {
+  WORKSTATION: '工位',
+  CHARGER: '充电位',
+  BUFFER: '缓存位',
+  JUNCTION: '路口'
+}
+
 const eventTypeLabel: Record<string, string> = {
   TASK_ASSIGNED: '分配任务',
   LOADING: '装货',
@@ -113,6 +157,71 @@ const eventTypeLabel: Record<string, string> = {
   CHARGING: '回充',
   FINISHED: '结束'
 }
+
+const eventTypeOptions = Object.entries(eventTypeLabel).map(([value, label]) => ({ value, label }))
+
+const filteredEvents = computed(() => {
+  if (eventTypeFilter.value.length === 0) return events.value
+  return events.value.filter((event) => eventTypeFilter.value.includes(event.type))
+})
+
+/** 任务清单：已完成 / 进行中 / 未分配，用时来自事件时刻。 */
+const taskRows = computed(() => {
+  const holders = new Map<number, string>()
+  for (const agv of agvs.value) {
+    if (agv.taskId > 0) holders.set(agv.taskId, agv.id)
+  }
+  const sorted = [...tasks.value].sort((a, b) => a.id - b.id)
+  return sorted.map((task) => {
+    const timing = taskTimings.value[task.id]
+    const holder = holders.get(task.id) ?? null
+    const done = timing?.done !== null && timing?.done !== undefined
+    const assigned = timing?.assigned !== null && timing?.assigned !== undefined
+    const state = done ? 'done' : holder || assigned ? 'running' : 'pending'
+    const duration = done && assigned ? timing!.done! - timing!.assigned! : null
+    return { ...task, holder, state, duration }
+  })
+})
+
+const taskCounts = computed(() => {
+  const done = metrics.value?.completedTasks ?? 0
+  const runningCount = taskRows.value.filter((row) => row.state === 'running').length
+  const total = tasks.value.length
+  return { done, running: runningCount, pending: Math.max(0, total - done - runningCount), total }
+})
+
+/** 本页面进入前就已完成、没有分配到/完成事件的任务数；用时不可追溯。 */
+const untrackedDone = computed(
+  () => Math.max(0, taskCounts.value.done - taskRows.value.filter((row) => row.state === 'done').length)
+)
+
+/** 节点占用只看「停在节点上」的车；在弧上行驶的车不占节点容量。 */
+const nodeRows = computed(() => {
+  const counts = new Map<string, number>()
+  for (const agv of agvs.value) {
+    if (agv.arcId || !agv.nodeId) continue
+    counts.set(agv.nodeId, (counts.get(agv.nodeId) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, count]) => {
+      const capacity = nodeCapacity.value.get(id) ?? 1
+      return {
+        id,
+        count,
+        capacity,
+        type: nodeTypeLabel[nodeTypes.value.get(id) ?? ''] ?? '节点',
+        full: count >= capacity
+      }
+    })
+})
+
+/** 节点占用映射交给 3D 场景画光环：键是节点编号，值是停靠车数。 */
+const nodeOccupancy = computed<Record<string, number>>(() => {
+  const result: Record<string, number> = {}
+  for (const row of nodeRows.value) result[row.id] = row.count
+  return result
+})
 
 async function loadOptions() {
   try {
@@ -145,6 +254,19 @@ async function loadRoadNet(id: number) {
   }
 }
 
+async function loadTasks(id: number | null) {
+  if (!id) {
+    tasks.value = []
+    return
+  }
+  try {
+    const payload = await getTaskSet(id)
+    tasks.value = payload.tasks ?? []
+  } catch {
+    tasks.value = []
+  }
+}
+
 async function onMapChange(id: number) {
   await loadRoadNet(id)
   selectDefaultTaskSet()
@@ -171,13 +293,15 @@ function connectSocket() {
     try {
       const payload = JSON.parse(String(messageEvent.data))
       if (payload.type === 'frame') {
-        // 重置后仍可能收到停止瞬间的在途帧，忽略它，避免已清空的指标和车辆列表回跳
-        if (!running.value && !finished.value) return
+        // 重置后仍可能收到停止瞬间的在途帧，忽略它，避免已清空的指标和车辆列表回跳；
+        // 启动请求在途时（starting）必须收帧，否则最早的分配事件会被丢掉。
+        if (!running.value && !finished.value && !starting.value) return
         const frame = payload.frame
         agvs.value = frame.agvs
         metrics.value = frame.metrics
         tick.value = frame.tick
         if (frame.events?.length) {
+          recordTaskTimings(frame.events)
           events.value = [...frame.events, ...events.value].slice(0, 200)
         }
         if (frame.finished) {
@@ -198,6 +322,25 @@ function connectSocket() {
       // 忽略非 JSON 消息
     }
   }
+}
+
+/** 按任务聚合事件时刻，任务清单据此算状态与用时。 */
+function recordTaskTimings(frameEvents: SimEvent[]) {
+  const next = { ...taskTimings.value }
+  let changed = false
+  for (const event of frameEvents) {
+    const taskId = event.taskId ?? -1
+    if (taskId < 0) continue
+    const current = next[taskId] ?? { assigned: null, done: null }
+    if (event.type === 'TASK_ASSIGNED') {
+      next[taskId] = { ...current, assigned: event.tick }
+      changed = true
+    } else if (event.type === 'TASK_DONE') {
+      next[taskId] = { ...current, done: event.tick }
+      changed = true
+    }
+  }
+  if (changed) taskTimings.value = next
 }
 
 /** 连接意外断开时按退避间隔重试；达到上限后停止，离开页面后不再重连。 */
@@ -265,6 +408,18 @@ async function start() {
     return
   }
   retrySocket()
+  // 先清空再发请求：请求在途时已经开始收帧，若在响应后清空会把最早的分配事件抹掉。
+  starting.value = true
+  events.value = []
+  taskTimings.value = {}
+  agvs.value = []
+  metrics.value = null
+  tick.value = 0
+  finished.value = false
+  paused.value = false
+  selectedAgvId.value = null
+  highlightNodeId.value = null
+  sceneRef.value?.focus(null)
   try {
     const result = await startSim({
       roadnetId: selectedRoadnetId.value,
@@ -274,19 +429,14 @@ async function start() {
       seed: seed.value
     })
     status.value = result
-    events.value = []
-    agvs.value = []
-    metrics.value = result.metrics ?? null
-    tick.value = result.tick ?? 0
     running.value = true
-    finished.value = false
-    paused.value = false
     speed.value = result.speed ?? 1
-    selectedAgvId.value = null
-    sceneRef.value?.focus(null)
     ElMessage.success('仿真已启动')
   } catch (error: any) {
     ElMessage.error(error.message || '启动失败')
+    await syncStatus()
+  } finally {
+    starting.value = false
   }
 }
 
@@ -316,11 +466,13 @@ async function reset() {
     paused.value = false
     agvs.value = []
     events.value = []
+    taskTimings.value = {}
     metrics.value = null
     tick.value = 0
     speed.value = 1
     status.value = null
     selectedAgvId.value = null
+    highlightNodeId.value = null
     sceneRef.value?.focus(null)
   } catch (error: any) {
     ElMessage.error(error.message || '重置失败')
@@ -368,6 +520,42 @@ function statusTagType(value: string) {
   )
 }
 
+/** 车辆当前任务的可读描述；没有任务时按状态给一句。 */
+function agvTaskText(agv: AgvSnapshot) {
+  if (agv.taskId > 0) {
+    const task = taskById.value.get(agv.taskId)
+    return task ? `#${task.id} ${task.from}→${task.to}` : `#${agv.taskId}`
+  }
+  if (agv.status === 'CHARGING') return '回充'
+  if (agv.status === 'DONE') return '已完成'
+  return '待命'
+}
+
+/** 在弧上的行程百分比；弧编号去掉方向后缀查物理路段长度。 */
+function arcProgress(agv: AgvSnapshot) {
+  if (!agv.arcId) return null
+  const length = edgeLengths.value.get(agv.arcId.replace(/[+-]$/, ''))
+  if (!length) return null
+  return Math.min(100, Math.round((agv.s / length) * 100))
+}
+
+function arcTitle(agv: AgvSnapshot) {
+  if (!agv.arcId) return agv.nodeId ? `节点 ${agv.nodeId}` : ''
+  return `弧 ${agv.arcId} ${agv.s.toFixed(1)}m`
+}
+
+const taskStateLabel: Record<string, string> = {
+  pending: '未分配',
+  running: '进行中',
+  done: '已完成'
+}
+
+const taskStateTag: Record<string, 'info' | 'warning' | 'success'> = {
+  pending: 'info',
+  running: 'warning',
+  done: 'success'
+}
+
 function onQualityChange(value: string | number | boolean | undefined) {
   const next = String(value)
   if (!isSceneQuality(next)) return
@@ -392,6 +580,12 @@ function focusAgv(id: string) {
   sceneRef.value?.focus(id)
 }
 
+/** 点节点表：切换白色高亮圈，便于在 3D 里定位。 */
+function onSelectNode(id: string) {
+  highlightNodeId.value = highlightNodeId.value === id ? null : id
+  sceneRef.value?.highlightNode(highlightNodeId.value)
+}
+
 function onKeydown(event: KeyboardEvent) {
   if (event.ctrlKey || event.metaKey || event.altKey) return
   const target = event.target as HTMLElement | null
@@ -413,6 +607,8 @@ function onKeydown(event: KeyboardEvent) {
     sceneRef.value?.fitView()
   }
 }
+
+watch(selectedTaskSetId, (id) => void loadTasks(id), { immediate: true })
 
 onMounted(async () => {
   await loadOptions()
@@ -522,77 +718,174 @@ onBeforeUnmount(() => {
           :quality="quality"
           :show-labels="showLabels"
           :selected-id="selectedAgvId"
+          :node-occupancy="nodeOccupancy"
+          :highlight-node-id="highlightNodeId"
           @select="onSelectAgv"
           @view-mode="onViewMode"
         />
+        <div class="scene-legend">
+          <span><i class="dot partial"></i>节点有车</span>
+          <span><i class="dot full"></i>节点满员</span>
+          <span><i class="dot selected"></i>选中节点</span>
+        </div>
       </div>
 
       <div class="side">
-        <div class="panel">
+        <div class="panel metrics-panel" :data-tick="tick">
           <div class="metric-grid">
             <div class="metric">
-              <div class="metric-label">tick</div>
-              <div class="metric-value">{{ tick }}</div>
+              <div class="metric-label">运行时长</div>
+              <div class="metric-value">{{ formatTicks(tick) }}</div>
+              <div class="metric-sub">{{ tick }} tick</div>
             </div>
             <div class="metric">
               <div class="metric-label">完成</div>
               <div class="metric-value">
                 {{ metrics?.completedTasks ?? 0 }}/{{ metrics?.totalTasks ?? 0 }}
               </div>
+              <div class="metric-sub">{{ progress }}%</div>
             </div>
             <div class="metric">
               <div class="metric-label">完成时间</div>
-              <div class="metric-value">{{ metrics?.makespan ?? 0 }}</div>
+              <div class="metric-value">{{ formatTicks(metrics?.makespan) }}</div>
+              <div class="metric-sub">最后一件完成</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">单均配送</div>
+              <div class="metric-value">{{ formatTicks(metrics?.avgDeliveryTick) }}</div>
+              <div class="metric-sub">分配 → 完成</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">平均等待</div>
+              <div class="metric-value">{{ formatTicks(avgWaitTick) }}</div>
+              <div class="metric-sub">每台车</div>
             </div>
             <div class="metric">
               <div class="metric-label">冲突</div>
               <div class="metric-value">{{ metrics?.conflictCount ?? 0 }}</div>
+              <div class="metric-sub">{{ metrics?.totalWaitTick ?? 0 }} tick 等待</div>
             </div>
             <div class="metric">
               <div class="metric-label">总里程</div>
-              <div class="metric-value">{{ (metrics?.totalPathLen ?? 0).toFixed(1) }} m</div>
+              <div class="metric-value">{{ (metrics?.totalPathLen ?? 0).toFixed(1) }}</div>
+              <div class="metric-sub">米（含空驶）</div>
             </div>
             <div class="metric">
-              <div class="metric-label">等待</div>
-              <div class="metric-value">{{ metrics?.totalWaitTick ?? 0 }}</div>
+              <div class="metric-label">完成率</div>
+              <div class="metric-value">{{ progress }}%</div>
+              <div class="metric-sub">{{ taskCounts.done }} / {{ taskCounts.total }} 单</div>
             </div>
           </div>
           <el-progress :percentage="progress" :stroke-width="8" style="margin-top: 12px" />
         </div>
 
-        <div class="panel agv-panel">
-          <div class="panel-title">车辆状态</div>
-          <div v-if="agvs.length === 0" class="muted">
-            {{
-              running
-                ? '正在等待第一帧车辆数据…'
-                : finished
-                  ? '仿真已结束，车辆位置只在运行中可见'
-                  : '尚未启动仿真'
-            }}
-          </div>
-          <div v-for="agv in agvs" :key="agv.id" class="agv-row" :class="{ selected: selectedAgvId === agv.id }" @click="focusAgv(agv.id)">
-            <span class="agv-id">{{ agv.id }}</span>
-            <el-tag size="small" :type="statusTagType(agv.status)">{{ statusText(agv.status) }}</el-tag>
-            <span class="muted">任务 {{ agv.taskId > 0 ? agv.taskId : '-' }}</span>
-            <span class="muted">
-              {{ agv.arcId ? `${agv.arcId} ${agv.s.toFixed(1)}m` : `节点 ${agv.nodeId ?? '-'}` }}
-            </span>
-          </div>
-        </div>
+        <div class="panel tabs-panel">
+          <el-tabs v-model="sideTab" class="side-tabs">
+            <el-tab-pane name="agv">
+              <template #label>车辆 {{ agvs.length }}</template>
+              <div class="agv-panel">
+                <div v-if="agvs.length === 0" class="muted">
+                  {{
+                    running
+                      ? '正在等待第一帧车辆数据…'
+                      : finished
+                        ? '仿真已结束，车辆位置只在运行中可见'
+                        : '尚未启动仿真'
+                  }}
+                </div>
+                <div
+                  v-for="agv in agvs"
+                  :key="agv.id"
+                  class="agv-row"
+                  :class="{ selected: selectedAgvId === agv.id }"
+                  :title="arcTitle(agv)"
+                  @click="focusAgv(agv.id)"
+                >
+                  <span class="agv-id">{{ agv.id }}</span>
+                  <el-tag size="small" :type="statusTagType(agv.status)">{{ statusText(agv.status) }}</el-tag>
+                  <span class="agv-task">{{ agvTaskText(agv) }}</span>
+                  <span v-if="arcProgress(agv) !== null" class="agv-progress">
+                    {{ arcProgress(agv) }}%
+                  </span>
+                  <span v-if="agv.waitTicks > 0" class="agv-wait">等待 {{ agv.waitTicks }}</span>
+                </div>
+              </div>
+            </el-tab-pane>
 
-        <div class="panel log-panel">
-          <div class="panel-title">事件日志</div>
-          <div v-if="events.length === 0" class="muted">
-            {{ finished ? '仿真已结束；事件只在运行期间推送，刷新后不保留' : '等待冲突、任务分配等事件会显示在这里' }}
-          </div>
-          <div v-for="(event, index) in events" :key="index" class="log-row">
-            <span class="log-tick">{{ event.tick }}</span>
-            <el-tag size="small" :type="event.type === 'WAIT_CONFLICT' ? 'danger' : 'info'">
-              {{ eventTypeLabel[event.type] || event.type }}
-            </el-tag>
-            <span class="log-detail">{{ event.agvId }} {{ event.detail }}</span>
-          </div>
+            <el-tab-pane name="task">
+              <template #label>
+                任务 {{ taskCounts.done }}/{{ taskCounts.total }}
+              </template>
+              <div class="list-panel task-panel">
+                <div v-if="taskRows.length === 0" class="muted">该任务集没有任务</div>
+                <div class="task-summary muted">
+                  未分配 {{ taskCounts.pending }} · 进行中 {{ taskCounts.running }} · 已完成 {{ taskCounts.done }}
+                </div>
+                <div v-if="untrackedDone > 0" class="task-note muted">
+                  其中 {{ untrackedDone }} 单在进入本页面之前已完成，用时不可追溯
+                </div>
+                <div v-for="row in taskRows" :key="row.id" class="task-row">
+                  <span class="task-id">#{{ row.id }}</span>
+                  <span class="task-path">{{ row.from }} → {{ row.to }}</span>
+                  <el-tag size="small" :type="taskStateTag[row.state]">
+                    {{ taskStateLabel[row.state] }}
+                  </el-tag>
+                  <span v-if="row.state === 'running' && row.holder" class="muted">{{ row.holder }}</span>
+                  <span v-else-if="row.duration !== null" class="muted">{{ formatTicks(row.duration) }}</span>
+                </div>
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane name="node">
+              <template #label>节点 {{ nodeRows.length }}</template>
+              <div class="list-panel node-panel">
+                <div v-if="nodeRows.length === 0" class="muted">
+                  当前没有车停靠在节点上；在弧上行驶的车不计入节点占用
+                </div>
+                <div v-for="row in nodeRows" :key="row.id" class="node-row"
+                  :class="{ selected: highlightNodeId === row.id }" @click="onSelectNode(row.id)">
+                  <span class="node-id">{{ row.id }}</span>
+                  <span class="muted">{{ row.type }}</span>
+                  <span class="node-usage" :class="{ full: row.full }">{{ row.count }} / {{ row.capacity }}</span>
+                </div>
+              </div>
+            </el-tab-pane>
+
+            <el-tab-pane name="log">
+              <template #label>事件 {{ events.length }}</template>
+              <div class="list-panel log-panel">
+                <el-select
+                  v-model="eventTypeFilter"
+                  multiple
+                  collapse-tags
+                  clearable
+                  size="small"
+                  placeholder="全部类型"
+                  class="log-filter"
+                >
+                  <el-option
+                    v-for="item in eventTypeOptions"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                  />
+                </el-select>
+                <div v-if="filteredEvents.length === 0" class="muted">
+                  {{ finished ? '仿真已结束；事件只在运行期间推送，刷新后不保留' : '等待冲突、任务分配等事件会显示在这里' }}
+                </div>
+                <div v-for="(event, index) in filteredEvents" :key="index" class="log-row">
+                  <span class="log-tick">{{ event.tick }}</span>
+                  <el-tag size="small" :type="event.type === 'WAIT_CONFLICT' ? 'danger' : 'info'">
+                    {{ eventTypeLabel[event.type] || event.type }}
+                  </el-tag>
+                  <span class="log-detail">
+                    {{ event.agvId }}<span v-if="(event.taskId ?? -1) >= 0"> #{{ event.taskId }}</span>
+                    {{ event.detail }}
+                  </span>
+                </div>
+              </div>
+            </el-tab-pane>
+          </el-tabs>
         </div>
       </div>
     </div>
@@ -625,7 +918,7 @@ onBeforeUnmount(() => {
 
 .body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(0, 1fr) 400px;
   grid-template-rows: minmax(0, 1fr);
   gap: 16px;
   flex: 1;
@@ -636,6 +929,41 @@ onBeforeUnmount(() => {
   padding: 0;
   overflow: hidden;
   min-height: 0;
+  position: relative;
+}
+
+.scene-legend {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  display: flex;
+  gap: 14px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: rgba(8, 17, 30, 0.72);
+  color: #dbe6f5;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.scene-legend .dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 5px;
+  border-radius: 50%;
+}
+
+.scene-legend .dot.partial {
+  background: #e6a23c;
+}
+
+.scene-legend .dot.full {
+  background: #f56c6c;
+}
+
+.scene-legend .dot.selected {
+  background: #ffffff;
 }
 
 /* 场景组件自身保留 420px 最小高度，仿真页跟随窗口缩短时需放开来 */
@@ -648,13 +976,17 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 16px;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+}
+
+.metrics-panel {
+  flex-shrink: 0;
 }
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px 12px;
 }
 
 .metric-label {
@@ -663,26 +995,57 @@ onBeforeUnmount(() => {
 }
 
 .metric-value {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   color: #1f3b73;
+  line-height: 1.3;
 }
 
-.panel-title {
-  font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 10px;
+.metric-sub {
+  font-size: 11px;
+  color: #b1b6bf;
+  line-height: 1.2;
 }
 
-.agv-panel {
-  max-height: 240px;
+.tabs-panel {
+  flex: 1;
+  min-height: 0;
+  padding: 8px 14px 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.side-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.side-tabs :deep(.el-tabs__header) {
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.side-tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
   overflow: auto;
+}
+
+.side-tabs :deep(.el-tab-pane) {
+  height: 100%;
+}
+
+.agv-panel,
+.list-panel {
+  min-height: 0;
 }
 
 .agv-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 6px 0;
   border-bottom: 1px dashed #ebeef5;
   font-size: 13px;
@@ -695,14 +1058,91 @@ onBeforeUnmount(() => {
 
 .agv-id {
   font-weight: 600;
-  width: 56px;
+  width: 52px;
+  flex-shrink: 0;
 }
 
-.log-panel {
+.agv-task {
   flex: 1;
-  min-height: 160px;
-  max-height: 320px;
-  overflow: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #303133;
+}
+
+.agv-progress {
+  color: #409eff;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.agv-wait {
+  color: #f56c6c;
+  font-size: 12px;
+}
+
+.task-summary {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.task-note {
+  font-size: 12px;
+  margin-bottom: 6px;
+  color: #e6a23c;
+}
+
+.task-row,
+.node-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  border-bottom: 1px dashed #f0f2f5;
+  font-size: 12px;
+}
+
+.task-id {
+  font-weight: 600;
+  width: 48px;
+  flex-shrink: 0;
+}
+
+.task-path {
+  flex: 1;
+  color: #303133;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-id {
+  font-weight: 600;
+  width: 64px;
+}
+
+.node-usage {
+  margin-left: auto;
+  font-family: Consolas, monospace;
+  color: #606266;
+}
+
+.node-usage.full {
+  color: #f56c6c;
+  font-weight: 600;
+}
+
+.node-row {
+  cursor: pointer;
+}
+
+.node-row.selected {
+  background: #ecf5ff;
+}
+
+.log-filter {
+  width: 100%;
+  margin-bottom: 8px;
 }
 
 .log-row {
@@ -719,6 +1159,7 @@ onBeforeUnmount(() => {
   width: 44px;
   text-align: right;
   font-family: Consolas, monospace;
+  flex-shrink: 0;
 }
 
 .log-detail {
@@ -741,6 +1182,10 @@ onBeforeUnmount(() => {
 
   .side {
     overflow: visible;
+  }
+
+  .tabs-panel {
+    min-height: 320px;
   }
 }
 </style>

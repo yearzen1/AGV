@@ -120,7 +120,8 @@ function renderChart() {
     { name: '完成时间(tick)', key: 'makespan' as const },
     { name: '总路径长(m)', key: 'totalPathLen' as const },
     { name: '总等待(tick)', key: 'totalWaitTick' as const },
-    { name: '冲突次数', key: 'conflictCount' as const }
+    { name: '冲突次数', key: 'conflictCount' as const },
+    { name: '单均配送(tick)', key: 'avgDeliveryTick' as const }
   ]
   chart.setOption(
     {
@@ -135,7 +136,7 @@ function renderChart() {
         type: 'bar',
         barMaxWidth: 42,
         data: results.value.map((r) => Number(Number(r[item.key] ?? 0).toFixed(1))),
-        itemStyle: { color: ['#1f3b73', '#409eff', '#e6a23c', '#f56c6c'][index] },
+        itemStyle: { color: ['#1f3b73', '#409eff', '#e6a23c', '#f56c6c', '#67c23a'][index] },
         label: { show: true, position: 'top', fontSize: 11 }
       }))
     },
@@ -220,6 +221,8 @@ onBeforeUnmount(() => {
           :formatter="(row: ExperimentReport) => formatMetric(row.totalWaitTick)" />
         <el-table-column prop="conflictCount" label="冲突次数" width="110"
           :formatter="(row: ExperimentReport) => formatMetric(row.conflictCount)" />
+        <el-table-column prop="avgDeliveryTick" label="单均配送(tick)" width="150"
+          :formatter="(row: ExperimentReport) => formatMetric(row.avgDeliveryTick)" />
         <el-table-column prop="status" label="状态" width="110">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
@@ -250,6 +253,8 @@ onBeforeUnmount(() => {
           :formatter="(row: ExperimentReport) => formatMetric(row.totalWaitTick)" />
         <el-table-column prop="conflictCount" label="冲突" width="80"
           :formatter="(row: ExperimentReport) => formatMetric(row.conflictCount)" />
+        <el-table-column prop="avgDeliveryTick" label="单均配送" width="110"
+          :formatter="(row: ExperimentReport) => formatMetric(row.avgDeliveryTick)" />
         <el-table-column prop="createTime" label="时间" min-width="170"
           :formatter="(row: ExperimentReport) => formatDateTime(row.createTime)" />
         <el-table-column label="操作" width="90" fixed="right">
