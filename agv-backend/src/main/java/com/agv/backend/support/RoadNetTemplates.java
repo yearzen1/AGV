@@ -3,7 +3,8 @@ package com.agv.backend.support;
 /**
  * 预置路网模板。前端"套用模板"直接读这些数据；也可由管理员把模板导入后另存为副本。
  * <p>
- * 模板必须满足 RoadNetValidator 的 8 条规则：双向边、无死胡同、缓存位在支路末端、充电位可达全部工位。
+ * 模板必须满足 RoadNetValidator 的全部错误规则（双向边、无死胡同、缓存位在支路末端、充电位可达全部工位），
+ * 并给每个工位旁挂一个缓存位，让等待的车有地方让开，不触发 WORKSTATION_NO_SIDING 警告。
  */
 public final class RoadNetTemplates {
 
@@ -24,7 +25,10 @@ public final class RoadNetTemplates {
                 {"id": "B1",  "x": 6,  "y": 6,  "type": "BUFFER",    "capacity": 1},
                 {"id": "W1",  "x": 2,  "y": 16, "type": "WORKSTATION", "capacity": 1},
                 {"id": "W2",  "x": 10, "y": 16, "type": "WORKSTATION", "capacity": 1},
-                {"id": "W3",  "x": 18, "y": 16, "type": "WORKSTATION", "capacity": 1}
+                {"id": "W3",  "x": 18, "y": 16, "type": "WORKSTATION", "capacity": 1},
+                {"id": "B2",  "x": 5,  "y": 16, "type": "BUFFER",    "capacity": 1},
+                {"id": "B3",  "x": 13, "y": 16, "type": "BUFFER",    "capacity": 1},
+                {"id": "B4",  "x": 21, "y": 16, "type": "BUFFER",    "capacity": 1}
               ],
               "edges": [
                 {"id": "E1",  "from": "CH1", "to": "J1", "length": 6,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
@@ -38,7 +42,10 @@ public final class RoadNetTemplates {
                 {"id": "E9",  "from": "J1",  "to": "W1", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
                 {"id": "E10", "from": "J2",  "to": "W2", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
                 {"id": "E11", "from": "J3",  "to": "W3", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
-                {"id": "E12", "from": "J5",  "to": "B1", "length": 2,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1}
+                {"id": "E12", "from": "J5",  "to": "B1", "length": 2,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
+                {"id": "E13", "from": "W1",  "to": "B2", "length": 3,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
+                {"id": "E14", "from": "W2",  "to": "B3", "length": 3,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
+                {"id": "E15", "from": "W3",  "to": "B4", "length": 3,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1}
               ]
             }
             """;
@@ -54,7 +61,10 @@ public final class RoadNetTemplates {
                 {"id": "J3",  "x": 30, "y": 0, "type": "JUNCTION", "capacity": 1},
                 {"id": "W1",  "x": 10, "y": 8, "type": "WORKSTATION", "capacity": 1},
                 {"id": "W2",  "x": 20, "y": 8, "type": "WORKSTATION", "capacity": 1},
-                {"id": "W3",  "x": 30, "y": 8, "type": "WORKSTATION", "capacity": 1}
+                {"id": "W3",  "x": 30, "y": 8, "type": "WORKSTATION", "capacity": 1},
+                {"id": "B1",  "x": 10, "y": 11, "type": "BUFFER",    "capacity": 1},
+                {"id": "B2",  "x": 20, "y": 11, "type": "BUFFER",    "capacity": 1},
+                {"id": "B3",  "x": 30, "y": 11, "type": "BUFFER",    "capacity": 1}
               ],
               "edges": [
                 {"id": "E1", "from": "CH1", "to": "J1", "length": 10, "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
@@ -63,7 +73,10 @@ public final class RoadNetTemplates {
                 {"id": "E4", "from": "J3",  "to": "CH2", "length": 10, "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
                 {"id": "E5", "from": "J1",  "to": "W1", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
                 {"id": "E6", "from": "J2",  "to": "W2", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
-                {"id": "E7", "from": "J3",  "to": "W3", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1}
+                {"id": "E7", "from": "J3",  "to": "W3", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
+                {"id": "E8", "from": "W1",  "to": "B1", "length": 3,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
+                {"id": "E9", "from": "W2",  "to": "B2", "length": 3,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1},
+                {"id": "E10","from": "W3",  "to": "B3", "length": 3,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1}
               ]
             }
             """;
@@ -85,7 +98,10 @@ public final class RoadNetTemplates {
                 {"id": "B1",  "x": 6,  "y": 6,  "type": "BUFFER",    "capacity": 1},
                 {"id": "W1",  "x": 2,  "y": 16, "type": "WORKSTATION", "capacity": 1},
                 {"id": "W2",  "x": 10, "y": 16, "type": "WORKSTATION", "capacity": 1},
-                {"id": "W3",  "x": 18, "y": 16, "type": "WORKSTATION", "capacity": 1}
+                {"id": "W3",  "x": 18, "y": 16, "type": "WORKSTATION", "capacity": 1},
+                {"id": "B2",  "x": 5,  "y": 16, "type": "BUFFER",    "capacity": 1},
+                {"id": "B3",  "x": 13, "y": 16, "type": "BUFFER",    "capacity": 1},
+                {"id": "B4",  "x": 21, "y": 16, "type": "BUFFER",    "capacity": 1}
               ],
               "edges": [
                 {"id": "E1",  "from": "CH1", "to": "J1", "length": 6,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "DUAL"},
@@ -99,7 +115,10 @@ public final class RoadNetTemplates {
                 {"id": "E9",  "from": "J1",  "to": "W1", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"},
                 {"id": "E10", "from": "J2",  "to": "W2", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"},
                 {"id": "E11", "from": "J3",  "to": "W3", "length": 8,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"},
-                {"id": "E12", "from": "J5",  "to": "B1", "length": 2,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"}
+                {"id": "E12", "from": "J5",  "to": "B1", "length": 2,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"},
+                {"id": "E13", "from": "W1",  "to": "B2", "length": 3,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"},
+                {"id": "E14", "from": "W2",  "to": "B3", "length": 3,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"},
+                {"id": "E15", "from": "W3",  "to": "B4", "length": 3,  "direction": "TWO_WAY", "speed": 1.0, "capacity": 1, "laneMode": "SINGLE"}
               ]
             }
             """;
