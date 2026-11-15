@@ -195,31 +195,38 @@ const untrackedDone = computed(
   () => Math.max(0, taskCounts.value.done - taskRows.value.filter((row) => row.state === 'done').length)
 )
 
-/** 节点占用只看「停在节点上」的车；在弧上行驶的车不占节点容量。 */
+/** 节点占用：区分「预约占用」与「让位等待」，前者才是容量约束的对象。 */
 const nodeRows = computed(() => {
-  const counts = new Map<string, number>()
+  const cars = new Map<string, AgvSnapshot[]>()
   for (const agv of agvs.value) {
     if (agv.arcId || !agv.nodeId) continue
-    counts.set(agv.nodeId, (counts.get(agv.nodeId) ?? 0) + 1)
+    const list = cars.get(agv.nodeId) ?? []
+    list.push(agv)
+    cars.set(agv.nodeId, list)
   }
-  return [...counts.entries()]
+  return [...cars.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([id, count]) => {
+    .map(([id, list]) => {
       const capacity = nodeCapacity.value.get(id) ?? 1
+      const type = nodeTypes.value.get(id) ?? ''
+      // 路口等待时保持预约；非路口等待时已让出预约（引擎为避免等待环主动释放）。
+      const reserved = list.filter((agv) => agv.status !== 'WAITING' || type === 'JUNCTION').length
+      const yielded = list.length - reserved
       return {
         id,
-        count,
+        reserved,
+        yielded,
         capacity,
-        type: nodeTypeLabel[nodeTypes.value.get(id) ?? ''] ?? '节点',
-        full: count >= capacity
+        type: nodeTypeLabel[type] ?? '节点',
+        full: reserved >= capacity
       }
     })
 })
 
-/** 节点占用映射交给 3D 场景画光环：键是节点编号，值是停靠车数。 */
+/** 场景光环只看预约，和表格的红色判定保持一致。 */
 const nodeOccupancy = computed<Record<string, number>>(() => {
   const result: Record<string, number> = {}
-  for (const row of nodeRows.value) result[row.id] = row.count
+  for (const row of nodeRows.value) result[row.id] = row.reserved
   return result
 })
 
@@ -842,11 +849,15 @@ onBeforeUnmount(() => {
                 <div v-if="nodeRows.length === 0" class="muted">
                   当前没有车停靠在节点上；在弧上行驶的车不计入节点占用
                 </div>
+                <div class="node-hint muted">「预约 / 容量」超过容量才是异常；「让位」是已让出预约、但还没挪走的车</div>
                 <div v-for="row in nodeRows" :key="row.id" class="node-row"
                   :class="{ selected: highlightNodeId === row.id }" @click="onSelectNode(row.id)">
                   <span class="node-id">{{ row.id }}</span>
                   <span class="muted">{{ row.type }}</span>
-                  <span class="node-usage" :class="{ full: row.full }">{{ row.count }} / {{ row.capacity }}</span>
+                  <span v-if="row.yielded > 0" class="node-yielded">让位 {{ row.yielded }}</span>
+                  <span class="node-usage" :class="{ full: row.full }">
+                    {{ row.reserved }} / {{ row.capacity }}
+                  </span>
                 </div>
               </div>
             </el-tab-pane>
@@ -1125,6 +1136,21 @@ onBeforeUnmount(() => {
   margin-left: auto;
   font-family: Consolas, monospace;
   color: #606266;
+}
+
+.node-yielded {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: #fdf6ec;
+  color: #e6a23c;
+  font-size: 11px;
+}
+
+.node-hint {
+  font-size: 11px;
+  line-height: 1.4;
+  margin-bottom: 6px;
 }
 
 .node-usage.full {
