@@ -157,6 +157,56 @@ class SimulationEngineTest {
         assertEquals(-1, taskIds.get(SimEvent.Type.FINISHED), "结束事件不对应单个任务");
     }
 
+    /** 带缓存位的走廊：W1、W2 各带一个叶子缓存位，用于让位。 */
+    private RoadNet corridorWithSidings() {
+        return RoadNet.of(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("W1", NodeType.WORKSTATION, 10, 0),
+                        node("W2", NodeType.WORKSTATION, 20, 0),
+                        node("CH2", NodeType.CHARGER, 30, 0),
+                        node("B1", NodeType.BUFFER, 10, 4),
+                        node("B2", NodeType.BUFFER, 20, 4)),
+                List.of(edge("E1", "CH1", "W1", 10),
+                        edge("E2", "W1", "W2", 10),
+                        edge("E3", "W2", "CH2", 10),
+                        edge("E4", "W1", "B1", 4),
+                        edge("E5", "W2", "B2", 4)));
+    }
+
+    @Test
+    @DisplayName("工位旁有缓存位：等待时驶入缓存位，工位不出现两台车")
+    void yieldsToAdjacentBuffer() {
+        SimulationEngine engine = new SimulationEngine(corridorWithSidings(),
+                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1")),
+                SimConfig.defaults(2, 7L, "nearest"));
+
+        boolean visitedBuffer = false;
+        int overCapacityTicks = 0;
+        int guard = 0;
+        while (!engine.finished() && guard++ < 20000) {
+            engine.step();
+            Map<String, List<AgvSnapshot>> byNode = new java.util.LinkedHashMap<>();
+            for (AgvSnapshot snapshot : engine.snapshots()) {
+                if (snapshot.arcId() != null || snapshot.nodeId() == null) {
+                    continue;
+                }
+                byNode.computeIfAbsent(snapshot.nodeId(), key -> new ArrayList<>()).add(snapshot);
+                if (snapshot.nodeId().startsWith("B")) {
+                    visitedBuffer = true;
+                }
+            }
+            for (List<AgvSnapshot> list : byNode.values()) {
+                if (list.size() > 1) {
+                    overCapacityTicks++;
+                }
+            }
+        }
+
+        assertTrue(engine.finished(), "让位后应能跑完");
+        assertTrue(visitedBuffer, "等待的车应驶入缓存位让位");
+        assertEquals(0, overCapacityTicks, "工位容量 1，不应出现两台车同时停靠");
+    }
+
     @Test
     @DisplayName("同一 seed 两次运行结果完全一致")
     void deterministicWithSameSeed() {
