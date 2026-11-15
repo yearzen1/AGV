@@ -189,6 +189,11 @@ public final class SimulationEngine {
         return Math.round((double) deliveryTicksSum / completedTasks);
     }
 
+    /** 事件上的任务号；车辆没有任务时统一记 -1。 */
+    private static int taskIdOf(Agv agv) {
+        return agv.task == null ? -1 : agv.task.id();
+    }
+
     // ---------------------------------------------------------------- 运动
 
     private void advance(Agv agv, List<SimEvent> events) {
@@ -252,7 +257,7 @@ public final class SimulationEngine {
                         agv.returning = false;
                         agv.status = AgvStatus.CHARGING;
                         events.add(new SimEvent(tick, agv.id, SimEvent.Type.CHARGING,
-                                agv.currentNode, "回充完成"));
+                                agv.currentNode, "回充完成", -1));
                     } else {
                         String charger = nearestFreeCharger(agv.currentNode);
                         if (charger == null) {
@@ -272,7 +277,7 @@ public final class SimulationEngine {
         agv.status = AgvStatus.LOADING;
         agv.serviceTicksLeft = Math.max(1, config.serviceTicks());
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.LOADING,
-                agv.currentNode, "开始装货，任务 " + agv.task.id()));
+                agv.currentNode, "开始装货，任务 " + agv.task.id(), agv.task.id()));
     }
 
     private void startDelivery(Agv agv, List<SimEvent> events) {
@@ -291,7 +296,7 @@ public final class SimulationEngine {
             tasksDoneTick = tick;
         }
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.TASK_DONE,
-                agv.currentNode, "任务 " + agv.task.id() + " 完成"));
+                agv.currentNode, "任务 " + agv.task.id() + " 完成", agv.task.id()));
         agv.task = null;
         agv.leg = Leg.NONE;
         agv.status = AgvStatus.IDLE;
@@ -317,7 +322,8 @@ public final class SimulationEngine {
         agv.leg = Leg.PICKUP;
         assignedTicks.put(chosen.id(), tick);
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.TASK_ASSIGNED,
-                agv.currentNode, "任务 " + chosen.id() + "：" + chosen.from() + " → " + chosen.to()));
+                agv.currentNode, "任务 " + chosen.id() + "：" + chosen.from() + " → " + chosen.to(),
+                chosen.id()));
         planAndProceed(agv, chosen.from(), events);
     }
 
@@ -391,7 +397,7 @@ public final class SimulationEngine {
             if (agv.status != AgvStatus.WAITING) {
                 conflictCount++;
                 events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_CONFLICT,
-                        next.id(), blockedReason));
+                        next.id(), blockedReason, taskIdOf(agv)));
             }
             // 路口是临界区：等待时保持占用，避免车还停在路口却把资源让给后车。
             // 非路口节点仍释放，避免充电/装卸位形成资源等待环。
@@ -449,7 +455,7 @@ public final class SimulationEngine {
             agv.bannedEdges.add(wanted.edgeId());
             agv.waitTicks = 0;
             events.add(new SimEvent(tick, agv.id, SimEvent.Type.REPLAN,
-                    wanted.id(), "等待超时，绕行重规划"));
+                    wanted.id(), "等待超时，绕行重规划", taskIdOf(agv)));
         } else {
             agv.waitTicks = 0;
             if (!agv.bannedEdges.isEmpty()) {
@@ -512,7 +518,7 @@ public final class SimulationEngine {
             first.bannedEdges.add(wanted.edgeId());
             first.waitTicks = 0;
             events.add(new SimEvent(tick, first.id, SimEvent.Type.DEADLOCK_BREAK,
-                    wanted.id(), "检测到等待环，尝试倒车让行"));
+                    wanted.id(), "检测到等待环，尝试倒车让行", taskIdOf(first)));
             if (!tryRetreat(first, events)) {
                 // 兜底：倒车不可行时，最低优先级车逻辑上让出路口，打破资源环。
                 if (isJunction(first.currentNode)) {
@@ -569,7 +575,7 @@ public final class SimulationEngine {
         agv.retreatGoal = goal;
         agv.waitTicks = 0;
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.DEADLOCK_BREAK,
-                reverse.id(), "倒车让行至 " + reverse.to()));
+                reverse.id(), "倒车让行至 " + reverse.to(), taskIdOf(agv)));
         return true;
     }
 
@@ -614,7 +620,7 @@ public final class SimulationEngine {
         if (allParked || graceExpired) {
             finished = true;
             events.add(new SimEvent(tick, "-", SimEvent.Type.FINISHED, "-",
-                    "全部任务完成，用时 " + makespan + " tick"));
+                    "全部任务完成，用时 " + makespan + " tick", -1));
         }
     }
 

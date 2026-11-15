@@ -8,8 +8,10 @@ package com.agv.algorithm.sim;
  * @param type   事件类型，见 {@link Type}
  * @param place  相关弧 ID 或节点 ID
  * @param detail 说明文本
+ * @param taskId 相关任务号；不对应单个任务时为 -1
  */
-public record SimEvent(long tick, String agvId, Type type, String place, String detail) {
+public record SimEvent(long tick, String agvId, Type type, String place, String detail,
+                       int taskId) {
 
     public enum Type {
         /** 任务分配 */
