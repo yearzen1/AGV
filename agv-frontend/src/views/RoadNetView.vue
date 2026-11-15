@@ -27,6 +27,10 @@ const name = ref('')
 const isTemplate = ref(false)
 const payload = ref<RoadNetPayload>({ nodes: [], edges: [], width: 50, height: 34 })
 const errors = ref<ValidationError[]>([])
+const errorCount = computed(
+  () => errors.value.filter((item) => item.severity !== 'WARNING').length
+)
+const warningCount = computed(() => errors.value.length - errorCount.value)
 const editorRef = ref<InstanceType<typeof RoadNetEditor> | null>(null)
 const loading = ref(false)
 const validating = ref(false)
@@ -228,14 +232,19 @@ function currentPayload(): RoadNetPayload {
 async function validate() {
   validating.value = true
   try {
-    errors.value = await validateRoadNet(currentPayload())
+    const findings = await validateRoadNet(currentPayload())
+    errors.value = findings
     editorRef.value?.showValidation()
-    if (errors.value.length === 0) {
+    const errorCount = findings.filter((item) => item.severity !== 'WARNING').length
+    const warningCount = findings.length - errorCount
+    if (errorCount === 0 && warningCount === 0) {
       ElMessage.success('校验通过')
+    } else if (errorCount === 0) {
+      ElMessage.warning(`校验通过，有 ${warningCount} 条提醒`)
     } else {
-      ElMessage.warning(`发现 ${errors.value.length} 条问题`)
+      ElMessage.warning(`发现 ${errorCount} 条问题${warningCount > 0 ? `、${warningCount} 条提醒` : ''}`)
     }
-    return errors.value.length === 0
+    return errorCount === 0
   } catch (error: any) {
     ElMessage.error(error.message || '校验失败')
     return false
@@ -542,7 +551,8 @@ onBeforeUnmount(() => {
             </el-button>
           </el-button-group>
           <div class="spacer" />
-          <el-tag v-if="errors.length > 0" type="danger" size="small">{{ errors.length }} 个问题</el-tag>
+          <el-tag v-if="errorCount > 0" type="danger" size="small">{{ errorCount }} 个问题</el-tag>
+          <el-tag v-if="warningCount > 0" type="warning" size="small">{{ warningCount }} 条提醒</el-tag>
           <el-checkbox v-model="autoValidate" size="small" @change="onAutoValidateChange">
             自动校验
           </el-checkbox>

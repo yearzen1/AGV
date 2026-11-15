@@ -28,12 +28,15 @@ public final class RoadNetValidator {
     public static final String DUP_EDGE_PAIR = "DUP_EDGE_PAIR";
     public static final String SELF_LOOP = "SELF_LOOP";
     public static final String EMPTY = "EMPTY";
+    /** 工位没有让位空间：容量 1、相邻无缓存位、相连路段都是单车道（警告）。 */
+    public static final String WORKSTATION_NO_SIDING = "WORKSTATION_NO_SIDING";
 
     private RoadNetValidator() {
     }
 
     public static ValidationResult validate(List<NetNode> nodes, List<NetEdge> edges) {
         List<ValidationError> errors = new ArrayList<>();
+        List<ValidationError> warnings = new ArrayList<>();
 
         if (nodes == null || nodes.isEmpty()) {
             return new ValidationResult(List.of(ValidationError.of(EMPTY, "路网为空，至少需要一个充电位")));
@@ -141,6 +144,27 @@ public final class RoadNetValidator {
             }
         }
 
+        // 7.6 工位没有让位空间：容量 1、相邻无缓存位、相连路段全是单车道
+        for (NetNode node : nodes) {
+            if (node.type() != NodeType.WORKSTATION || node.capacity() >= 2) {
+                continue;
+            }
+            List<NetEdge> incident = edges.stream()
+                    .filter(edge -> edge.from().equals(node.id()) || edge.to().equals(node.id()))
+                    .toList();
+            boolean hasBufferNeighbour = incident.stream().anyMatch(edge -> {
+                String other = edge.from().equals(node.id()) ? edge.to() : edge.from();
+                return net.node(other) != null && net.node(other).type() == NodeType.BUFFER;
+            });
+            boolean hasDualLane = incident.stream().anyMatch(NetEdge::isDualLane);
+            if (hasBufferNeighbour || hasDualLane) {
+                continue;
+            }
+            warnings.add(ValidationError.warningNode(WORKSTATION_NO_SIDING,
+                    "工位 " + node.id() + " 没有让位空间：容量 1、相邻无缓存位、相连路段都是单车道，"
+                            + "第二台车只能挤在门口等待", node.id()));
+        }
+
         // 8. 连通性：任一充电位可达全部工位
         List<NetNode> chargers = net.nodes().values().stream()
                 .filter(n -> n.type() == NodeType.CHARGER).toList();
@@ -157,7 +181,7 @@ public final class RoadNetValidator {
             }
         }
 
-        return new ValidationResult(errors);
+        return new ValidationResult(errors, warnings);
     }
 
     /** 有向图上的可达集合（BFS）。 */

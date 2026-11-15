@@ -41,6 +41,8 @@ export interface ValidationError {
   message: string
   nodeId: string | null
   edgeId: string | null
+  /** ERROR 拦截保存，WARNING 只提示；旧后端可能不返回该字段 */
+  severity?: 'ERROR' | 'WARNING'
 }
 
 export function listRoadNets() {

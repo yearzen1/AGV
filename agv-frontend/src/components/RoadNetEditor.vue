@@ -155,11 +155,13 @@ const batchEdgeLaneMode = ref<'SINGLE' | 'DUAL'>('SINGLE')
 
 const editable = computed(() => !props.readonly)
 const errors = computed(() => props.errors ?? [])
+const errorItems = computed(() => errors.value.filter((item) => item.severity !== 'WARNING'))
+const warningItems = computed(() => errors.value.filter((item) => item.severity === 'WARNING'))
 const errorNodeIds = computed(
-  () => new Set(errors.value.map((e) => e.nodeId).filter(Boolean) as string[])
+  () => new Set(errorItems.value.map((e) => e.nodeId).filter(Boolean) as string[])
 )
 const errorEdgeIds = computed(
-  () => new Set(errors.value.map((e) => e.edgeId).filter(Boolean) as string[])
+  () => new Set(errorItems.value.map((e) => e.edgeId).filter(Boolean) as string[])
 )
 
 const selectedNode = computed(() => {
@@ -2765,7 +2767,8 @@ defineExpose({
           <div class="side-block">
             <div class="side-title">
               校验
-              <el-tag v-if="errors.length > 0" type="danger" size="small">{{ errors.length }}</el-tag>
+              <el-tag v-if="errorItems.length > 0" type="danger" size="small">{{ errorItems.length }}</el-tag>
+              <el-tag v-if="warningItems.length > 0" type="warning" size="small">{{ warningItems.length }}</el-tag>
             </div>
             <div v-if="errors.length === 0" class="muted">未发现问题</div>
             <div v-else class="error-list">
@@ -2775,7 +2778,9 @@ defineExpose({
                 class="error-row"
                 @click="focusError(error)"
               >
-                <el-tag size="small" type="danger">{{ error.code }}</el-tag>
+                <el-tag size="small" :type="error.severity === 'WARNING' ? 'warning' : 'danger'">
+                  {{ error.code }}
+                </el-tag>
                 <span>{{ error.message }}</span>
               </div>
             </div>

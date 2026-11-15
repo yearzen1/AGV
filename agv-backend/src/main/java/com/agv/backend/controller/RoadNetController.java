@@ -67,10 +67,10 @@ public class RoadNetController {
         return ApiResponse.ok(roadNetService.export(id));
     }
 
-    /** 边改边验：不落库，只返回逐条错误。 */
+    /** 边改边验：不落库，返回错误与警告，用 {@code severity} 区分。 */
     @PostMapping("/validate")
     public ApiResponse<List<ValidationError>> validate(@RequestBody RoadNetPayload payload) {
         ValidationResult result = roadNetService.validate(payload);
-        return ApiResponse.ok(result.errors());
+        return ApiResponse.ok(result.all());
     }
 }
