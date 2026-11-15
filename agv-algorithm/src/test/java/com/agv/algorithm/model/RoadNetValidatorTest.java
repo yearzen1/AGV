@@ -35,6 +35,57 @@ class RoadNetValidatorTest {
     }
 
     @Test
+    @DisplayName("工位没有让位空间：只给警告，不拦截保存")
+    void warnsStationWithoutSiding() {
+        ValidationResult result = RoadNetValidator.validate(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("J1", NodeType.JUNCTION, 5, 0),
+                        node("W1", NodeType.WORKSTATION, 10, 0)),
+                List.of(twoWay("E1", "CH1", "J1", 5), twoWay("E2", "J1", "W1", 5)));
+
+        assertTrue(result.valid(), "警告不应让路网变成非法");
+        assertTrue(result.warnings().stream()
+                        .anyMatch(e -> e.code().equals(RoadNetValidator.WORKSTATION_NO_SIDING)
+                                && "W1".equals(e.nodeId())),
+                () -> "应提示工位没有让位空间，实际：" + result.warnings());
+        assertTrue(result.all().stream().anyMatch(e -> e.severity() == ValidationError.Severity.WARNING),
+                "合并列表里应能区分出警告");
+    }
+
+    @Test
+    @DisplayName("工位相邻缓存位：不再告警")
+    void stationWithBufferNeighbourHasNoWarning() {
+        ValidationResult result = RoadNetValidator.validate(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("J1", NodeType.JUNCTION, 5, 0),
+                        node("W1", NodeType.WORKSTATION, 10, 0),
+                        node("B1", NodeType.BUFFER, 10, 4)),
+                List.of(twoWay("E1", "CH1", "J1", 5), twoWay("E2", "J1", "W1", 5),
+                        twoWay("E3", "W1", "B1", 4)));
+
+        assertTrue(result.valid());
+        assertTrue(result.warnings().stream()
+                        .noneMatch(e -> e.code().equals(RoadNetValidator.WORKSTATION_NO_SIDING)),
+                () -> "相邻有缓存位时不该告警，实际：" + result.warnings());
+    }
+
+    @Test
+    @DisplayName("工位接近边是双车道：不再告警")
+    void stationWithDualLaneApproachHasNoWarning() {
+        ValidationResult result = RoadNetValidator.validate(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("J1", NodeType.JUNCTION, 5, 0),
+                        node("W1", NodeType.WORKSTATION, 10, 0)),
+                List.of(twoWay("E1", "CH1", "J1", 5),
+                        new NetEdge("E2", "J1", "W1", 5, EdgeDirection.TWO_WAY, 1.0, 1, LaneMode.DUAL)));
+
+        assertTrue(result.valid());
+        assertTrue(result.warnings().stream()
+                        .noneMatch(e -> e.code().equals(RoadNetValidator.WORKSTATION_NO_SIDING)),
+                () -> "接近边双车道时不该告警，实际：" + result.warnings());
+    }
+
+    @Test
     @DisplayName("没有充电位：拦截")
     void rejectsNetworkWithoutCharger() {
         ValidationResult result = RoadNetValidator.validate(
