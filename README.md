@@ -181,7 +181,7 @@ WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧�
 
 实验创建时会把当时的整张路网和任务集 JSON 存入 `experiment.roadnet_snapshot` / `taskset_snapshot`。
 即使之后路网或任务集被编辑、删除，历史实验仍可用 `POST /api/experiment/{id}/replay` 按原输入重跑，
-并返回新旧两次的四项指标与 `consistent` 比对结果。
+并返回新旧两次的五项指标与 `consistent` 比对结果。
 
 - 回放只重跑输入、不重放逐帧画面；事件仍然只在 WebSocket 中推送。
 - 快照功能上线前的历史实验没有快照，回放返回 `code = 4005`。
@@ -214,7 +214,7 @@ WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧�
 - 仿真运行期间，每个 tick 只向**仿真发起人**推送 `{"type":"frame","frame":{...},"speed":1.0,"paused":false}`；控制类操作推送 `{"type":"status",...}`。
 - 每个会话的发送由 Spring 的 `ConcurrentWebSocketSessionDecorator` 串行化，避免同一连接上并发写导致 `TEXT_PARTIAL_WRITING`。
 - 单个会话发送失败只移除该会话并记一条警告，**不会中断仿真**，也不会把仿真状态置为失败。
-- 事件不落库，只在帧里推送；实验结束后仅保存四项汇总指标。
+- 事件不落库，只在帧里推送；实验结束后仅保存五项汇总指标。
 - 页面刷新或重新进入「仿真运行」时，前端调用 `GET /api/sim/status` 恢复**当前用户**的运行状态；`status` 为 `RUNNING` / `FINISHED` / `FAILED` 时同步启动参数、速度、暂停状态、tick 与指标。`RUNNING`（含暂停）时 `status` 还带当前帧的 `agvs` 快照，刷新后 3D 场景与「车辆状态」不会丢车；结束后返回空数组。
 - 仿真自然结束时会收到 `status = FINISHED` 的状态消息，随后连接保持可用；离开页面会主动断开，意外断开时自动重试 5 次（2/4/8/16/30 秒退避），仍失败则停止重试，可点「重试」手动恢复。
 - 历史实验列表用 `RUNNING` / `FINISHED` / `FAILED` / `ABORTED` 标记状态；被新仿真替换或手动重置的旧实验记为 `ABORTED`（已中断），未完成实验的汇总指标显示为 `-`。后端重启时，遗留的 `RUNNING` 实验也会在启动时标记为 `ABORTED`。列表时间统一格式化为 `YYYY-MM-DD HH:mm:ss`。
