@@ -152,6 +152,7 @@ const eventTypeLabel: Record<string, string> = {
   LOADING: '装货',
   TASK_DONE: '任务完成',
   WAIT_CONFLICT: '冲突等待',
+  YIELD_BUFFER: '让位缓存',
   REPLAN: '重规划',
   DEADLOCK_BREAK: '打破僵局',
   CHARGING: '回充',

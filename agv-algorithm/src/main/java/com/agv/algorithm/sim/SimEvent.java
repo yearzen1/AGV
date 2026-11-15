@@ -28,6 +28,8 @@ public record SimEvent(long tick, String agvId, Type type, String place, String 
         DEADLOCK_BREAK,
         /** 回充完成 */
         CHARGING,
+        /** 等待时驶入相邻缓存位让开工位 */
+        YIELD_BUFFER,
         /** 全部任务完成 */
         FINISHED
     }

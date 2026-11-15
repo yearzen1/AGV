@@ -223,6 +223,19 @@ public final class SimulationEngine {
     }
 
     private void afterNodeArrival(Agv agv, List<SimEvent> events) {
+        if (agv.yielding) {
+            if (agv.currentNode.equals(agv.yieldStation)) {
+                // 从缓存位回到工位，恢复原任务
+                agv.yielding = false;
+                agv.yieldStation = null;
+                agv.yieldBuffer = null;
+            } else {
+                // 刚驶入缓存位：停在这里等工位空出来
+                agv.status = AgvStatus.WAITING;
+                agv.waitTicks = 0;
+                return;
+            }
+        }
         if (agv.retreatGoal != null) {
             String goal = agv.retreatGoal;
             agv.retreatGoal = null;
@@ -400,8 +413,11 @@ public final class SimulationEngine {
                         next.id(), blockedReason, taskIdOf(agv)));
             }
             // 路口是临界区：等待时保持占用，避免车还停在路口却把资源让给后车。
-            // 非路口节点仍释放，避免充电/装卸位形成资源等待环。
+            // 非路口先尝试驶入相邻缓存位，真正空出工位；缓存位也进不去时退回「逻辑让位」。
             if (!isJunction(agv.currentNode)) {
+                if (yieldToBuffer(agv, events)) {
+                    return false;
+                }
                 reservations.release(agv.currentNode, agv.id);
             }
             agv.status = AgvStatus.WAITING;
@@ -430,6 +446,10 @@ public final class SimulationEngine {
 
     private void onWaiting(Agv agv, List<SimEvent> events) {
         agv.waitTicks++;
+        if (agv.yielding) {
+            tryLeaveBuffer(agv);
+            return;
+        }
         if (agv.waitTicks > 0 && agv.waitTicks % Math.max(1, config.waitTimeoutTicks()) == 0) {
             replanWithDetour(agv, events);
             return;
@@ -528,6 +548,120 @@ public final class SimulationEngine {
             }
             return;
         }
+    }
+
+    /**
+     * 让位到相邻缓存位：把工位空出来，车停在缓存位等工位重新可用。
+     *
+     * <p>只有缓存位与连接边同时空闲时才可行；否则返回 false，退回「逻辑让位」。
+     * 驶入与驶出都是真实移动，里程照常累加。
+     */
+    private boolean yieldToBuffer(Agv agv, List<SimEvent> events) {
+        if (agv.yielding) {
+            return false;
+        }
+        String station = agv.currentNode;
+        String buffer = adjacentFreeBuffer(station);
+        if (buffer == null) {
+            return false;
+        }
+        Arc out = arcFromTo(station, buffer);
+        if (out == null) {
+            return false;
+        }
+        long travel = travelTicks(out);
+        long arrival = tick + travel;
+
+        releaseCurrentNode(agv);
+        reservations.reserve(agv.id, out.id(), tick, arrival + 1);
+        reservations.reserve(agv.id, buffer, arrival, Interval.FOREVER);
+        if (!isDualLane(out)) {
+            edgeOwner.put(out.edgeId(), agv.id);
+        }
+
+        agv.path.clear();
+        agv.wantedEdgeId = null;
+        agv.wantedNodeId = null;
+        agv.currentArc = out;
+        agv.s = 0;
+        agv.status = AgvStatus.MOVING;
+        agv.yielding = true;
+        agv.yieldStation = station;
+        agv.yieldBuffer = buffer;
+        events.add(new SimEvent(tick, agv.id, SimEvent.Type.YIELD_BUFFER, buffer,
+                "驶入缓存位 " + buffer + " 让开工位 " + station, taskIdOf(agv)));
+        return true;
+    }
+
+    /** 从缓存位回工位：工位与连接边同时可预约才走，否则继续等。 */
+    private void tryLeaveBuffer(Agv agv) {
+        String station = agv.yieldStation;
+        String buffer = agv.yieldBuffer;
+        if (station == null || buffer == null) {
+            agv.yielding = false;
+            return;
+        }
+        if (!reservations.canReserve(station, tick, Interval.FOREVER, nodeCapacity(station), agv.id)) {
+            return;
+        }
+        Arc back = arcFromTo(buffer, station);
+        if (back == null) {
+            return;
+        }
+        long travel = travelTicks(back);
+        long arrival = tick + travel;
+        String owner = isDualLane(back) ? null : edgeOwner.get(back.edgeId());
+        if (owner != null && !owner.equals(agv.id)) {
+            return;
+        }
+        if (!reservations.canReserve(back.id(), tick, arrival + 1, capacityOf(back), agv.id)) {
+            return;
+        }
+
+        reservations.release(buffer, agv.id);
+        reservations.reserve(agv.id, station, arrival, Interval.FOREVER);
+        reservations.reserve(agv.id, back.id(), tick, arrival + 1);
+        if (!isDualLane(back)) {
+            edgeOwner.put(back.edgeId(), agv.id);
+        }
+        agv.currentArc = back;
+        agv.s = 0;
+        agv.status = AgvStatus.MOVING;
+        agv.waitTicks = 0;
+    }
+
+    /** 工位旁空闲且可进入的缓存位；没有返回 null。 */
+    private String adjacentFreeBuffer(String station) {
+        for (Arc arc : net.arcsFrom(station)) {
+            NetNode node = net.node(arc.to());
+            if (node == null || node.type() != NodeType.BUFFER) {
+                continue;
+            }
+            if (arcFromTo(node.id(), station) == null) {
+                continue;
+            }
+            if (!reservations.canReserve(node.id(), tick, Interval.FOREVER, nodeCapacity(node.id()))) {
+                continue;
+            }
+            String owner = isDualLane(arc) ? null : edgeOwner.get(arc.edgeId());
+            if (owner != null) {
+                continue;
+            }
+            if (!reservations.canReserve(arc.id(), tick, tick + travelTicks(arc) + 1, capacityOf(arc))) {
+                continue;
+            }
+            return node.id();
+        }
+        return null;
+    }
+
+    private Arc arcFromTo(String from, String to) {
+        for (Arc arc : net.arcsFrom(from)) {
+            if (arc.to().equals(to)) {
+                return arc;
+            }
+        }
+        return null;
     }
 
     /**
@@ -741,6 +875,9 @@ public final class SimulationEngine {
         String wantedEdgeId;
         String wantedNodeId;
         String retreatGoal;
+        boolean yielding;
+        String yieldStation;
+        String yieldBuffer;
         boolean returning;
         double totalDistance;
         final Set<String> bannedEdges = new HashSet<>();
