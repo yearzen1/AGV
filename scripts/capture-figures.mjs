@@ -161,7 +161,7 @@ async function main() {
   <g font-size="20" fill="#606266">
     <rect x="60" y="800" width="1560" height="150" rx="14" fill="#f4f4f5" stroke="#c0c4cc" stroke-width="2"/>
     <text x="90" y="850" font-weight="bold" fill="#606266">论文数据来源</text>
-    <text x="90" y="896">84 个自动化测试：路网校验 9　A* 对拍 6　仿真引擎 12　后端接口/并发 54（含规模矩阵 1）</text>
+    <text x="90" y="896">89 个后端/算法测试 + 32 个前端渲染测试：路网校验 12　A* 对拍 6　仿真引擎 13　后端 55（含规模矩阵与超容诊断）</text>
     <text x="90" y="930">规模实验：2/3/5/8 台车 × 就近/贪心 ETA × 20 单，seed=20261107</text>
   </g>
 </svg></body></html>`
@@ -177,10 +177,10 @@ async function main() {
 
   // 图 6-2 完成时间折线图（自绘 SVG）
   const data = [
-    { n: 2, nearest: 3970, greedy: 3351 },
-    { n: 3, nearest: 3326, greedy: 3347 },
-    { n: 5, nearest: 3304, greedy: 3421 },
-    { n: 8, nearest: 3026, greedy: 3354 }
+    { n: 2, nearest: 3892, greedy: 3644 },
+    { n: 3, nearest: 3407, greedy: 3162 },
+    { n: 5, nearest: 3269, greedy: 3355 },
+    { n: 8, nearest: 3035, greedy: 3027 }
   ]
   const W = 1680, H = 1050, L = 160, R = 120, T = 150, B = 150
   const maxY = 4000
