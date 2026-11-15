@@ -63,7 +63,7 @@ async function onReplay(row: ExperimentReport) {
   try {
     const result = await replayExperiment(row.id)
     if (result.consistent) {
-      ElMessage.success(`回放完成，四项指标与实验 #${row.id} 一致`)
+      ElMessage.success(`回放完成，五项指标与实验 #${row.id} 一致`)
     } else {
       ElMessage.warning(`回放完成，但指标与实验 #${row.id} 不一致，请检查输入快照`)
     }
