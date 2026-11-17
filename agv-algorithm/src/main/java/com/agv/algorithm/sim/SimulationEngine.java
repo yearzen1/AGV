@@ -225,10 +225,15 @@ public final class SimulationEngine {
     private void afterNodeArrival(Agv agv, List<SimEvent> events) {
         if (agv.yielding) {
             if (agv.currentNode.equals(agv.yieldStation)) {
-                // 从缓存位回到工位，恢复原任务
+                // 从缓存位回到工位，恢复让位前的剩余路径，避免重新规划后又撞回同一个瓶颈
                 agv.yielding = false;
                 agv.yieldStation = null;
                 agv.yieldBuffer = null;
+                if (agv.yieldPath != null) {
+                    agv.path.clear();
+                    agv.path.addAll(agv.yieldPath);
+                    agv.yieldPath = null;
+                }
             } else {
                 // 刚驶入缓存位：停在这里等工位空出来
                 agv.status = AgvStatus.WAITING;
@@ -387,24 +392,13 @@ public final class SimulationEngine {
             return true;
         }
         Arc next = agv.path.peek();
+        boolean dualLane = isDualLane(next);
+        String destNode = next.to();
         long travel = travelTicks(next);
         long enter = tick;
         long arrival = tick + travel;
         long arcExit = arrival + 1;
-        String destNode = next.to();
-        boolean dualLane = isDualLane(next);
-        int capacity = capacityOf(next);
-
-        String blockedReason = null;
-        String owner = dualLane ? null : edgeOwner.get(next.edgeId());
-        if (owner != null && !owner.equals(agv.id)) {
-            blockedReason = "路段 " + next.edgeId() + " 已被 " + owner + " 占用（相向冲突）";
-        } else if (!reservations.canReserve(next.id(), enter, arcExit, capacity, agv.id)) {
-            blockedReason = "弧 " + next.id() + " 容量已满（追尾冲突）";
-        } else if (!reservations.canReserve(destNode, arrival, Interval.FOREVER,
-                nodeCapacity(destNode), agv.id)) {
-            blockedReason = "节点 " + destNode + " 被占用（节点冲突）";
-        }
+        String blockedReason = blockedReason(agv, next);
 
         if (blockedReason != null) {
             if (agv.status != AgvStatus.WAITING) {
@@ -413,8 +407,9 @@ public final class SimulationEngine {
                         next.id(), blockedReason, taskIdOf(agv)));
             }
             // 路口是临界区：等待时保持占用，避免车还停在路口却把资源让给后车。
-            // 非路口先尝试驶入相邻缓存位，真正空出工位；缓存位也进不去时退回「逻辑让位」。
-            if (!isJunction(agv.currentNode)) {
+            // 非路口只有在「另一台车确实要进这个节点」时才让位；否则留在原地并保留预约，
+            // 避免对下游路段的阻塞也做无意义的工位 ↔ 缓存位往返。
+            if (!isJunction(agv.currentNode) && stationWantedByOther(agv, agv.currentNode)) {
                 if (yieldToBuffer(agv, events)) {
                     return false;
                 }
@@ -442,6 +437,28 @@ public final class SimulationEngine {
         agv.wantedNodeId = null;
         agv.bannedEdges.clear();
         return true;
+    }
+
+    /** 进入下一条弧前要同时满足的三类预约；返回 null 表示可以进入。 */
+    private String blockedReason(Agv agv, Arc next) {
+        long travel = travelTicks(next);
+        long enter = tick;
+        long arrival = tick + travel;
+        long arcExit = arrival + 1;
+        String destNode = next.to();
+
+        String owner = isDualLane(next) ? null : edgeOwner.get(next.edgeId());
+        if (owner != null && !owner.equals(agv.id)) {
+            return "路段 " + next.edgeId() + " 已被 " + owner + " 占用（相向冲突）";
+        }
+        if (!reservations.canReserve(next.id(), enter, arcExit, capacityOf(next), agv.id)) {
+            return "弧 " + next.id() + " 容量已满（追尾冲突）";
+        }
+        if (!reservations.canReserve(destNode, arrival, Interval.FOREVER,
+                nodeCapacity(destNode), agv.id)) {
+            return "节点 " + destNode + " 被占用（节点冲突）";
+        }
+        return null;
     }
 
     private void onWaiting(Agv agv, List<SimEvent> events) {
@@ -551,6 +568,23 @@ public final class SimulationEngine {
         }
     }
 
+    /** 是否已有别的车被这个节点挡住，正在等它空出来。 */
+    private boolean stationWantedByOther(Agv agv, String station) {
+        for (Agv other : agvs.values()) {
+            if (other == agv || other.status != AgvStatus.WAITING) {
+                continue;
+            }
+            if (station.equals(other.wantedNodeId)) {
+                return true;
+            }
+            Arc next = other.path.peek();
+            if (next != null && station.equals(next.to())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /**
      * 让位到相邻缓存位：把工位空出来，车停在缓存位等工位重新可用。
      *
@@ -580,6 +614,7 @@ public final class SimulationEngine {
             edgeOwner.put(out.edgeId(), agv.id);
         }
 
+        agv.yieldPath = new ArrayDeque<>(agv.path);
         agv.path.clear();
         agv.wantedEdgeId = null;
         agv.wantedNodeId = null;
@@ -618,7 +653,6 @@ public final class SimulationEngine {
         if (!reservations.canReserve(back.id(), tick, arrival + 1, capacityOf(back), agv.id)) {
             return;
         }
-
         reservations.release(buffer, agv.id);
         reservations.reserve(agv.id, station, arrival, Interval.FOREVER);
         reservations.reserve(agv.id, back.id(), tick, arrival + 1);
@@ -885,6 +919,8 @@ public final class SimulationEngine {
         boolean yielding;
         String yieldStation;
         String yieldBuffer;
+        /** 让位前的剩余路径；回到工位后恢复，避免重新规划绕回同一个瓶颈。 */
+        Deque<Arc> yieldPath;
         boolean returning;
         double totalDistance;
         final Set<String> bannedEdges = new HashSet<>();
