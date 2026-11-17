@@ -29,12 +29,12 @@ python scripts/capture-figures.mjs    # 需要先启动前后端与无头 Edge�
 | 图 5-4 | `figures/fig-5-4-experiment.png` | 算法对比报表 |
 | 图 5-5 | `figures/fig-5-5-users.png`、`fig-5-5-dict.png` | 用户管理 / 数字字典 |
 | 图 6-1 | `figures/fig-6-1-roadnet.png` | 标准车间路网（三维） |
-| 图 6-2 | `figures/fig-6-2-line.png` | 完成时间随车队规模变化 |
-| 图 6-3 | `figures/fig-6-3-bars.png` | 五项指标对比 |
+| 图 6-2 | `figures/fig-6-2-line.png` | 完成单数随车队规模变化 |
+| 图 6-3 | `figures/fig-6-3-bars.png` | 3 台配置下五项指标对比 |
 
 ## 数据来源
 
-第 6 章表 6-2 的数值由 `EngineScaleTest` 产出，落盘于 `agv-backend/target/scale-matrix.txt`；也可通过 `/api/experiment/compare` 复现，参数为 `roadnetId=1, taskSetId=1, seed=20261107`。
+第 6 章表 6-2、表 6-3 的数值由 `EngineScaleTest` 产出，落盘于 `agv-backend/target/scale-matrix.txt`；也可通过 `/api/experiment/compare` 复现，参数为 `roadnetId=1, taskSetId=1, seed=20261107`。5/8 台会死锁，对比实验只用于 2/3 台。
 
 ## 待人工完成
 

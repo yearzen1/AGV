@@ -217,7 +217,7 @@ WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧�
 - 单个会话发送失败只移除该会话并记一条警告，**不会中断仿真**，也不会把仿真状态置为失败。
 - 事件不落库，只在帧里推送；实验结束后仅保存五项汇总指标。
 - 页面刷新或重新进入「仿真运行」时，前端调用 `GET /api/sim/status` 恢复**当前用户**的运行状态；`status` 为 `RUNNING` / `FINISHED` / `FAILED` 时同步启动参数、速度、暂停状态、tick 与指标。`RUNNING`（含暂停）时 `status` 还带当前帧的 `agvs` 快照，刷新后 3D 场景与「车辆状态」不会丢车；结束后返回空数组。
-- 仿真自然结束时会收到 `status = FINISHED` 的状态消息，随后连接保持可用；离开页面会主动断开，意外断开时自动重试 5 次（2/4/8/16/30 秒退避），仍失败则停止重试，可点「重试」手动恢复。
+- 仿真自然结束时会收到 `status = FINISHED` 的状态消息，随后连接保持可用；严格容量下连续 2000 tick 没有任务完成会收到 `status = FAILED` 且 `deadlocked = true`，实验不写五项指标。离开页面会主动断开，意外断开时自动重试 5 次（2/4/8/16/30 秒退避），仍失败则停止重试，可点「重试」手动恢复。
 - 历史实验列表用 `RUNNING` / `FINISHED` / `FAILED` / `ABORTED` 标记状态；被新仿真替换或手动重置的旧实验记为 `ABORTED`（已中断），未完成实验的汇总指标显示为 `-`。后端重启时，遗留的 `RUNNING` 实验也会在启动时标记为 `ABORTED`。列表时间统一格式化为 `YYYY-MM-DD HH:mm:ss`。
 
 ## 进度
@@ -318,4 +318,4 @@ npm run e2e:scene
 - `JwtHandshakeInterceptorTest`：握手令牌校验与账号状态拦截
 - `MultiUserSimulationTest`：两个用户并发仿真互不干扰，暂停/重置只影响自己
 - `SimulationConcurrencyLimitTest`：并发上限拦截与 4290 错误码
-- `SimulationRegressionTest`：8 台车全部回充、让位次数上界、让位不计入冲突
+- `SimulationRegressionTest`：3 台车全部回充、严格容量、5 台死锁停止、让位次数上界、让位不计入冲突
