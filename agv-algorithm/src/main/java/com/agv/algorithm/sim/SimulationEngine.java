@@ -272,7 +272,7 @@ public final class SimulationEngine {
                         events.add(new SimEvent(tick, agv.id, SimEvent.Type.CHARGING,
                                 agv.currentNode, "回充完成", -1));
                     } else {
-                        String charger = nearestFreeCharger(agv.currentNode);
+                        String charger = nearestChargerWithRoom(agv);
                         if (charger == null) {
                             agv.status = AgvStatus.DONE;
                         } else {
@@ -345,7 +345,7 @@ public final class SimulationEngine {
             agv.status = AgvStatus.CHARGING;
             return;
         }
-        String charger = nearestFreeCharger(agv.currentNode);
+        String charger = nearestChargerWithRoom(agv);
         if (charger == null) {
             agv.status = AgvStatus.DONE;
             return;
@@ -489,7 +489,8 @@ public final class SimulationEngine {
             return agv.leg == Leg.PICKUP ? agv.task.from() : agv.task.to();
         }
         if (agv.returning) {
-            return nearestCharger(agv.currentNode, Set.of());
+            // 重规划时也要按剩余容量重新选位，否则会一直撞向最近的满充电位。
+            return nearestChargerWithRoom(agv);
         }
         return null;
     }
@@ -825,12 +826,18 @@ public final class SimulationEngine {
         }
     }
 
-    /** 就近挑一个没人占的充电位，避免两台车抢同一个车位形成新的僵局。 */
-    private String nearestFreeCharger(String fromNode) {
+    /**
+     * 就近挑一个还有剩余容量的充电位。不能只看 {@code isFree()}：容量 4 的充电位停了 3 台仍可再进一台，
+     * 否则最后一台车会一直排队等一个永远不满的空位。全部满时才退回最近的充电位排队。
+     */
+    private String nearestChargerWithRoom(Agv agv) {
+        String fromNode = agv.currentNode;
         String best = null;
         double bestCost = Double.POSITIVE_INFINITY;
         for (String charger : chargers) {
-            if (!charger.equals(fromNode) && !reservations.isFree(charger)) {
+            if (!charger.equals(fromNode)
+                    && !reservations.canReserve(charger, tick, Interval.FOREVER,
+                    nodeCapacity(charger), agv.id)) {
                 continue;
             }
             PathResult result = planner.plan(net, fromNode, charger);
