@@ -10,10 +10,8 @@ import com.agv.algorithm.sim.AgvSnapshot;
 import com.agv.algorithm.sim.SimConfig;
 import com.agv.algorithm.sim.SimulationEngine;
 import com.agv.algorithm.sim.SimulationResult;
-import com.agv.algorithm.sim.Task;
 import com.agv.backend.dto.RoadNetPayload;
-import com.agv.backend.support.RoadNetTemplates;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.agv.backend.support.DemoScenario;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -40,10 +38,6 @@ import java.util.stream.Collectors;
  */
 class NodeOccupancyDiagnosticsTest {
 
-    private static RoadNetPayload payload() throws Exception {
-        return new ObjectMapper().readValue(RoadNetTemplates.STANDARD_WORKSHOP, RoadNetPayload.class);
-    }
-
     private static RoadNet toModel(RoadNetPayload payload, int stationCapacity, boolean approachDual) {
         java.util.Set<String> stations = payload.nodes().stream()
                 .filter(n -> "WORKSTATION".equals(n.type()))
@@ -63,26 +57,11 @@ class NodeOccupancyDiagnosticsTest {
                         .toList());
     }
 
-    /** 与 EngineScaleTest 相同的 20 单生成规则，数值可直接对照论文表 6-2。 */
-    private static List<Task> demoTasks() {
-        String[] stations = {"W1", "W2", "W3"};
-        List<Task> tasks = new ArrayList<>();
-        for (int i = 0; i < 20; i++) {
-            String from = stations[i % 3];
-            String to = stations[(i + 1 + i / 3) % 3];
-            if (from.equals(to)) {
-                to = stations[(i + 2) % 3];
-            }
-            tasks.add(new Task(i + 1, from, to));
-        }
-        return tasks;
-    }
-
     private static String measure(RoadNet net, int agvCount, String algorithm) {
         Map<String, Integer> capacity = net.nodes().values().stream()
                 .collect(Collectors.toMap(NetNode::id, NetNode::capacity));
-        SimulationEngine engine = new SimulationEngine(net, demoTasks(),
-                SimConfig.defaults(agvCount, 20261107L, algorithm));
+        SimulationEngine engine = new SimulationEngine(net, DemoScenario.demoTasks(),
+                SimConfig.defaults(agvCount, DemoScenario.SEED, algorithm));
 
         long overTicks = 0;
         int maxOver = 0;
@@ -130,7 +109,7 @@ class NodeOccupancyDiagnosticsTest {
     }
 
     private static void writeReport(String fileName, int stationCapacity, boolean approachDual) throws Exception {
-        RoadNet net = toModel(payload(), stationCapacity, approachDual);
+        RoadNet net = toModel(DemoScenario.standardPayload(), stationCapacity, approachDual);
         List<String> lines = new ArrayList<>();
         lines.add("agv\talgorithm\toverTicks\tmaxOver\tworstNode\tworstStatuses\twaitingAtNodeTicks\tmakespan\tcompleted\tfinished");
         for (int count : new int[]{2, 3, 5, 8}) {

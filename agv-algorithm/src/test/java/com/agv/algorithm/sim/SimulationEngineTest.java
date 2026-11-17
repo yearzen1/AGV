@@ -15,6 +15,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -134,6 +135,37 @@ class SimulationEngineTest {
 
         assertEquals(0, result.avgDeliveryTick());
         assertEquals(0, result.completedTasks());
+    }
+
+    @Test
+    @DisplayName("指标在最后一单完成时定格：回充里程与等待不再进入总路径和总等待")
+    void metricsFreezeAtMakespan() {
+        SimulationEngine engine = new SimulationEngine(corridor(),
+                List.of(new Task(1, "W1", "W2")),
+                SimConfig.defaults(1, 42L, "nearest"));
+
+        SimFrame.Metrics doneMetrics = null;
+        long doneTick = -1;
+        int guard = 0;
+        while (!engine.finished() && guard++ < 20000) {
+            SimFrame frame = engine.step();
+            boolean taskDone = frame.events().stream()
+                    .anyMatch(event -> event.type() == SimEvent.Type.TASK_DONE);
+            if (taskDone) {
+                doneMetrics = frame.metrics();
+                doneTick = frame.tick();
+            }
+        }
+
+        SimulationResult result = engine.runToCompletion();
+        assertNotNull(doneMetrics, "应完成任务");
+        assertTrue(result.ticks() > doneTick, "回充应在最后一单完成之后继续推进");
+        assertEquals(doneMetrics.totalPathLen(), result.totalPathLen(), 1e-9,
+                "任务完成后的回充里程不应进入总路径长");
+        assertEquals(doneMetrics.totalWaitTick(), result.totalWaitTick(),
+                "任务完成后的回充等待不应进入总等待");
+        assertEquals(doneMetrics.conflictCount(), result.conflictCount(),
+                "任务完成后的回充冲突不应进入冲突次数");
     }
 
     @Test
