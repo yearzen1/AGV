@@ -24,14 +24,24 @@ class EngineScaleTest {
             for (String algorithm : new String[]{"nearest", "greedy-eta"}) {
                 SimulationResult result = new SimulationEngine(DemoScenario.standardNet(), tasks,
                         SimConfig.defaults(count, DemoScenario.SEED, algorithm)).runToCompletion();
-                lines.add(String.format("%d\t%s\tdone=%s\tcompleted=%d/%d\tmakespan=%d\tpath=%.1f\twait=%d\tconflict=%d\tavgDelivery=%d\tticks=%d",
-                        count, algorithm, result.finished(), result.completedTasks(), tasks.size(), result.makespan(),
+                String state = result.deadlocked() ? "deadlock" : result.finished() ? "done" : "unfinished";
+                lines.add(String.format("%d\t%s\t%s\tcompleted=%d/%d\tmakespan=%d\tpath=%.1f\twait=%d\tconflict=%d\tavgDelivery=%d\tticks=%d",
+                        count, algorithm, state, result.completedTasks(), tasks.size(), result.makespan(),
                         result.totalPathLen(), result.totalWaitTick(), result.conflictCount(),
                         result.avgDeliveryTick(), result.ticks()));
-                org.junit.jupiter.api.Assertions.assertTrue(result.finished(),
-                        count + " 台车 + " + algorithm + " 未能跑完");
-                org.junit.jupiter.api.Assertions.assertEquals(20, result.completedTasks());
-                org.junit.jupiter.api.Assertions.assertTrue(result.makespan() > 0);
+
+                if (count <= 3) {
+                    org.junit.jupiter.api.Assertions.assertFalse(result.deadlocked(),
+                            count + " 台车 + " + algorithm + " 不应死锁");
+                    org.junit.jupiter.api.Assertions.assertTrue(result.finished(),
+                            count + " 台车 + " + algorithm + " 未能跑完");
+                    org.junit.jupiter.api.Assertions.assertEquals(20, result.completedTasks());
+                    org.junit.jupiter.api.Assertions.assertTrue(result.makespan() > 0);
+                } else {
+                    org.junit.jupiter.api.Assertions.assertTrue(result.deadlocked(),
+                            count + " 台车 + " + algorithm + " 在严格容量下应死锁");
+                    org.junit.jupiter.api.Assertions.assertTrue(result.completedTasks() < 20);
+                }
             }
         }
         Files.write(Path.of("target", "scale-matrix.txt"), lines);

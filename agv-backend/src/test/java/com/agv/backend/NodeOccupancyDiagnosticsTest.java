@@ -103,15 +103,16 @@ class NodeOccupancyDiagnosticsTest {
         }
 
         SimulationResult result = engine.runToCompletion();
-        return String.format("%d\t%s\t%d\t%d\t%s\t%s\t%d\t%d\t%d\t%d",
+        return String.format("%d\t%s\t%d\t%d\t%s\t%s\t%d\t%d\t%d\t%d\t%d",
                 agvCount, algorithm, overTicks, maxOver, worstNode, worstStatuses,
-                waitingAtNodeTicks, result.makespan(), result.completedTasks(), result.finished() ? 1 : 0);
+                waitingAtNodeTicks, result.makespan(), result.completedTasks(),
+                result.finished() ? 1 : 0, result.deadlocked() ? 1 : 0);
     }
 
     private static void writeReport(String fileName, int stationCapacity, boolean approachDual) throws Exception {
         RoadNet net = toModel(DemoScenario.standardPayload(), stationCapacity, approachDual);
         List<String> lines = new ArrayList<>();
-        lines.add("agv\talgorithm\toverTicks\tmaxOver\tworstNode\tworstStatuses\twaitingAtNodeTicks\tmakespan\tcompleted\tfinished");
+        lines.add("agv\talgorithm\toverTicks\tmaxOver\tworstNode\tworstStatuses\twaitingAtNodeTicks\tmakespan\tcompleted\tfinished\tdeadlocked");
         for (int count : new int[]{2, 3, 5, 8}) {
             for (String algorithm : new String[]{"nearest", "greedy-eta"}) {
                 lines.add(measure(net, count, algorithm));

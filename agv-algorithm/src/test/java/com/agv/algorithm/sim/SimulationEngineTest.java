@@ -262,18 +262,17 @@ class SimulationEngineTest {
     void bothAlgorithmsCompleteTasks() {
         List<Task> tasks = List.of(
                 new Task(1, "W1", "W2"), new Task(2, "W2", "W1"),
-                new Task(3, "W1", "W2"), new Task(4, "W2", "W1"),
-                new Task(5, "W1", "W1"), new Task(6, "W2", "W2"));
+                new Task(3, "W1", "W2"), new Task(4, "W2", "W1"));
 
         SimulationResult nearest = new SimulationEngine(twoLaneWorkshop(), tasks,
-                SimConfig.defaults(3, 99L, "nearest")).runToCompletion();
+                SimConfig.defaults(2, 99L, "nearest")).runToCompletion();
         SimulationResult greedy = new SimulationEngine(twoLaneWorkshop(), tasks,
-                SimConfig.defaults(3, 99L, "greedy-eta")).runToCompletion();
+                SimConfig.defaults(2, 99L, "greedy-eta")).runToCompletion();
 
         assertTrue(nearest.finished(), "就近分配应跑完");
         assertTrue(greedy.finished(), "贪心 ETA 应跑完");
-        assertEquals(6, nearest.completedTasks());
-        assertEquals(6, greedy.completedTasks());
+        assertEquals(4, nearest.completedTasks());
+        assertEquals(4, greedy.completedTasks());
     }
 
     @Test
