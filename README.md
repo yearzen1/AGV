@@ -318,3 +318,4 @@ npm run e2e:scene
 - `JwtHandshakeInterceptorTest`：握手令牌校验与账号状态拦截
 - `MultiUserSimulationTest`：两个用户并发仿真互不干扰，暂停/重置只影响自己
 - `SimulationConcurrencyLimitTest`：并发上限拦截与 4290 错误码
+- `SimulationRegressionTest`：8 台车全部回充、让位次数上界、让位不计入冲突
