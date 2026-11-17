@@ -161,7 +161,7 @@ async function main() {
   <g font-size="20" fill="#606266">
     <rect x="60" y="800" width="1560" height="150" rx="14" fill="#f4f4f5" stroke="#c0c4cc" stroke-width="2"/>
     <text x="90" y="850" font-weight="bold" fill="#606266">论文数据来源</text>
-    <text x="90" y="896">93 个后端/算法测试 + 32 个前端渲染测试：路网校验 12　A* 对拍 6　仿真引擎 14　后端 58（含规模矩阵与超容诊断）</text>
+    <text x="90" y="896">95 个后端/算法测试 + 32 个前端渲染测试：路网校验 12　A* 对拍 6　仿真引擎 14　后端 60（含规模矩阵与超容诊断）</text>
     <text x="90" y="930">规模实验：2/3/5/8 台车 × 就近/贪心 ETA × 20 单，seed=20261107</text>
   </g>
 </svg></body></html>`
@@ -175,37 +175,43 @@ async function main() {
   await sleep(800)
   await capture('fig-5-1-architecture.png')
 
-  // 图 6-2 完成时间折线图（自绘 SVG）
+  // 图 6-2 完成单数折线图（自绘 SVG）；5/8 台严格容量下死锁，只记录完成数
   const data = [
-    { n: 2, nearest: 3892, greedy: 3644 },
-    { n: 3, nearest: 3407, greedy: 3162 },
-    { n: 5, nearest: 3269, greedy: 3355 },
-    { n: 8, nearest: 3035, greedy: 3027 }
+    { n: 2, nearest: 20, greedy: 20 },
+    { n: 3, nearest: 20, greedy: 20 },
+    { n: 5, nearest: 12, greedy: 2 },
+    { n: 8, nearest: 0, greedy: 1 }
   ]
   const W = 1680, H = 1050, L = 160, R = 120, T = 150, B = 150
-  const maxY = 4000
+  const maxY = 20
   const x = (i) => L + (i * (W - L - R)) / (data.length - 1)
   const y = (v) => H - B - (v / maxY) * (H - T - B)
   const poly = (key) => data.map((d, i) => `${x(i)},${y(d[key])}`).join(' ')
   const dots = (key, color) =>
     data.map((d, i) => `<circle cx="${x(i)}" cy="${y(d[key])}" r="7" fill="${color}"/>`).join('')
   const labels = (key, color, dy) =>
-    data.map((d, i) => `<text x="${x(i)}" y="${y(d[key]) + dy}" font-size="20" fill="${color}" text-anchor="middle">${d[key]}</text>`).join('')
-  const yTicks = Array.from({ length: 9 }, (_, i) => i * 500)
+    data.map((d, i) => i < 2
+      ? `<text x="${x(i)}" y="${y(d[key]) + dy}" font-size="20" fill="${color}" text-anchor="middle">${d[key]}</text>`
+      : '').join('')
+  const yTicks = Array.from({ length: 5 }, (_, i) => i * 5)
     .map((v) => `<line x1="${L}" y1="${y(v)}" x2="${W - R}" y2="${y(v)}" stroke="#ebeef5" stroke-width="1"/>
       <text x="${L - 16}" y="${y(v) + 7}" font-size="18" fill="#909399" text-anchor="end">${v}</text>`).join('')
   const xTicks = data.map((d, i) => `<text x="${x(i)}" y="${H - B + 40}" font-size="20" fill="#606266" text-anchor="middle">${d.n} 台</text>`).join('')
+  const deadlockNotes =
+    `<text x="${x(2)}" y="${y(12) - 18}" font-size="18" fill="#1f3b73" text-anchor="middle">12/20 死锁</text>` +
+    `<text x="${x(2)}" y="${y(2) + 36}" font-size="18" fill="#e6a23c" text-anchor="middle">2/20 死锁</text>`
 
   const lineHtml = `<!doctype html><html><head><meta charset="utf-8"></head>
 <body style="margin:0;background:#fff;font-family:'Microsoft YaHei',sans-serif">
 <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
   <rect width="${W}" height="${H}" fill="#ffffff"/>
-  <text x="80" y="70" font-size="30" font-weight="bold" fill="#1f3b73">图 6-2　完成时间随车队规模变化</text>
-  <text x="80" y="110" font-size="18" fill="#909399">20 单任务集，seed = 20261107，单位：tick（1 tick = 100 ms）</text>
+  <text x="80" y="70" font-size="30" font-weight="bold" fill="#1f3b73">图 6-2　完成单数随车队规模变化</text>
+  <text x="80" y="110" font-size="18" fill="#909399">20 单任务集，seed = 20261107；5/8 台为严格容量死锁</text>
   ${yTicks}
   <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="#c0c4cc" stroke-width="2"/>
   <line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" stroke="#c0c4cc" stroke-width="2"/>
   ${xTicks}
+  ${deadlockNotes}
   <polyline points="${poly('nearest')}" fill="none" stroke="#1f3b73" stroke-width="4"/>
   ${dots('nearest', '#1f3b73')}
   ${labels('nearest', '#1f3b73', -18)}
