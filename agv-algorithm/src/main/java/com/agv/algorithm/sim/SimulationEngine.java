@@ -43,6 +43,9 @@ public final class SimulationEngine {
     /** 任务全部完成后，回充宽限期（tick）。超时即收尾，保证仿真一定能结束。 */
     private static final long PARK_GRACE_TICKS = 400;
 
+    /** 严格容量下连续没有任务完成多久判定为死锁。 */
+    private static final long DEADLOCK_TIMEOUT_TICKS = 2000;
+
     private final RoadNet net;
     private final List<Task> allTasks;
     private final SimConfig config;
@@ -59,6 +62,8 @@ public final class SimulationEngine {
     private int completedTasks;
     private long makespan;
     private long tasksDoneTick = -1;
+    private long lastTaskDoneTick;
+    private boolean deadlocked;
     private double totalPathLen;
     private long totalWaitTicks;
     private int conflictCount;
@@ -160,6 +165,14 @@ public final class SimulationEngine {
             metricsFrozen = true;
         }
         updateFinished(events);
+        if (!finished && completedTasks < allTasks.size()
+                && tick - lastTaskDoneTick >= DEADLOCK_TIMEOUT_TICKS) {
+            deadlocked = true;
+            finished = true;
+            events.add(new SimEvent(tick, "-", SimEvent.Type.FINISHED, "-",
+                    "检测到死锁：连续 " + DEADLOCK_TIMEOUT_TICKS + " tick 没有任务完成，完成 "
+                            + completedTasks + "/" + allTasks.size(), -1));
+        }
         return frame(events);
     }
 
@@ -172,7 +185,7 @@ public final class SimulationEngine {
         // 路径长由逐 tick 累加得到，避免把浮点尾差带进报表
         double roundedLength = Math.round(reportedPathLen() * 10.0) / 10.0;
         return new SimulationResult(makespan, roundedLength, reportedWaitTicks(),
-                reportedConflictCount(), completedTasks, avgDeliveryTick(), finished, tick);
+                reportedConflictCount(), completedTasks, avgDeliveryTick(), finished, deadlocked, tick);
     }
 
     public List<AgvSnapshot> snapshots() {
@@ -181,6 +194,10 @@ public final class SimulationEngine {
 
     public boolean finished() {
         return finished;
+    }
+
+    public boolean deadlocked() {
+        return deadlocked;
     }
 
     public long tick() {
@@ -252,6 +269,11 @@ public final class SimulationEngine {
                 agv.yielding = false;
                 agv.yieldStation = null;
                 agv.yieldBuffer = null;
+                if (agv.yieldPath != null) {
+                    agv.path.clear();
+                    agv.path.addAll(agv.yieldPath);
+                    agv.yieldPath = null;
+                }
             } else {
                 // 刚驶入缓存位：停在这里等工位空出来
                 agv.status = AgvStatus.WAITING;
@@ -324,6 +346,7 @@ public final class SimulationEngine {
     private void completeTask(Agv agv, List<SimEvent> events) {
         completedTasks++;
         makespan = tick;
+        lastTaskDoneTick = tick;
         Long assignedTick = assignedTicks.remove(agv.task.id());
         if (assignedTick != null) {
             deliveryTicksSum += tick - assignedTick;
@@ -392,8 +415,7 @@ public final class SimulationEngine {
             result = planner.plan(net, agv.currentNode, goal, agv.bannedEdges);
         }
         if (!result.found()) {
-            // 起终点在设计期已校验可达，这里只可能是临时封锁导致，降级为等待
-            reservations.release(agv.currentNode, agv.id);
+            // 起终点在设计期已校验可达，这里只可能是临时封锁导致，降级为等待；保留节点预约
             agv.status = AgvStatus.WAITING;
             return;
         }
@@ -422,12 +444,11 @@ public final class SimulationEngine {
             // 路口是临界区：等待时保持占用，避免车还停在路口却把资源让给后车。
             // 非路口只有在「另一台车确实要进这个节点」时才让位；否则留在原地并保留预约，
             // 避免对下游路段的阻塞也做无意义的工位 ↔ 缓存位往返。
-            if (!isJunction(agv.currentNode)) {
-                if (yieldToBuffer(agv, events)) {
-                    return false;
-                }
-                reservations.release(agv.currentNode, agv.id);
+            if (!isJunction(agv.currentNode) && yieldToBuffer(agv, events)) {
+                return false;
             }
+            // 严格容量：没有真的离开节点就不释放预约，避免「车还在工位上、预约已经让给别人」
+            // 造成的物理超容。缓存位被占时，车就在原地等待，后面的车按容量排队。
             // 让位是真实移动，不是停车；只有真正进入 WAITING 才记一次冲突。
             if (agv.status != AgvStatus.WAITING) {
                 conflictCount++;
@@ -579,10 +600,7 @@ public final class SimulationEngine {
             events.add(new SimEvent(tick, first.id, SimEvent.Type.DEADLOCK_BREAK,
                     wanted.id(), "检测到等待环，尝试倒车让行", taskIdOf(first)));
             if (!tryRetreat(first, events)) {
-                // 兜底：倒车不可行时，最低优先级车逻辑上让出路口，打破资源环。
-                if (isJunction(first.currentNode)) {
-                    reservations.release(first.currentNode, first.id);
-                }
+                // 严格容量下不把脚下的路口让给后车；倒车不可行时只重规划，实在无路可走由死锁超时收尾。
                 replanWithDetour(first, events);
             }
             return;
@@ -618,6 +636,7 @@ public final class SimulationEngine {
             edgeOwner.put(out.edgeId(), agv.id);
         }
 
+        agv.yieldPath = new ArrayDeque<>(agv.path);
         agv.path.clear();
         agv.wantedEdgeId = null;
         agv.wantedNodeId = null;
@@ -654,6 +673,11 @@ public final class SimulationEngine {
             return;
         }
         if (!reservations.canReserve(back.id(), tick, arrival + 1, capacityOf(back), agv.id)) {
+            return;
+        }
+        // 只放开工位不够：下一段还走不了就回工位，会立刻引发第二次让位。
+        Arc next = agv.yieldPath == null ? null : agv.yieldPath.peek();
+        if (next != null && blockedReason(agv, next) != null) {
             return;
         }
         reservations.release(buffer, agv.id);
@@ -797,7 +821,7 @@ public final class SimulationEngine {
     }
 
     private SimFrame frame(List<SimEvent> events) {
-        return new SimFrame(tick, snapshots(), events, finished, metrics());
+        return new SimFrame(tick, snapshots(), events, finished, deadlocked, metrics());
     }
 
     private AgvSnapshot snapshot(Agv agv) {
@@ -950,6 +974,8 @@ public final class SimulationEngine {
         boolean yielding;
         String yieldStation;
         String yieldBuffer;
+        /** 让位前的剩余路径；回到工位后恢复。 */
+        Deque<Arc> yieldPath;
         boolean returning;
         double totalDistance;
         final Set<String> bannedEdges = new HashSet<>();

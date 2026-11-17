@@ -6,7 +6,7 @@ import java.util.List;
  * 一帧仿真数据，对应 WebSocket 推送的 {@code {tick, agvs, events}}。
  */
 public record SimFrame(long tick, List<AgvSnapshot> agvs, List<SimEvent> events,
-                       boolean finished, Metrics metrics) {
+                       boolean finished, boolean deadlocked, Metrics metrics) {
 
     public SimFrame {
         agvs = List.copyOf(agvs);

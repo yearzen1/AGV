@@ -47,6 +47,7 @@ const status = ref<SimStatus | null>(null)
 const tick = ref(0)
 const running = ref(false)
 const finished = ref(false)
+const deadlocked = ref(false)
 const paused = ref(false)
 /** 已发出启动请求但还没拿到响应：此期间的帧仍属于本次运行，不能丢。 */
 const starting = ref(false)
@@ -95,6 +96,9 @@ const simState = computed(() => {
       : { label: '运行中', type: 'success' as const }
   }
   if (finished.value) {
+    if (deadlocked.value) {
+      return { label: '死锁 / 未完成', type: 'danger' as const }
+    }
     return status.value?.status === 'FAILED'
       ? { label: '仿真失败', type: 'danger' as const }
       : { label: '已完成', type: 'info' as const }
@@ -315,11 +319,13 @@ function connectSocket() {
         if (frame.finished) {
           running.value = false
           finished.value = true
+          deadlocked.value = !!frame.deadlocked
         }
       } else if (payload.type === 'status' || payload.type === 'connected') {
         if (payload.type === 'status') {
           status.value = payload as SimStatus
           paused.value = !!payload.paused
+          deadlocked.value = !!payload.deadlocked
           if (payload.status === 'FINISHED' || payload.status === 'FAILED') {
             running.value = false
             finished.value = true
@@ -391,6 +397,7 @@ async function syncStatus() {
     status.value = current
     running.value = current.status === 'RUNNING'
     finished.value = current.status !== 'RUNNING'
+    deadlocked.value = !!current.deadlocked
     paused.value = current.paused
     speed.value = current.speed
     tick.value = current.tick
@@ -424,6 +431,7 @@ async function start() {
   metrics.value = null
   tick.value = 0
   finished.value = false
+  deadlocked.value = false
   paused.value = false
   selectedAgvId.value = null
   highlightNodeId.value = null
@@ -471,6 +479,7 @@ async function reset() {
     await resetSim()
     running.value = false
     finished.value = false
+    deadlocked.value = false
     paused.value = false
     agvs.value = []
     events.value = []

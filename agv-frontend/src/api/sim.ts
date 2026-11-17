@@ -39,12 +39,15 @@ export interface SimFrame {
   agvs: AgvSnapshot[]
   events: SimEvent[]
   finished: boolean
+  /** 严格容量下连续 2000 tick 无任务完成时为 true；此时 finished 也为 true，但完成数小于总数 */
+  deadlocked: boolean
   metrics: SimMetrics
 }
 
 export interface SimStatus {
   status: string
   paused: boolean
+  deadlocked?: boolean
   speed: number
   experimentId: number | null
   roadnetId: number | null

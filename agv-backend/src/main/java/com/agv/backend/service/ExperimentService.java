@@ -117,15 +117,15 @@ public class ExperimentService {
         experiment.setAlgorithm(algorithm);
         experiment.setAgvCount(agvCount);
         experiment.setSeed(seed);
-        experiment.setStatus(result.finished() ? "FINISHED" : "FAILED");
+        experiment.setStatus(result.finished() && !result.deadlocked() ? "FINISHED" : "FAILED");
         experiment.setCreateUser(currentUser.id());
         experiment.setRoadnetSnapshot(roadnetJson);
         experiment.setTasksetSnapshot(tasksetJson);
         Experiment saved = experimentRepository.save(experiment);
 
-        ExperimentMetric metric = saveMetric(saved.getId(), result);
+        ExperimentMetric metric = result.deadlocked() ? null : saveMetric(saved.getId(), result);
         auditService.success("EXPERIMENT_RUN", "EXPERIMENT", saved.getId());
-        return toReport(saved, Optional.of(metric));
+        return toReport(saved, Optional.ofNullable(metric));
     }
 
     /**
@@ -161,21 +161,23 @@ public class ExperimentService {
         replay.setAlgorithm(original.getAlgorithm());
         replay.setAgvCount(original.getAgvCount());
         replay.setSeed(original.getSeed());
-        replay.setStatus(result.finished() ? "FINISHED" : "FAILED");
+        replay.setStatus(result.finished() && !result.deadlocked() ? "FINISHED" : "FAILED");
         replay.setCreateUser(currentUser.id());
         replay.setRoadnetSnapshot(original.getRoadnetSnapshot());
         replay.setTasksetSnapshot(original.getTasksetSnapshot());
         Experiment savedReplay = experimentRepository.save(replay);
 
-        ExperimentMetric replayMetric = saveMetric(savedReplay.getId(), result);
+        ExperimentMetric replayMetric = result.deadlocked() ? null : saveMetric(savedReplay.getId(), result);
         auditService.success("EXPERIMENT_REPLAY", "EXPERIMENT", savedReplay.getId());
         boolean consistent = "FINISHED".equals(original.getStatus())
                 && result.finished()
+                && !result.deadlocked()
+                && replayMetric != null
                 && sameMetrics(originalMetric, replayMetric);
 
         return new ExperimentReplayResult(original.getId(), savedReplay.getId(), consistent,
                 toReport(original, Optional.of(originalMetric)),
-                toReport(savedReplay, Optional.of(replayMetric)));
+                toReport(savedReplay, Optional.ofNullable(replayMetric)));
     }
 
     private void requireReplayable(Experiment experiment) {
