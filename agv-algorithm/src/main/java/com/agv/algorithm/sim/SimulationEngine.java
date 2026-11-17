@@ -63,6 +63,11 @@ public final class SimulationEngine {
     private long totalWaitTicks;
     private int conflictCount;
     private boolean finished;
+    /** 最后一单完成时冻结报表口径；之后的回充与停靠只影响动画，不再推高指标。 */
+    private boolean metricsFrozen;
+    private double frozenPathLen;
+    private long frozenWaitTicks;
+    private int frozenConflictCount;
     /** 任务分配时刻，用于算单均配送时长；任务完成时移除。 */
     private final Map<Integer, Long> assignedTicks = new HashMap<>();
     private long deliveryTicksSum;
@@ -148,6 +153,12 @@ public final class SimulationEngine {
         }
 
         totalWaitTicks += agvs.values().stream().filter(a -> a.status == AgvStatus.WAITING).count();
+        if (!metricsFrozen && tasksDoneTick == tick) {
+            frozenPathLen = totalPathLen;
+            frozenWaitTicks = totalWaitTicks;
+            frozenConflictCount = conflictCount;
+            metricsFrozen = true;
+        }
         updateFinished(events);
         return frame(events);
     }
@@ -159,9 +170,9 @@ public final class SimulationEngine {
             step();
         }
         // 路径长由逐 tick 累加得到，避免把浮点尾差带进报表
-        double roundedLength = Math.round(totalPathLen * 10.0) / 10.0;
-        return new SimulationResult(makespan, roundedLength, totalWaitTicks,
-                conflictCount, completedTasks, avgDeliveryTick(), finished, tick);
+        double roundedLength = Math.round(reportedPathLen() * 10.0) / 10.0;
+        return new SimulationResult(makespan, roundedLength, reportedWaitTicks(),
+                reportedConflictCount(), completedTasks, avgDeliveryTick(), finished, tick);
     }
 
     public List<AgvSnapshot> snapshots() {
@@ -177,8 +188,20 @@ public final class SimulationEngine {
     }
 
     public SimFrame.Metrics metrics() {
-        return new SimFrame.Metrics(makespan, totalPathLen, totalWaitTicks,
-                conflictCount, completedTasks, allTasks.size(), avgDeliveryTick());
+        return new SimFrame.Metrics(makespan, reportedPathLen(), reportedWaitTicks(),
+                reportedConflictCount(), completedTasks, allTasks.size(), avgDeliveryTick());
+    }
+
+    private double reportedPathLen() {
+        return metricsFrozen ? frozenPathLen : totalPathLen;
+    }
+
+    private long reportedWaitTicks() {
+        return metricsFrozen ? frozenWaitTicks : totalWaitTicks;
+    }
+
+    private int reportedConflictCount() {
+        return metricsFrozen ? frozenConflictCount : conflictCount;
     }
 
     /** 单均配送时长 = Σ(完成 tick − 分配 tick) ÷ 已完成任务数；没有已完成任务记 0。 */
@@ -229,11 +252,6 @@ public final class SimulationEngine {
                 agv.yielding = false;
                 agv.yieldStation = null;
                 agv.yieldBuffer = null;
-                if (agv.yieldPath != null) {
-                    agv.path.clear();
-                    agv.path.addAll(agv.yieldPath);
-                    agv.yieldPath = null;
-                }
             } else {
                 // 刚驶入缓存位：停在这里等工位空出来
                 agv.status = AgvStatus.WAITING;
@@ -277,7 +295,7 @@ public final class SimulationEngine {
                         events.add(new SimEvent(tick, agv.id, SimEvent.Type.CHARGING,
                                 agv.currentNode, "回充完成", -1));
                     } else {
-                        String charger = nearestChargerWithRoom(agv);
+                        String charger = nearestChargerForReturn(agv);
                         if (charger == null) {
                             agv.status = AgvStatus.DONE;
                         } else {
@@ -350,7 +368,7 @@ public final class SimulationEngine {
             agv.status = AgvStatus.CHARGING;
             return;
         }
-        String charger = nearestChargerWithRoom(agv);
+        String charger = nearestChargerForReturn(agv);
         if (charger == null) {
             agv.status = AgvStatus.DONE;
             return;
@@ -401,19 +419,20 @@ public final class SimulationEngine {
         String blockedReason = blockedReason(agv, next);
 
         if (blockedReason != null) {
-            if (agv.status != AgvStatus.WAITING) {
-                conflictCount++;
-                events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_CONFLICT,
-                        next.id(), blockedReason, taskIdOf(agv)));
-            }
             // 路口是临界区：等待时保持占用，避免车还停在路口却把资源让给后车。
             // 非路口只有在「另一台车确实要进这个节点」时才让位；否则留在原地并保留预约，
             // 避免对下游路段的阻塞也做无意义的工位 ↔ 缓存位往返。
-            if (!isJunction(agv.currentNode) && stationWantedByOther(agv, agv.currentNode)) {
+            if (!isJunction(agv.currentNode)) {
                 if (yieldToBuffer(agv, events)) {
                     return false;
                 }
                 reservations.release(agv.currentNode, agv.id);
+            }
+            // 让位是真实移动，不是停车；只有真正进入 WAITING 才记一次冲突。
+            if (agv.status != AgvStatus.WAITING) {
+                conflictCount++;
+                events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_CONFLICT,
+                        next.id(), blockedReason, taskIdOf(agv)));
             }
             agv.status = AgvStatus.WAITING;
             agv.wantedEdgeId = next.edgeId();
@@ -506,7 +525,9 @@ public final class SimulationEngine {
             return agv.leg == Leg.PICKUP ? agv.task.from() : agv.task.to();
         }
         if (agv.returning) {
-            // 重规划时也要按剩余容量重新选位，否则会一直撞向最近的满充电位。
+            if (completedTasks < allTasks.size()) {
+                return nearestCharger(agv.currentNode, Set.of());
+            }
             return nearestChargerWithRoom(agv);
         }
         return null;
@@ -568,23 +589,6 @@ public final class SimulationEngine {
         }
     }
 
-    /** 是否已有别的车被这个节点挡住，正在等它空出来。 */
-    private boolean stationWantedByOther(Agv agv, String station) {
-        for (Agv other : agvs.values()) {
-            if (other == agv || other.status != AgvStatus.WAITING) {
-                continue;
-            }
-            if (station.equals(other.wantedNodeId)) {
-                return true;
-            }
-            Arc next = other.path.peek();
-            if (next != null && station.equals(next.to())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     /**
      * 让位到相邻缓存位：把工位空出来，车停在缓存位等工位重新可用。
      *
@@ -614,7 +618,6 @@ public final class SimulationEngine {
             edgeOwner.put(out.edgeId(), agv.id);
         }
 
-        agv.yieldPath = new ArrayDeque<>(agv.path);
         agv.path.clear();
         agv.wantedEdgeId = null;
         agv.wantedNodeId = null;
@@ -861,6 +864,34 @@ public final class SimulationEngine {
     }
 
     /**
+     * 回充选位。任务还在执行时沿用原来的最近充电位，避免回充车流改变任务阶段的路径与指标；
+     * 全部任务完成后才按剩余容量选位，保证最后一台车不会一直等一个已经停满的充电位。
+     */
+    private String nearestChargerForReturn(Agv agv) {
+        if (completedTasks < allTasks.size()) {
+            return nearestFreeCharger(agv.currentNode);
+        }
+        return nearestChargerWithRoom(agv);
+    }
+
+    /** 任务阶段沿用原来的「最近空充电位」选法，保持论文的任务阶段数据不变。 */
+    private String nearestFreeCharger(String fromNode) {
+        String best = null;
+        double bestCost = Double.POSITIVE_INFINITY;
+        for (String charger : chargers) {
+            if (!charger.equals(fromNode) && !reservations.isFree(charger)) {
+                continue;
+            }
+            PathResult result = planner.plan(net, fromNode, charger);
+            if (result.found() && result.costSeconds() < bestCost) {
+                bestCost = result.costSeconds();
+                best = charger;
+            }
+        }
+        return best != null ? best : nearestCharger(fromNode, Set.of());
+    }
+
+    /**
      * 就近挑一个还有剩余容量的充电位。不能只看 {@code isFree()}：容量 4 的充电位停了 3 台仍可再进一台，
      * 否则最后一台车会一直排队等一个永远不满的空位。全部满时才退回最近的充电位排队。
      */
@@ -919,8 +950,6 @@ public final class SimulationEngine {
         boolean yielding;
         String yieldStation;
         String yieldBuffer;
-        /** 让位前的剩余路径；回到工位后恢复，避免重新规划绕回同一个瓶颈。 */
-        Deque<Arc> yieldPath;
         boolean returning;
         double totalDistance;
         final Set<String> bannedEdges = new HashSet<>();
