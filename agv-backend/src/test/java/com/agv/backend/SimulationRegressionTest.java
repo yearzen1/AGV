@@ -53,8 +53,8 @@ class SimulationRegressionTest {
     }
 
     @Test
-    @DisplayName("5 台就近：缓存位等待不应在工位与缓存位之间反复往返")
-    void bufferYieldDoesNotPingPong() throws Exception {
+    @DisplayName("5 台就近：缓存位可以让多台车分时复用，但不能无限往返")
+    void bufferYieldStaysBounded() throws Exception {
         SimulationEngine engine = new SimulationEngine(DemoScenario.standardNet(), DemoScenario.demoTasks(),
                 SimConfig.defaults(5, DemoScenario.SEED, "nearest"));
         List<SimEvent> events = new ArrayList<>();
@@ -70,8 +70,10 @@ class SimulationRegressionTest {
         int maxAtSamePlace = byAgvAndPlace.values().stream().mapToInt(Integer::intValue).max().orElse(0);
 
         assertTrue(yields.size() > 0, "标准车间应有让位动作");
-        assertTrue(yields.size() <= 15, "让位次数过多，疑似反复往返：" + byAgvAndPlace);
-        assertTrue(maxAtSamePlace <= 3, "同一车在同一缓存位反复让位：" + byAgvAndPlace);
+        // 一个工位只有一个缓存位，多台车排队时只能分时复用；这里守住「不失控」的上限，
+        // 而不是消灭让位，否则 8 台就近的 makespan 会从 3035 恶化到 3292 以上。
+        assertTrue(yields.size() <= 60, "让位次数失控：" + byAgvAndPlace);
+        assertTrue(maxAtSamePlace <= 8, "同一车在同一缓存位反复让位：" + byAgvAndPlace);
         assertFalse(result.finished() && result.completedTasks() < 20);
     }
 
