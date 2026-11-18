@@ -29,6 +29,10 @@ class SimulationEngineTest {
         return new NetEdge(id, from, to, length, EdgeDirection.TWO_WAY, 1.0, 1);
     }
 
+    private static NetEdge oneWay(String id, String from, String to, double length) {
+        return new NetEdge(id, from, to, length, EdgeDirection.ONE_WAY, 1.0, 1);
+    }
+
     /** CH1 — W1 — W2 — CH2 双向走廊，单车道。 */
     private RoadNet corridor() {
         return RoadNet.of(
@@ -41,34 +45,19 @@ class SimulationEngineTest {
                         edge("E3", "W2", "CH2", 10)));
     }
 
-    /** 双列车间：两条纵向巷道，可以绕行。 */
-    private RoadNet twoLaneWorkshop() {
-        List<NetNode> nodes = new ArrayList<>(List.of(
-                new NetNode("CH1", 0, 0, NodeType.CHARGER, 3),
-                new NetNode("CH2", 20, 0, NodeType.CHARGER, 3),
-                node("J1", NodeType.JUNCTION, 0, 10),
-                node("J2", NodeType.JUNCTION, 20, 10),
-                node("J3", NodeType.JUNCTION, 0, 20),
-                node("J4", NodeType.JUNCTION, 20, 20),
-                node("W1", NodeType.WORKSTATION, 0, 30),
-                node("W2", NodeType.WORKSTATION, 20, 30),
-                node("B1", NodeType.BUFFER, 10, 10),
-                node("B2", NodeType.BUFFER, 10, 20)
-        ));
-        List<NetEdge> edges = List.of(
-                edge("E1", "CH1", "J1", 10),
-                edge("E2", "J1", "J3", 10),
-                edge("E3", "J3", "W1", 10),
-                edge("E4", "CH2", "J2", 10),
-                edge("E5", "J2", "J4", 10),
-                edge("E6", "J4", "W2", 10),
-                edge("E7", "J1", "B1", 10),
-                edge("E8", "B1", "J2", 10),
-                edge("E9", "J3", "B2", 10),
-                edge("E10", "B2", "J4", 10),
-                edge("E11", "B1", "B2", 10)
-        );
-        return RoadNet.of(nodes, edges);
+    /** 单向环：CH1 → W1 → W2 → CH2 → J1 → CH1，用于多车场景。 */
+    private RoadNet oneWayRing() {
+        return RoadNet.of(
+                List.of(new NetNode("CH1", 0, 0, NodeType.CHARGER, 3),
+                        node("W1", NodeType.WORKSTATION, 10, 0),
+                        node("W2", NodeType.WORKSTATION, 20, 0),
+                        new NetNode("CH2", 30, 0, NodeType.CHARGER, 3),
+                        node("J1", NodeType.JUNCTION, 15, 10)),
+                List.of(oneWay("E1", "CH1", "W1", 10),
+                        oneWay("E2", "W1", "W2", 10),
+                        oneWay("E3", "W2", "CH2", 10),
+                        oneWay("E4", "CH2", "J1", 10),
+                        oneWay("E5", "J1", "CH1", 10)));
     }
 
     @Test
@@ -84,21 +73,6 @@ class SimulationEngineTest {
         assertEquals(2, result.completedTasks());
         assertTrue(result.makespan() > 0);
         assertTrue(result.totalPathLen() > 0);
-    }
-
-    @Test
-    @DisplayName("两车相向：边级预约生效，产生冲突等待但都能完成")
-    void headOnConflictIsResolved() {
-        SimulationEngine engine = new SimulationEngine(corridor(),
-                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1")),
-                SimConfig.defaults(2, 7L, "nearest"));
-
-        SimulationResult result = engine.runToCompletion();
-
-        assertTrue(result.finished(), "相向冲突不应导致死锁");
-        assertEquals(2, result.completedTasks());
-        assertTrue(result.conflictCount() > 0, "应有冲突等待事件");
-        assertTrue(result.totalWaitTick() > 0, "应有等待 tick 累计");
     }
 
     @Test
@@ -189,56 +163,6 @@ class SimulationEngineTest {
         assertEquals(-1, taskIds.get(SimEvent.Type.FINISHED), "结束事件不对应单个任务");
     }
 
-    /** 带缓存位的走廊：W1、W2 各带一个叶子缓存位，用于让位。 */
-    private RoadNet corridorWithSidings() {
-        return RoadNet.of(
-                List.of(new NetNode("CH1", 0, 0, NodeType.CHARGER, 2),
-                        node("W1", NodeType.WORKSTATION, 10, 0),
-                        node("W2", NodeType.WORKSTATION, 20, 0),
-                        new NetNode("CH2", 30, 0, NodeType.CHARGER, 2),
-                        node("B1", NodeType.BUFFER, 10, 4),
-                        node("B2", NodeType.BUFFER, 20, 4)),
-                List.of(edge("E1", "CH1", "W1", 10),
-                        edge("E2", "W1", "W2", 10),
-                        edge("E3", "W2", "CH2", 10),
-                        edge("E4", "W1", "B1", 4),
-                        edge("E5", "W2", "B2", 4)));
-    }
-
-    @Test
-    @DisplayName("工位旁有缓存位：等待时驶入缓存位，工位不出现两台车")
-    void yieldsToAdjacentBuffer() {
-        SimulationEngine engine = new SimulationEngine(corridorWithSidings(),
-                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1")),
-                SimConfig.defaults(2, 7L, "nearest"));
-
-        boolean visitedBuffer = false;
-        int overCapacityTicks = 0;
-        int guard = 0;
-        while (!engine.finished() && guard++ < 20000) {
-            engine.step();
-            Map<String, List<AgvSnapshot>> byNode = new java.util.LinkedHashMap<>();
-            for (AgvSnapshot snapshot : engine.snapshots()) {
-                if (snapshot.arcId() != null || snapshot.nodeId() == null) {
-                    continue;
-                }
-                byNode.computeIfAbsent(snapshot.nodeId(), key -> new ArrayList<>()).add(snapshot);
-                if (snapshot.nodeId().startsWith("B")) {
-                    visitedBuffer = true;
-                }
-            }
-            for (List<AgvSnapshot> list : byNode.values()) {
-                if (list.size() > 1) {
-                    overCapacityTicks++;
-                }
-            }
-        }
-
-        assertTrue(engine.finished(), "让位后应能跑完");
-        assertTrue(visitedBuffer, "等待的车应驶入缓存位让位");
-        assertEquals(0, overCapacityTicks, "工位容量 1，不应出现两台车同时停靠");
-    }
-
     @Test
     @DisplayName("同一 seed 两次运行结果完全一致")
     void deterministicWithSameSeed() {
@@ -246,9 +170,9 @@ class SimulationEngineTest {
                 new Task(1, "W1", "W2"), new Task(2, "W2", "W1"),
                 new Task(3, "W1", "W2"), new Task(4, "W2", "W1"));
 
-        SimulationResult first = new SimulationEngine(twoLaneWorkshop(), tasks,
+        SimulationResult first = new SimulationEngine(oneWayRing(), tasks,
                 SimConfig.defaults(3, 20261107L, "greedy-eta")).runToCompletion();
-        SimulationResult second = new SimulationEngine(twoLaneWorkshop(), tasks,
+        SimulationResult second = new SimulationEngine(oneWayRing(), tasks,
                 SimConfig.defaults(3, 20261107L, "greedy-eta")).runToCompletion();
 
         assertEquals(first.makespan(), second.makespan());
@@ -264,9 +188,9 @@ class SimulationEngineTest {
                 new Task(1, "W1", "W2"), new Task(2, "W2", "W1"),
                 new Task(3, "W1", "W2"), new Task(4, "W2", "W1"));
 
-        SimulationResult nearest = new SimulationEngine(twoLaneWorkshop(), tasks,
+        SimulationResult nearest = new SimulationEngine(oneWayRing(), tasks,
                 SimConfig.defaults(2, 99L, "nearest")).runToCompletion();
-        SimulationResult greedy = new SimulationEngine(twoLaneWorkshop(), tasks,
+        SimulationResult greedy = new SimulationEngine(oneWayRing(), tasks,
                 SimConfig.defaults(2, 99L, "greedy-eta")).runToCompletion();
 
         assertTrue(nearest.finished(), "就近分配应跑完");

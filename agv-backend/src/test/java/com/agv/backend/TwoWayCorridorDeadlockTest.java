@@ -39,7 +39,6 @@ class TwoWayCorridorDeadlockTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("删除倒车让行之前不成立：旧兜底机制会把车退回 CH1 解开这个二车环")
     @DisplayName("双向走廊：X→Y 与 Y→X 两台车互相等对方的节点，跑不完")
     void twoWayCorridorStallsWithTwoCars() {
         SimulationResult result = new SimulationEngine(twoWayCorridor(),

@@ -119,13 +119,13 @@ public class ExperimentService {
         experiment.setAlgorithm(algorithm);
         experiment.setAgvCount(agvCount);
         experiment.setSeed(seed);
-        experiment.setStatus(result.finished() && !result.deadlocked() ? "FINISHED" : "FAILED");
+        experiment.setStatus(result.finished() ? "FINISHED" : "FAILED");
         experiment.setCreateUser(currentUser.id());
         experiment.setRoadnetSnapshot(roadnetJson);
         experiment.setTasksetSnapshot(tasksetJson);
         Experiment saved = experimentRepository.save(experiment);
 
-        ExperimentMetric metric = result.deadlocked() ? null : saveMetric(saved.getId(), result);
+        ExperimentMetric metric = result.finished() ? saveMetric(saved.getId(), result) : null;
         auditService.success("EXPERIMENT_RUN", "EXPERIMENT", saved.getId());
         return toReport(saved, Optional.ofNullable(metric));
     }
@@ -163,17 +163,16 @@ public class ExperimentService {
         replay.setAlgorithm(original.getAlgorithm());
         replay.setAgvCount(original.getAgvCount());
         replay.setSeed(original.getSeed());
-        replay.setStatus(result.finished() && !result.deadlocked() ? "FINISHED" : "FAILED");
+        replay.setStatus(result.finished() ? "FINISHED" : "FAILED");
         replay.setCreateUser(currentUser.id());
         replay.setRoadnetSnapshot(original.getRoadnetSnapshot());
         replay.setTasksetSnapshot(original.getTasksetSnapshot());
         Experiment savedReplay = experimentRepository.save(replay);
 
-        ExperimentMetric replayMetric = result.deadlocked() ? null : saveMetric(savedReplay.getId(), result);
+        ExperimentMetric replayMetric = result.finished() ? saveMetric(savedReplay.getId(), result) : null;
         auditService.success("EXPERIMENT_REPLAY", "EXPERIMENT", savedReplay.getId());
         boolean consistent = "FINISHED".equals(original.getStatus())
                 && result.finished()
-                && !result.deadlocked()
                 && replayMetric != null
                 && sameMetrics(originalMetric, replayMetric);
 

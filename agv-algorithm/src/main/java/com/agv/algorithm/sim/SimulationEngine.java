@@ -1,7 +1,6 @@
 package com.agv.algorithm.sim;
 
 import com.agv.algorithm.model.Arc;
-import com.agv.algorithm.model.NetEdge;
 import com.agv.algorithm.model.NetNode;
 import com.agv.algorithm.model.NodeType;
 import com.agv.algorithm.model.RoadNet;
@@ -13,25 +12,23 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Random;
-import java.util.Set;
 
 /**
  * 离散时间步仿真引擎：每 tick 推进 100 ms，逐段滚动预约消解冲突。
  * <p>
- * 关键机制（对应实施计划 3.2）：
+ * 关键机制：
  * <ol>
  *   <li>AGV 每次只预约下一段弧与目标节点，不预留全程；</li>
- *   <li>物理路段同一时刻只允许一个方向使用（边级预约，消除相向冲突）；</li>
- *   <li>同一资源竞争者按 AGV 优先级让行（小号优先），从根上避免同资源配置抖动；</li>
- *   <li>连续等待超过阈值 → 带禁行约束重规划；等待环检测作为兜底，检测到环就禁掉争议路段。</li>
+ *   <li>节点容量默认 1，车没有真的离开节点就不释放预约（严格容量）；</li>
+ *   <li>路网是单向环、无叶子、强连通，车队数不超过车队上限，因此等待图不可能成环；</li>
+ *   <li>等待只会形成队列：下一段被占或目标节点已满时，车在原地保留预约等待。</li>
  * </ol>
- * 引擎是纯 Java、单线程、给定 seed 可复现的，不依赖 Spring。
+ * 结构无死锁的推导见 {@code docs/explanation/结构无死锁设计.md}。引擎是纯 Java、单线程、
+ * 给定 seed 可复现的，不依赖 Spring。
  */
 public final class SimulationEngine {
 
@@ -43,9 +40,6 @@ public final class SimulationEngine {
     /** 任务全部完成后，回充宽限期（tick）。超时即收尾，保证仿真一定能结束。 */
     private static final long PARK_GRACE_TICKS = 400;
 
-    /** 严格容量下连续没有任务完成多久判定为死锁。 */
-    private static final long DEADLOCK_TIMEOUT_TICKS = 2000;
-
     private final RoadNet net;
     private final List<Task> allTasks;
     private final SimConfig config;
@@ -54,16 +48,12 @@ public final class SimulationEngine {
     private final ReservationTable reservations = new ReservationTable();
     private final Map<String, Agv> agvs = new LinkedHashMap<>();
     private final List<Task> pending = new ArrayList<>();
-    private final Map<String, String> edgeOwner = new HashMap<>();
     private final List<String> chargers;
-    private final Random random;
 
     private long tick;
     private int completedTasks;
     private long makespan;
     private long tasksDoneTick = -1;
-    private long lastTaskDoneTick;
-    private boolean deadlocked;
     private double totalPathLen;
     private long totalWaitTicks;
     private int conflictCount;
@@ -86,7 +76,6 @@ public final class SimulationEngine {
         }
         this.net = net;
         this.config = config;
-        this.random = new Random(config.seed());
         this.allTasks = new ArrayList<>(tasks == null ? List.of() : tasks);
         this.allTasks.sort(Comparator.comparingInt(Task::id));
         this.assigner = TaskAssigners.of(config.algorithm(), net, planner);
@@ -104,6 +93,25 @@ public final class SimulationEngine {
         }
         this.pending.addAll(allTasks);
 
+        placeAgvs();
+    }
+
+    private void validateTask(Task task) {
+        if (net.node(task.from()) == null) {
+            throw new IllegalArgumentException("任务 " + task.id() + " 的起点不存在：" + task.from());
+        }
+        if (net.node(task.to()) == null) {
+            throw new IllegalArgumentException("任务 " + task.id() + " 的终点不存在：" + task.to());
+        }
+        if (!planner.plan(net, task.from(), task.to()).found()) {
+            throw new IllegalArgumentException("任务 " + task.id() + " 的起终点不可达：" + task.from() + " → " + task.to());
+        }
+    }
+
+    /**
+     * 把车辆分散停到充电位上，并给每个充电位留一个过道位：停满会把单环切断。
+     */
+    private void placeAgvs() {
         List<String> slots = new ArrayList<>();
         int assigned = 0;
         int round = 0;
@@ -113,7 +121,7 @@ public final class SimulationEngine {
                 if (slots.size() >= config.agvCount()) {
                     break;
                 }
-                if (round < nodeCapacity(charger)) {
+                if (round < parkingCapacity(charger)) {
                     slots.add(charger);
                     assigned++;
                     progressed = true;
@@ -134,18 +142,6 @@ public final class SimulationEngine {
             Agv agv = new Agv("AGV-" + (i + 1), i + 1, charger);
             agvs.put(agv.id, agv);
             reservations.reserve(agv.id, charger, 0, Interval.FOREVER);
-        }
-    }
-
-    private void validateTask(Task task) {
-        if (net.node(task.from()) == null) {
-            throw new IllegalArgumentException("任务 " + task.id() + " 的起点不存在：" + task.from());
-        }
-        if (net.node(task.to()) == null) {
-            throw new IllegalArgumentException("任务 " + task.id() + " 的终点不存在：" + task.to());
-        }
-        if (!planner.plan(net, task.from(), task.to()).found()) {
-            throw new IllegalArgumentException("任务 " + task.id() + " 的起终点不可达：" + task.from() + " → " + task.to());
         }
     }
 
@@ -176,10 +172,6 @@ public final class SimulationEngine {
             }
         }
 
-        if (tick % 10 == 0) {
-            detectWaitCycle(events);
-        }
-
         totalWaitTicks += agvs.values().stream().filter(a -> a.status == AgvStatus.WAITING).count();
         if (!metricsFrozen && tasksDoneTick == tick) {
             frozenPathLen = totalPathLen;
@@ -188,14 +180,6 @@ public final class SimulationEngine {
             metricsFrozen = true;
         }
         updateFinished(events);
-        if (!finished && completedTasks < allTasks.size()
-                && tick - lastTaskDoneTick >= DEADLOCK_TIMEOUT_TICKS) {
-            deadlocked = true;
-            finished = true;
-            events.add(new SimEvent(tick, "-", SimEvent.Type.FINISHED, "-",
-                    "检测到死锁：连续 " + DEADLOCK_TIMEOUT_TICKS + " tick 没有任务完成，完成 "
-                            + completedTasks + "/" + allTasks.size(), -1));
-        }
         return frame(events);
     }
 
@@ -208,7 +192,7 @@ public final class SimulationEngine {
         // 路径长由逐 tick 累加得到，避免把浮点尾差带进报表
         double roundedLength = Math.round(reportedPathLen() * 10.0) / 10.0;
         return new SimulationResult(makespan, roundedLength, reportedWaitTicks(),
-                reportedConflictCount(), completedTasks, avgDeliveryTick(), finished, deadlocked, tick);
+                reportedConflictCount(), completedTasks, avgDeliveryTick(), finished, tick);
     }
 
     public List<AgvSnapshot> snapshots() {
@@ -219,12 +203,13 @@ public final class SimulationEngine {
         return finished;
     }
 
-    public boolean deadlocked() {
-        return deadlocked;
-    }
-
     public long tick() {
         return tick;
+    }
+
+    /** 最大推进步数；超过即视为异常终止，避免调度线程无限空转。 */
+    public long maxTicks() {
+        return config.maxTicks();
     }
 
     public SimFrame.Metrics metrics() {
@@ -275,10 +260,6 @@ public final class SimulationEngine {
     private void arrive(Agv agv, List<SimEvent> events) {
         Arc arc = agv.currentArc;
         reservations.release(arc.id(), agv.id);
-        if (agv.id.equals(edgeOwner.get(arc.edgeId()))) {
-            edgeOwner.remove(arc.edgeId());
-        }
-        agv.lastArc = arc;
         agv.currentArc = null;
         agv.s = 0;
         agv.currentNode = arc.to();
@@ -286,31 +267,6 @@ public final class SimulationEngine {
     }
 
     private void afterNodeArrival(Agv agv, List<SimEvent> events) {
-        if (agv.yielding) {
-            if (agv.currentNode.equals(agv.yieldStation)) {
-                // 从缓存位回到工位，恢复让位前的剩余路径，避免重新规划后又撞回同一个瓶颈
-                agv.yielding = false;
-                agv.yieldStation = null;
-                agv.yieldBuffer = null;
-                if (agv.yieldPath != null) {
-                    agv.path.clear();
-                    agv.path.addAll(agv.yieldPath);
-                    agv.yieldPath = null;
-                }
-            } else {
-                // 刚驶入缓存位：停在这里等工位空出来
-                agv.status = AgvStatus.WAITING;
-                agv.waitTicks = 0;
-                return;
-            }
-        }
-        if (agv.retreatGoal != null) {
-            String goal = agv.retreatGoal;
-            agv.retreatGoal = null;
-            agv.path.clear();
-            planAndProceed(agv, goal, events);
-            return;
-        }
         if (!agv.path.isEmpty()) {
             tryEnterNext(agv, events);
             return;
@@ -369,7 +325,6 @@ public final class SimulationEngine {
     private void completeTask(Agv agv, List<SimEvent> events) {
         completedTasks++;
         makespan = tick;
-        lastTaskDoneTick = tick;
         Long assignedTick = assignedTicks.remove(agv.task.id());
         if (assignedTick != null) {
             deliveryTicksSum += tick - assignedTick;
@@ -431,12 +386,7 @@ public final class SimulationEngine {
             afterNodeArrival(agv, events);
             return;
         }
-        PathResult result = planner.plan(net, agv.currentNode, goal, agv.bannedEdges);
-        if (!result.found() && !agv.bannedEdges.isEmpty()) {
-            // 禁行只是"尽量绕开"的提示；绕不出去时必须放弃禁行，否则会永久卡死
-            agv.bannedEdges.clear();
-            result = planner.plan(net, agv.currentNode, goal, agv.bannedEdges);
-        }
+        PathResult result = planner.plan(net, agv.currentNode, goal);
         if (!result.found()) {
             // 起终点在设计期已校验可达，这里只可能是临时封锁导致，降级为等待；保留节点预约
             agv.status = AgvStatus.WAITING;
@@ -455,8 +405,6 @@ public final class SimulationEngine {
             return true;
         }
         Arc next = agv.path.peek();
-        boolean dualLane = isDualLane(next);
-        String destNode = next.to();
         long travel = travelTicks(next);
         long enter = tick;
         long arrival = tick + travel;
@@ -464,15 +412,8 @@ public final class SimulationEngine {
         String blockedReason = blockedReason(agv, next);
 
         if (blockedReason != null) {
-            // 路口是临界区：等待时保持占用，避免车还停在路口却把资源让给后车。
-            // 非路口只有在「另一台车确实要进这个节点」时才让位；否则留在原地并保留预约，
-            // 避免对下游路段的阻塞也做无意义的工位 ↔ 缓存位往返。
-            if (!isJunction(agv.currentNode) && yieldToBuffer(agv, events)) {
-                return false;
-            }
             // 严格容量：没有真的离开节点就不释放预约，避免「车还在工位上、预约已经让给别人」
-            // 造成的物理超容。缓存位被占时，车就在原地等待，后面的车按容量排队。
-            // 让位是真实移动，不是停车；只有真正进入 WAITING 才记一次冲突。
+            // 造成的物理超容。等待只会形成队列，不会成环。
             if (agv.status != AgvStatus.WAITING) {
                 conflictCount++;
                 events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_CONFLICT,
@@ -480,16 +421,13 @@ public final class SimulationEngine {
             }
             agv.status = AgvStatus.WAITING;
             agv.wantedEdgeId = next.edgeId();
-            agv.wantedNodeId = destNode;
+            agv.wantedNodeId = next.to();
             return false;
         }
 
         releaseCurrentNode(agv);
         reservations.reserve(agv.id, next.id(), enter, arcExit);
-        reservations.reserve(agv.id, destNode, arrival, Interval.FOREVER);
-        if (!dualLane) {
-            edgeOwner.put(next.edgeId(), agv.id);
-        }
+        reservations.reserve(agv.id, next.to(), arrival, Interval.FOREVER);
 
         agv.path.poll();
         agv.currentArc = next;
@@ -498,23 +436,17 @@ public final class SimulationEngine {
         agv.waitTicks = 0;
         agv.wantedEdgeId = null;
         agv.wantedNodeId = null;
-        agv.bannedEdges.clear();
         return true;
     }
 
-    /** 进入下一条弧前要同时满足的三类预约；返回 null 表示可以进入。 */
+    /** 进入下一条弧前要同时满足两类预约；返回 null 表示可以进入。 */
     private String blockedReason(Agv agv, Arc next) {
         long travel = travelTicks(next);
-        long enter = tick;
         long arrival = tick + travel;
         long arcExit = arrival + 1;
         String destNode = next.to();
 
-        String owner = isDualLane(next) ? null : edgeOwner.get(next.edgeId());
-        if (owner != null && !owner.equals(agv.id)) {
-            return "路段 " + next.edgeId() + " 已被 " + owner + " 占用（相向冲突）";
-        }
-        if (!reservations.canReserve(next.id(), enter, arcExit, capacityOf(next), agv.id)) {
+        if (!reservations.canReserve(next.id(), tick, arcExit, 1, agv.id)) {
             return "弧 " + next.id() + " 容量已满（追尾冲突）";
         }
         if (!reservations.canReserve(destNode, arrival, Interval.FOREVER,
@@ -526,304 +458,7 @@ public final class SimulationEngine {
 
     private void onWaiting(Agv agv, List<SimEvent> events) {
         agv.waitTicks++;
-        if (agv.yielding) {
-            tryLeaveBuffer(agv);
-            return;
-        }
-        if (agv.waitTicks > 0 && agv.waitTicks % Math.max(1, config.waitTimeoutTicks()) == 0) {
-            replanWithDetour(agv, events);
-            return;
-        }
         tryEnterNext(agv, events);
-    }
-
-    private void replanWithDetour(Agv agv, List<SimEvent> events) {
-        Arc wanted = agv.path.peek();
-        if (wanted == null) {
-            return;
-        }
-        String goal = currentGoal(agv);
-        if (goal == null) {
-            return;
-        }
-        Set<String> blocked = new HashSet<>(agv.bannedEdges);
-        blocked.add(wanted.edgeId());
-        PathResult result = planner.plan(net, agv.currentNode, goal, blocked);
-        if (result.found() && !result.arcs().isEmpty()) {
-            agv.path.clear();
-            agv.path.addAll(result.arcs());
-            agv.bannedEdges.add(wanted.edgeId());
-            agv.waitTicks = 0;
-            events.add(new SimEvent(tick, agv.id, SimEvent.Type.REPLAN,
-                    wanted.id(), "等待超时，绕行重规划", taskIdOf(agv)));
-        } else {
-            agv.waitTicks = 0;
-            if (!agv.bannedEdges.isEmpty()) {
-                agv.bannedEdges.clear();
-            }
-        }
-    }
-
-    private String currentGoal(Agv agv) {
-        if (agv.task != null) {
-            return agv.leg == Leg.PICKUP ? agv.task.from() : agv.task.to();
-        }
-        if (agv.returning) {
-            if (completedTasks < allTasks.size()) {
-                return nearestCharger(agv.currentNode, Set.of());
-            }
-            return nearestChargerWithRoom(agv);
-        }
-        return null;
-    }
-
-    /**
-     * 等待环检测：把"我在等谁"建成有向图，有环就让环上编号最小的车禁掉争议路段并重规划。
-     * 这是兜底手段，正常情况下优先级让行已经避免了环。
-     */
-    private void detectWaitCycle(List<SimEvent> events) {
-        Map<String, Set<String>> waitFor = new LinkedHashMap<>();
-        for (Agv agv : agvs.values()) {
-            if (agv.status != AgvStatus.WAITING || agv.path.isEmpty()) {
-                continue;
-            }
-            Arc next = agv.path.peek();
-            Set<String> blockers = new HashSet<>();
-            if (!isDualLane(next)) {
-                String owner = edgeOwner.get(next.edgeId());
-                if (owner != null) {
-                    blockers.add(owner);
-                }
-            }
-            blockers.addAll(reservations.holdersAt(next.id(), tick));
-            blockers.addAll(reservations.holdersAt(next.to(), tick));
-            blockers.remove(agv.id);
-            waitFor.put(agv.id, blockers);
-        }
-        if (waitFor.isEmpty()) {
-            return;
-        }
-        for (String start : waitFor.keySet()) {
-            List<String> cycle = findCycle(start, waitFor);
-            if (cycle.isEmpty()) {
-                continue;
-            }
-            // 结构性保证：边的持有者一定是行驶中的车，会有限时间内释放，因此环不会长期存在。
-            // 这里保留环检测作为诊断与论文中的兜底说明，检出后让编号最小的车带禁行约束重规划。
-            Agv first = cycle.stream()
-                    .map(agvs::get)
-                    .min(Comparator.comparingInt(a -> a.priority))
-                    .orElse(null);
-            if (first == null || first.path.isEmpty()) {
-                return;
-            }
-            Arc wanted = first.path.peek();
-            first.bannedEdges.add(wanted.edgeId());
-            first.waitTicks = 0;
-            events.add(new SimEvent(tick, first.id, SimEvent.Type.DEADLOCK_BREAK,
-                    wanted.id(), "检测到等待环，尝试倒车让行", taskIdOf(first)));
-            if (!tryRetreat(first, events)) {
-                // 严格容量下不把脚下的路口让给后车；倒车不可行时只重规划，实在无路可走由死锁超时收尾。
-                replanWithDetour(first, events);
-            }
-            return;
-        }
-    }
-
-    /**
-     * 让位到相邻缓存位：把工位空出来，车停在缓存位等工位重新可用。
-     *
-     * <p>只有缓存位与连接边同时空闲时才可行；否则返回 false，退回「逻辑让位」。
-     * 驶入与驶出都是真实移动，里程照常累加。
-     */
-    private boolean yieldToBuffer(Agv agv, List<SimEvent> events) {
-        if (agv.yielding) {
-            return false;
-        }
-        String station = agv.currentNode;
-        String buffer = adjacentFreeBuffer(station);
-        if (buffer == null) {
-            return false;
-        }
-        Arc out = arcFromTo(station, buffer);
-        if (out == null) {
-            return false;
-        }
-        long travel = travelTicks(out);
-        long arrival = tick + travel;
-
-        releaseCurrentNode(agv);
-        reservations.reserve(agv.id, out.id(), tick, arrival + 1);
-        reservations.reserve(agv.id, buffer, arrival, Interval.FOREVER);
-        if (!isDualLane(out)) {
-            edgeOwner.put(out.edgeId(), agv.id);
-        }
-
-        agv.yieldPath = new ArrayDeque<>(agv.path);
-        agv.path.clear();
-        agv.wantedEdgeId = null;
-        agv.wantedNodeId = null;
-        agv.currentArc = out;
-        agv.s = 0;
-        agv.status = AgvStatus.MOVING;
-        agv.yielding = true;
-        agv.yieldStation = station;
-        agv.yieldBuffer = buffer;
-        events.add(new SimEvent(tick, agv.id, SimEvent.Type.YIELD_BUFFER, buffer,
-                "驶入缓存位 " + buffer + " 让开工位 " + station, taskIdOf(agv)));
-        return true;
-    }
-
-    /** 从缓存位回工位：工位与连接边同时可预约才走，否则继续等。 */
-    private void tryLeaveBuffer(Agv agv) {
-        String station = agv.yieldStation;
-        String buffer = agv.yieldBuffer;
-        if (station == null || buffer == null) {
-            agv.yielding = false;
-            return;
-        }
-        if (!reservations.canReserve(station, tick, Interval.FOREVER, nodeCapacity(station), agv.id)) {
-            return;
-        }
-        Arc back = arcFromTo(buffer, station);
-        if (back == null) {
-            return;
-        }
-        long travel = travelTicks(back);
-        long arrival = tick + travel;
-        String owner = isDualLane(back) ? null : edgeOwner.get(back.edgeId());
-        if (owner != null && !owner.equals(agv.id)) {
-            return;
-        }
-        if (!reservations.canReserve(back.id(), tick, arrival + 1, capacityOf(back), agv.id)) {
-            return;
-        }
-        // 只放开工位不够：下一段还走不了就回工位，会立刻引发第二次让位。
-        Arc next = agv.yieldPath == null ? null : agv.yieldPath.peek();
-        if (next != null && blockedReason(agv, next) != null) {
-            return;
-        }
-        reservations.release(buffer, agv.id);
-        reservations.reserve(agv.id, station, arrival, Interval.FOREVER);
-        reservations.reserve(agv.id, back.id(), tick, arrival + 1);
-        if (!isDualLane(back)) {
-            edgeOwner.put(back.edgeId(), agv.id);
-        }
-        agv.currentArc = back;
-        agv.s = 0;
-        agv.status = AgvStatus.MOVING;
-        agv.waitTicks = 0;
-    }
-
-    /** 工位旁空闲且可进入的缓存位；没有返回 null。 */
-    private String adjacentFreeBuffer(String station) {
-        for (Arc arc : net.arcsFrom(station)) {
-            NetNode node = net.node(arc.to());
-            if (node == null || node.type() != NodeType.BUFFER) {
-                continue;
-            }
-            if (arcFromTo(node.id(), station) == null) {
-                continue;
-            }
-            if (!reservations.canReserve(node.id(), tick, Interval.FOREVER, nodeCapacity(node.id()))) {
-                continue;
-            }
-            String owner = isDualLane(arc) ? null : edgeOwner.get(arc.edgeId());
-            if (owner != null) {
-                continue;
-            }
-            if (!reservations.canReserve(arc.id(), tick, tick + travelTicks(arc) + 1, capacityOf(arc))) {
-                continue;
-            }
-            return node.id();
-        }
-        return null;
-    }
-
-    private Arc arcFromTo(String from, String to) {
-        for (Arc arc : net.arcsFrom(from)) {
-            if (arc.to().equals(to)) {
-                return arc;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 倒车让行：退回到来时的那条弧，把当前节点让给对方。
-     * 单车道走廊上两车互不相让时，这是唯一能打破僵局的动作。
-     */
-    private boolean tryRetreat(Agv agv, List<SimEvent> events) {
-        Arc last = agv.lastArc;
-        if (last == null) {
-            return false;
-        }
-        String reverseId = last.id().endsWith("+") ? last.edgeId() + "-" : last.edgeId() + "+";
-        Arc reverse = net.arc(reverseId);
-        if (reverse == null) {
-            return false;
-        }
-        String owner = isDualLane(reverse) ? null : edgeOwner.get(reverse.edgeId());
-        if (owner != null && !owner.equals(agv.id)) {
-            return false;
-        }
-        long travel = travelTicks(reverse);
-        long arrival = tick + travel;
-        long arcExit = arrival + 1;
-        if (!reservations.canReserve(reverse.id(), tick, arcExit, capacityOf(reverse), agv.id)) {
-            return false;
-        }
-        if (!reservations.canReserve(reverse.to(), arrival, Interval.FOREVER,
-                nodeCapacity(reverse.to()), agv.id)) {
-            return false;
-        }
-
-        String goal = currentGoal(agv);
-        releaseCurrentNode(agv);
-        reservations.reserve(agv.id, reverse.id(), tick, arcExit);
-        reservations.reserve(agv.id, reverse.to(), arrival, Interval.FOREVER);
-        if (!isDualLane(reverse)) {
-            edgeOwner.put(reverse.edgeId(), agv.id);
-        }
-
-        agv.path.clear();
-        agv.currentArc = reverse;
-        agv.s = 0;
-        agv.status = AgvStatus.MOVING;
-        agv.lastArc = null;
-        agv.retreatGoal = goal;
-        agv.waitTicks = 0;
-        events.add(new SimEvent(tick, agv.id, SimEvent.Type.DEADLOCK_BREAK,
-                reverse.id(), "倒车让行至 " + reverse.to(), taskIdOf(agv)));
-        return true;
-    }
-
-    private List<String> findCycle(String start, Map<String, Set<String>> graph) {
-        List<String> path = new ArrayList<>();
-        Set<String> visiting = new HashSet<>();
-        return dfsCycle(start, start, graph, path, visiting);
-    }
-
-    private List<String> dfsCycle(String current, String target, Map<String, Set<String>> graph,
-                                  List<String> path, Set<String> visiting) {
-        if (!visiting.add(current)) {
-            return List.of();
-        }
-        path.add(current);
-        for (String next : graph.getOrDefault(current, Set.of())) {
-            if (next.equals(target)) {
-                return new ArrayList<>(path);
-            }
-            if (graph.containsKey(next)) {
-                List<String> found = dfsCycle(next, target, graph, path, visiting);
-                if (!found.isEmpty()) {
-                    return found;
-                }
-            }
-        }
-        path.remove(path.size() - 1);
-        visiting.remove(current);
-        return List.of();
     }
 
     // ---------------------------------------------------------------- 收尾
@@ -844,7 +479,7 @@ public final class SimulationEngine {
     }
 
     private SimFrame frame(List<SimEvent> events) {
-        return new SimFrame(tick, snapshots(), events, finished, deadlocked, metrics());
+        return new SimFrame(tick, snapshots(), events, finished, metrics());
     }
 
     private AgvSnapshot snapshot(Agv agv) {
@@ -879,19 +514,6 @@ public final class SimulationEngine {
         return Math.max(1, (long) Math.ceil(seconds / config.deltaSeconds()));
     }
 
-    private int capacityOf(Arc arc) {
-        NetEdge edge = net.edge(arc.edgeId());
-        if (edge == null) {
-            return 1;
-        }
-        return edge.isDualLane() ? Math.max(1, edge.capacity()) : 1;
-    }
-
-    private boolean isDualLane(Arc arc) {
-        NetEdge edge = net.edge(arc.edgeId());
-        return edge != null && edge.isDualLane();
-    }
-
     private int nodeCapacity(String nodeId) {
         NetNode node = net.node(nodeId);
         return node == null ? 1 : Math.max(1, node.capacity());
@@ -911,45 +533,20 @@ public final class SimulationEngine {
     }
 
     /**
-     * 回充选位。任务还在执行时沿用原来的最近充电位，避免回充车流改变任务阶段的路径与指标；
-     * 全部任务完成后才按剩余容量选位，保证最后一台车不会一直等一个已经停满的充电位。
+     * 回充选位：只挑还有过道位的充电位。停满的充电位会把单环切断，
+     * 所以「能停」的门槛是 capacity − 1，不是 capacity。
      */
     private String nearestChargerForReturn(Agv agv) {
-        if (completedTasks < allTasks.size()) {
-            return nearestFreeCharger(agv.currentNode);
-        }
-        return nearestChargerWithRoom(agv);
+        return nearestChargerWithParking(agv.currentNode, agv.id);
     }
 
-    /** 任务阶段沿用原来的「最近空充电位」选法，保持论文的任务阶段数据不变。 */
-    private String nearestFreeCharger(String fromNode) {
-        String best = null;
-        double bestCost = Double.POSITIVE_INFINITY;
-        for (String charger : chargers) {
-            if (!charger.equals(fromNode) && !reservations.isFree(charger)) {
-                continue;
-            }
-            PathResult result = planner.plan(net, fromNode, charger);
-            if (result.found() && result.costSeconds() < bestCost) {
-                bestCost = result.costSeconds();
-                best = charger;
-            }
-        }
-        return best != null ? best : nearestCharger(fromNode, Set.of());
-    }
-
-    /**
-     * 就近挑一个还有剩余容量的充电位。不能只看 {@code isFree()}：容量 4 的充电位停了 3 台仍可再进一台，
-     * 否则最后一台车会一直排队等一个永远不满的空位。全部满时才退回最近的充电位排队。
-     */
-    private String nearestChargerWithRoom(Agv agv) {
-        String fromNode = agv.currentNode;
+    private String nearestChargerWithParking(String fromNode, String agvId) {
         String best = null;
         double bestCost = Double.POSITIVE_INFINITY;
         for (String charger : chargers) {
             if (!charger.equals(fromNode)
                     && !reservations.canReserve(charger, tick, Interval.FOREVER,
-                    nodeCapacity(charger), agv.id)) {
+                    parkingCapacity(charger), agvId)) {
                 continue;
             }
             PathResult result = planner.plan(net, fromNode, charger);
@@ -958,20 +555,25 @@ public final class SimulationEngine {
                 best = charger;
             }
         }
-        return best != null ? best : nearestCharger(fromNode, Set.of());
+        return best != null ? best : nearestCharger(fromNode);
     }
 
-    private String nearestCharger(String fromNode, Set<String> blocked) {
+    private String nearestCharger(String fromNode) {
         String best = null;
         double bestCost = Double.POSITIVE_INFINITY;
         for (String charger : chargers) {
-            PathResult result = planner.plan(net, fromNode, charger, blocked);
+            PathResult result = planner.plan(net, fromNode, charger);
             if (result.found() && result.costSeconds() < bestCost) {
                 bestCost = result.costSeconds();
                 best = charger;
             }
         }
         return best;
+    }
+
+    /** 充电位可停车位：留一个过道位，避免停满后切断单环。 */
+    private int parkingCapacity(String chargerId) {
+        return Math.max(0, nodeCapacity(chargerId) - 1);
     }
 
     private enum Leg {
@@ -983,7 +585,6 @@ public final class SimulationEngine {
         final int priority;
         String currentNode;
         Arc currentArc;
-        Arc lastArc;
         double s;
         Deque<Arc> path = new ArrayDeque<>();
         Task task;
@@ -993,38 +594,14 @@ public final class SimulationEngine {
         int waitTicks;
         String wantedEdgeId;
         String wantedNodeId;
-        String retreatGoal;
-        boolean yielding;
-        String yieldStation;
-        String yieldBuffer;
-        /** 让位前的剩余路径；回到工位后恢复。 */
-        Deque<Arc> yieldPath;
         boolean returning;
         double totalDistance;
-        final Set<String> bannedEdges = new HashSet<>();
 
         Agv(String id, int priority, String currentNode) {
             this.id = id;
             this.priority = priority;
             this.currentNode = currentNode;
         }
-    }
-
-    /** 便于测试与调试：当前所有 AGV 状态。 */
-    public List<String> debugStates() {
-        List<String> list = new ArrayList<>();
-        for (Agv agv : agvs.values()) {
-            list.add(agv.id + ":" + agv.status
-                    + "@" + (agv.currentArc == null ? agv.currentNode : agv.currentArc.id())
-                    + "[task=" + (agv.task == null ? "-" : agv.task.id())
-                    + ",leg=" + agv.leg
-                    + ",path=" + agv.path.stream().map(Arc::id).toList()
-                    + ",want=" + agv.wantedEdgeId
-                    + ",ret=" + agv.returning
-                    + ",ban=" + agv.bannedEdges
-                    + "]");
-        }
-        return list;
     }
 
     public Optional<Task> taskOf(String agvId) {

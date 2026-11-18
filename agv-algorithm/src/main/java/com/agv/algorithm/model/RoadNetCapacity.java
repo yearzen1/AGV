@@ -34,7 +34,12 @@ public final class RoadNetCapacity {
         return best == Long.MAX_VALUE ? Integer.MAX_VALUE : (int) Math.min(Integer.MAX_VALUE, best);
     }
 
-    /** 车队上限 = min(加权环容量 − 1, 充电位容量之和)。 */
+    /**
+     * 车队上限 = min(加权环容量 − 1, 充电位可停车位)。
+     * <p>
+     * 充电位在环上，停满会把这个节点变成一堵墙，整条单环被切断，后面的车永远过不去。
+     * 所以每个充电位要留一个过道位，可停车位 = capacity − 1。
+     */
     public static int maxAgvCount(RoadNet net) {
         if (net == null || net.isEmpty()) {
             return 0;
@@ -43,21 +48,23 @@ public final class RoadNetCapacity {
         int structural = cycleCapacity == Integer.MAX_VALUE
                 ? Integer.MAX_VALUE
                 : Math.max(0, cycleCapacity - 1);
-        return Math.min(structural, chargerCapacitySum(net));
+        return Math.min(structural, parkingSlots(net));
     }
 
-    /** 所有充电位容量之和：车辆开始和结束都停在这里。 */
-    public static int chargerCapacitySum(RoadNet net) {
+    /**
+     * 可停车位：每个充电位留一个过道位，避免停满后切断单环。
+     */
+    public static int parkingSlots(RoadNet net) {
         if (net == null) {
             return 0;
         }
-        int sum = 0;
+        int slots = 0;
         for (NetNode node : net.nodes().values()) {
             if (node.type() == NodeType.CHARGER) {
-                sum += Math.max(1, node.capacity());
+                slots += Math.max(0, node.capacity() - 1);
             }
         }
-        return sum;
+        return slots;
     }
 
     /**

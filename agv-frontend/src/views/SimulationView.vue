@@ -47,7 +47,6 @@ const status = ref<SimStatus | null>(null)
 const tick = ref(0)
 const running = ref(false)
 const finished = ref(false)
-const deadlocked = ref(false)
 const paused = ref(false)
 /** 已发出启动请求但还没拿到响应：此期间的帧仍属于本次运行，不能丢。 */
 const starting = ref(false)
@@ -96,11 +95,8 @@ const simState = computed(() => {
       : { label: '运行中', type: 'success' as const }
   }
   if (finished.value) {
-    if (deadlocked.value) {
-      return { label: '死锁 / 未完成', type: 'danger' as const }
-    }
     return status.value?.status === 'FAILED'
-      ? { label: '仿真失败', type: 'danger' as const }
+      ? { label: '未跑完', type: 'danger' as const }
       : { label: '已完成', type: 'info' as const }
   }
   return null
@@ -156,9 +152,6 @@ const eventTypeLabel: Record<string, string> = {
   LOADING: '装货',
   TASK_DONE: '任务完成',
   WAIT_CONFLICT: '冲突等待',
-  YIELD_BUFFER: '让位缓存',
-  REPLAN: '重规划',
-  DEADLOCK_BREAK: '打破僵局',
   CHARGING: '回充',
   FINISHED: '结束'
 }
@@ -200,7 +193,7 @@ const untrackedDone = computed(
   () => Math.max(0, taskCounts.value.done - taskRows.value.filter((row) => row.state === 'done').length)
 )
 
-/** 节点占用：区分「预约占用」与「让位等待」，前者才是容量约束的对象。 */
+/** 节点占用：严格容量下，停在节点上的车都保留预约。 */
 const nodeRows = computed(() => {
   const cars = new Map<string, AgvSnapshot[]>()
   for (const agv of agvs.value) {
@@ -214,16 +207,12 @@ const nodeRows = computed(() => {
     .map(([id, list]) => {
       const capacity = nodeCapacity.value.get(id) ?? 1
       const type = nodeTypes.value.get(id) ?? ''
-      // 路口等待时保持预约；非路口等待时已让出预约（引擎为避免等待环主动释放）。
-      const reserved = list.filter((agv) => agv.status !== 'WAITING' || type === 'JUNCTION').length
-      const yielded = list.length - reserved
       return {
         id,
-        reserved,
-        yielded,
+        reserved: list.length,
         capacity,
         type: nodeTypeLabel[type] ?? '节点',
-        full: reserved >= capacity
+        full: list.length >= capacity
       }
     })
 })
@@ -319,13 +308,11 @@ function connectSocket() {
         if (frame.finished) {
           running.value = false
           finished.value = true
-          deadlocked.value = !!frame.deadlocked
         }
       } else if (payload.type === 'status' || payload.type === 'connected') {
         if (payload.type === 'status') {
           status.value = payload as SimStatus
           paused.value = !!payload.paused
-          deadlocked.value = !!payload.deadlocked
           if (payload.status === 'FINISHED' || payload.status === 'FAILED') {
             running.value = false
             finished.value = true
@@ -397,7 +384,6 @@ async function syncStatus() {
     status.value = current
     running.value = current.status === 'RUNNING'
     finished.value = current.status !== 'RUNNING'
-    deadlocked.value = !!current.deadlocked
     paused.value = current.paused
     speed.value = current.speed
     tick.value = current.tick
@@ -431,7 +417,6 @@ async function start() {
   metrics.value = null
   tick.value = 0
   finished.value = false
-  deadlocked.value = false
   paused.value = false
   selectedAgvId.value = null
   highlightNodeId.value = null
@@ -479,7 +464,6 @@ async function reset() {
     await resetSim()
     running.value = false
     finished.value = false
-    deadlocked.value = false
     paused.value = false
     agvs.value = []
     events.value = []
@@ -859,12 +843,11 @@ onBeforeUnmount(() => {
                 <div v-if="nodeRows.length === 0" class="muted">
                   当前没有车停靠在节点上；在弧上行驶的车不计入节点占用
                 </div>
-                <div class="node-hint muted">「预约 / 容量」超过容量才是异常；「让位」是已让出预约、但还没挪走的车</div>
+                <div class="node-hint muted">「预约 / 容量」超过容量才是异常；严格容量下停靠数不会超过容量</div>
                 <div v-for="row in nodeRows" :key="row.id" class="node-row"
                   :class="{ selected: highlightNodeId === row.id }" @click="onSelectNode(row.id)">
                   <span class="node-id">{{ row.id }}</span>
                   <span class="muted">{{ row.type }}</span>
-                  <span v-if="row.yielded > 0" class="node-yielded">让位 {{ row.yielded }}</span>
                   <span class="node-usage" :class="{ full: row.full }">
                     {{ row.reserved }} / {{ row.capacity }}
                   </span>
@@ -1146,15 +1129,6 @@ onBeforeUnmount(() => {
   margin-left: auto;
   font-family: Consolas, monospace;
   color: #606266;
-}
-
-.node-yielded {
-  margin-left: auto;
-  padding: 0 6px;
-  border-radius: 8px;
-  background: #fdf6ec;
-  color: #e6a23c;
-  font-size: 11px;
 }
 
 .node-hint {

@@ -46,7 +46,6 @@ final class SimulationRunner {
     private volatile boolean paused;
     private volatile double speed = 1.0;
     private volatile String status = "RUNNING";
-    private volatile boolean deadlocked;
     private volatile long tick;
     private volatile SimFrame.Metrics lastMetrics;
 
@@ -113,7 +112,6 @@ final class SimulationRunner {
         abortExperiment(state);
         status = "IDLE";
         paused = false;
-        deadlocked = false;
         engine = null;
         lastMetrics = null;
         tick = 0;
@@ -128,7 +126,6 @@ final class SimulationRunner {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("status", status);
         payload.put("paused", paused);
-        payload.put("deadlocked", deadlocked);
         payload.put("speed", speed);
         payload.put("experimentId", experimentId);
         payload.put("roadnetId", roadnetId);
@@ -170,20 +167,18 @@ final class SimulationRunner {
         if (current == null || current.finished()) {
             return;
         }
+        if (current.tick() >= current.maxTicks()) {
+            log.error("用户 {} 的仿真超过最大推进步数 {}，判定为失败", userId, current.maxTicks());
+            fail(current);
+            return;
+        }
 
         SimFrame frame;
         try {
             frame = current.step();
         } catch (RuntimeException ex) {
             log.error("用户 {} 的仿真推进失败", userId, ex);
-            status = "FAILED";
-            lastMetrics = current.metrics();
-            tick = current.tick();
-            engine = null;
-            // 先推送失败状态，再停调度线程；shutdownNow 会中断当前线程，先停会让这次推送失败并踢掉会话
-            broadcastStatus("failed");
-            abortExperiment("FAILED");
-            stopScheduler();
+            fail(current);
             return;
         }
 
@@ -206,33 +201,40 @@ final class SimulationRunner {
     }
 
     private void finish(SimulationEngine finishedEngine) {
-        boolean deadlocked = finishedEngine.deadlocked();
-        this.deadlocked = deadlocked;
-        status = deadlocked ? "FAILED" : "FINISHED";
+        status = "FINISHED";
         tick = finishedEngine.tick();
         lastMetrics = finishedEngine.metrics();
         engine = null;
         try {
             Experiment experiment = experimentRepository.findById(experimentId).orElse(null);
             if (experiment != null) {
-                experiment.setStatus(deadlocked ? "FAILED" : "FINISHED");
+                experiment.setStatus("FINISHED");
                 experimentRepository.save(experiment);
-                if (!deadlocked) {
-                    SimFrame.Metrics metrics = lastMetrics;
-                    ExperimentMetric metric = new ExperimentMetric();
-                    metric.setExperimentId(experimentId);
-                    metric.setMakespan(metrics.makespan());
-                    metric.setTotalPathLen(metrics.totalPathLen());
-                    metric.setTotalWaitTick(metrics.totalWaitTick());
-                    metric.setConflictCount(metrics.conflictCount());
-                    metricRepository.save(metric);
-                }
+                SimFrame.Metrics metrics = lastMetrics;
+                ExperimentMetric metric = new ExperimentMetric();
+                metric.setExperimentId(experimentId);
+                metric.setMakespan(metrics.makespan());
+                metric.setTotalPathLen(metrics.totalPathLen());
+                metric.setTotalWaitTick(metrics.totalWaitTick());
+                metric.setConflictCount(metrics.conflictCount());
+                metricRepository.save(metric);
             }
         } catch (RuntimeException ex) {
             log.warn("实验指标落库失败", ex);
         }
         // 必须先推送结束状态再停线程：shutdownNow 会中断当前调度线程，先停会让结束消息推送失败并移除会话
-        broadcastStatus(deadlocked ? "deadlocked" : "finished");
+        broadcastStatus("finished");
+        stopScheduler();
+    }
+
+    /** 推进异常或超过最大步数：落 FAILED，不写指标。 */
+    private void fail(SimulationEngine current) {
+        status = "FAILED";
+        lastMetrics = current.metrics();
+        tick = current.tick();
+        engine = null;
+        broadcastStatus("failed");
+        abortExperiment("FAILED");
         stopScheduler();
     }
 
@@ -283,7 +285,6 @@ final class SimulationRunner {
         message.put("reason", reason);
         message.put("status", "IDLE");
         message.put("paused", false);
-        message.put("deadlocked", false);
         message.put("speed", 1.0);
         message.put("experimentId", null);
         message.put("roadnetId", null);

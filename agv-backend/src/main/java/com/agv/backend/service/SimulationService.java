@@ -188,7 +188,6 @@ public class SimulationService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("status", "IDLE");
         payload.put("paused", false);
-        payload.put("deadlocked", false);
         payload.put("speed", 1.0);
         payload.put("experimentId", null);
         payload.put("roadnetId", null);

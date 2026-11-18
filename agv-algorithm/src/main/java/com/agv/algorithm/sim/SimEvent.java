@@ -22,14 +22,8 @@ public record SimEvent(long tick, String agvId, Type type, String place, String 
         TASK_DONE,
         /** 预约失败开始等待（一次连续等待只记一次） */
         WAIT_CONFLICT,
-        /** 超时重规划 */
-        REPLAN,
-        /** 检测到等待环并强制打破 */
-        DEADLOCK_BREAK,
         /** 回充完成 */
         CHARGING,
-        /** 等待时驶入相邻缓存位让开工位 */
-        YIELD_BUFFER,
         /** 全部任务完成 */
         FINISHED
     }
