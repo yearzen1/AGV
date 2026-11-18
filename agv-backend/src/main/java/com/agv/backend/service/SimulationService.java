@@ -1,6 +1,7 @@
 package com.agv.backend.service;
 
 import com.agv.algorithm.model.RoadNet;
+import com.agv.algorithm.model.RoadNetCapacity;
 import com.agv.algorithm.sim.SimConfig;
 import com.agv.algorithm.sim.SimulationEngine;
 import com.agv.algorithm.sim.Task;
@@ -80,6 +81,7 @@ public class SimulationService {
 
         SimulationEngine engine;
         try {
+            RoadNetCapacity.requireFleetFits(net, count);
             engine = new SimulationEngine(net, tasks, SimConfig.defaults(count, actualSeed, request.algorithm()));
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(4004, "无法启动仿真：" + ex.getMessage());

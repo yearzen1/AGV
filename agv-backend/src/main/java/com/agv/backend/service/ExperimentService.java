@@ -1,6 +1,7 @@
 package com.agv.backend.service;
 
 import com.agv.algorithm.model.RoadNet;
+import com.agv.algorithm.model.RoadNetCapacity;
 import com.agv.algorithm.sim.SimConfig;
 import com.agv.algorithm.sim.SimulationEngine;
 import com.agv.algorithm.sim.SimulationResult;
@@ -104,6 +105,7 @@ public class ExperimentService {
                                     String roadnetJson, String tasksetJson) {
         SimulationResult result;
         try {
+            RoadNetCapacity.requireFleetFits(net, agvCount);
             SimulationEngine engine = new SimulationEngine(net, tasks,
                     SimConfig.defaults(agvCount, seed, algorithm));
             result = engine.runToCompletion();

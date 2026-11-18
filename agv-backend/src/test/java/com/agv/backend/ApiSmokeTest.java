@@ -15,9 +15,13 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -119,6 +123,38 @@ class ApiSmokeTest {
     }
 
     @Test
+    @DisplayName("AGV 数量超过路网车队上限：启动时拦截，不进入运行")
+    void simStartRejectsFleetBeyondRoadNetCap() throws Exception {
+        String token = login("admin", "admin123");
+
+        mockMvc.perform(post("/api/sim/start")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"roadnetId":1,"taskSetId":1,"algorithm":"nearest","agvCount":9}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4004))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("8")));
+    }
+
+    @Test
+    @DisplayName("AGV 数量超过路网车队上限：对比实验同样拦截")
+    void experimentRejectsFleetBeyondRoadNetCap() throws Exception {
+        String token = login("admin", "admin123");
+
+        mockMvc.perform(post("/api/experiment/run")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"roadnetId":1,"taskSetId":1,"algorithm":"nearest","agvCount":9}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(4004))
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("8")));
+    }
+
+    @Test
     @DisplayName("未知调度算法：参数校验拦截")
     void unknownAlgorithmRejected() throws Exception {
         String token = login("admin", "admin123");
@@ -191,7 +227,7 @@ class ApiSmokeTest {
         expectNoValidationErrors(roadnetJson, token);
     }
 
-    /** 预置模板只该有警告（工位让位空间），不该有拦截保存的错误。 */
+    /** 预置模板不该有任何校验结论。 */
     private void expectNoValidationErrors(String roadnetJson, String token) throws Exception {
         String body = mockMvc.perform(post("/api/roadnet/validate")
                         .header("Authorization", "Bearer " + token)
@@ -202,47 +238,45 @@ class ApiSmokeTest {
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
 
         JsonNode findings = objectMapper.readTree(body).path("data");
-        for (JsonNode item : findings) {
-            assertEquals("WARNING", item.path("severity").asText(),
-                    "校验端点不应返回错误：" + item.path("message").asText());
-        }
         assertEquals(0, findings.size(),
-                "预置模板已给每个工位配缓存位，不应再有任何校验结论");
+                "预置模板应完全合法，不应有任何校验结论：" + findings);
     }
 
     @Test
-    @DisplayName("双车道模板已初始化，包含 DUAL 路段并通过校验")
-    void dualLaneTemplateIsValid() throws Exception {
+    @DisplayName("三张预置模板都是单向环，且通过校验")
+    void templatesAreOneWayRings() throws Exception {
         String token = login("admin", "admin123");
         String listResponse = mockMvc.perform(get("/api/roadnet/list")
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
 
-        long dualId = -1;
+        Map<String, Long> idsByName = new LinkedHashMap<>();
         for (JsonNode item : objectMapper.readTree(listResponse).path("data")) {
-            if ("双车道车间（会车演示）".equals(item.path("name").asText())) {
-                dualId = item.path("id").asLong();
-            }
+            idsByName.put(item.path("name").asText(), item.path("id").asLong());
         }
-        assertTrue(dualId > 0, "应存在「双车道车间（会车演示）」模板");
 
-        String detail = mockMvc.perform(get("/api/roadnet/" + dualId)
-                        .header("Authorization", "Bearer " + token))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        JsonNode payload = objectMapper.readTree(detail).path("data");
+        for (String name : List.of("标准车间（单向环）", "直线车间（单向往返环）", "高容量车间（宽工位单向环）")) {
+            Long id = idsByName.get(name);
+            assertNotNull(id, "应存在「" + name + "」模板");
 
-        boolean hasDual = false;
-        for (JsonNode edge : payload.path("edges")) {
-            if ("DUAL".equals(edge.path("laneMode").asText())) {
-                hasDual = true;
-                break;
+            String detail = mockMvc.perform(get("/api/roadnet/" + id)
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+            JsonNode payload = objectMapper.readTree(detail).path("data");
+
+            JsonNode edges = payload.path("edges");
+            assertTrue(edges.size() > 0, name + " 应有路段");
+            for (JsonNode edge : edges) {
+                assertEquals("ONE_WAY", edge.path("direction").asText(),
+                        name + " 的每条路段都必须是单向");
             }
-        }
-        assertTrue(hasDual, "双车道模板至少包含一条 DUAL 路段");
+            assertEquals(payload.path("nodes").size(), edges.size(),
+                    name + " 是单环：节点数与路段数应相等");
 
-        expectNoValidationErrors(objectMapper.writeValueAsString(payload), token);
+            expectNoValidationErrors(objectMapper.writeValueAsString(payload), token);
+        }
     }
 
     @Test
