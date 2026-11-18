@@ -111,7 +111,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 - 鉴权：`Authorization: Bearer <token>`，登录接口 `POST /api/auth/login`。
 - HTTP 状态由业务码决定：`code / 10` 是目标状态码（如 `4012 → 401`、`4040 → 404`、`4090 → 409`），没有对应状态时按 `400` 返回。
 - 路网校验失败返回 `code = 4001`，`data` 是带 `nodeId` / `edgeId` 的错误明细，前端据此标红。
-- `POST /api/roadnet/validate` 返回同一列表，每条带 `severity`：`ERROR` 拦截保存，`WARNING` 只提示（例如 `WORKSTATION_NO_SIDING`）。`code = 4001` 只包含 `ERROR`。
+- `POST /api/roadnet/validate` 返回同一列表，每条带 `severity`：当前所有规则都是 `ERROR`，拦截保存。`code = 4001` 只包含 `ERROR`。
 - 不存在的路径返回 HTTP 404 与 `{ "code": 4040, "message": "接口不存在：<path>" }`，不会返回 500，也不会把异常堆栈暴露给调用方。
 - 未预期的 500 只返回通用文案与请求编号（响应头 `X-Request-Id`），堆栈只写服务端日志。
 - 列表接口默认不强制分页；实验历史与审计日志使用 `page`（从 0 起）和 `size`（1–100，默认 20），返回 `{ total, page, size, records }`。
