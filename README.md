@@ -19,6 +19,7 @@ specs/           实施计划、时间安排、参考文献
 
 - 术语、限界上下文、聚合边界、不变量和状态机：[docs/reference/领域模型与术语.md](docs/reference/领域模型与术语.md)
 - 为什么这样建模、持久化模型与领域模型的偏差：[docs/explanation/领域模型说明.md](docs/explanation/领域模型说明.md)
+- 为什么单向环能保证不死锁、车队上限怎么算：[docs/explanation/结构无死锁设计.md](docs/explanation/结构无死锁设计.md)
 - `WarehouseMap` / `mapId` 等历史命名的分阶段迁移计划：[docs/how-to/统一领域命名.md](docs/how-to/统一领域命名.md)
 - 三维场景的坐标、插值、画质档位与取舍：[docs/explanation/三维场景渲染.md](docs/explanation/三维场景渲染.md)
 
@@ -217,7 +218,7 @@ WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧�
 - 单个会话发送失败只移除该会话并记一条警告，**不会中断仿真**，也不会把仿真状态置为失败。
 - 事件不落库，只在帧里推送；实验结束后仅保存五项汇总指标。
 - 页面刷新或重新进入「仿真运行」时，前端调用 `GET /api/sim/status` 恢复**当前用户**的运行状态；`status` 为 `RUNNING` / `FINISHED` / `FAILED` 时同步启动参数、速度、暂停状态、tick 与指标。`RUNNING`（含暂停）时 `status` 还带当前帧的 `agvs` 快照，刷新后 3D 场景与「车辆状态」不会丢车；结束后返回空数组。
-- 仿真自然结束时会收到 `status = FINISHED` 的状态消息，随后连接保持可用；严格容量下连续 2000 tick 没有任务完成会收到 `status = FAILED` 且 `deadlocked = true`，实验不写五项指标。离开页面会主动断开，意外断开时自动重试 5 次（2/4/8/16/30 秒退避），仍失败则停止重试，可点「重试」手动恢复。
+- 仿真自然结束时会收到 `status = FINISHED` 的状态消息，随后连接保持可用；未跑完（`maxTicks` 耗尽或引擎异常）会收到 `status = FAILED`，实验不写五项指标。离开页面会主动断开，意外断开时自动重试 5 次（2/4/8/16/30 秒退避），仍失败则停止重试，可点「重试」手动恢复。
 - 历史实验列表用 `RUNNING` / `FINISHED` / `FAILED` / `ABORTED` 标记状态；被新仿真替换或手动重置的旧实验记为 `ABORTED`（已中断），未完成实验的汇总指标显示为 `-`。后端重启时，遗留的 `RUNNING` 实验也会在启动时标记为 `ABORTED`。列表时间统一格式化为 `YYYY-MM-DD HH:mm:ss`。
 
 ## 进度
@@ -228,7 +229,7 @@ WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧�
 | P1a 3D 场景渲染 | 已完成 |
 | P1b 画布建图编辑器 | 已完成 |
 | P1c 仿真三维真实感（实体路面、阴影、画质档位、选中跟随） | 已完成 |
-| P2 算法核心（A\* + 时间窗引擎 + 死锁处理） | 已完成 |
+| P2 算法核心（A\* + 逐段预约引擎 + 结构无死锁） | 已完成 |
 | P3 联调（实时推送、暂停调速、事件日志） | 已完成 |
 | P4 调度对比（双算法 + 指标报表 + 历史回看） | 已完成 |
 | P5 管理模块与演示数据 | 已完成 |
@@ -309,7 +310,7 @@ npm run e2e:scene
 
 - `AStarPlannerTest`：直线路网、不可达、封锁绕行、转弯惩罚、与状态空间 Bellman-Ford 对拍
 - `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区
-- `RoadNetValidatorTest`：8 条校验规则
+- `RoadNetValidatorTest`：单向环 12 条校验规则
 - `ApiSmokeTest`：登录、401/403、路网校验拦截、模板校验、错误码映射、实验快照回放、审计查询
 - `ExperimentReplayTest`：同 seed 回放指标一致、缺快照与缺指标的回放拒绝
 - `AuditLogTest`：动作记录、登录失败记录、管理员分页查询与权限拦截
@@ -318,4 +319,4 @@ npm run e2e:scene
 - `JwtHandshakeInterceptorTest`：握手令牌校验与账号状态拦截
 - `MultiUserSimulationTest`：两个用户并发仿真互不干扰，暂停/重置只影响自己
 - `SimulationConcurrencyLimitTest`：并发上限拦截与 4290 错误码
-- `SimulationRegressionTest`：3 台车全部回充、严格容量、5 台死锁停止、让位次数上界、让位不计入冲突
+- `SimulationRegressionTest`：3 台车全部回充、严格容量、单车流不卡死、指标定格口径
