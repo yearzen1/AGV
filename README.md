@@ -310,7 +310,7 @@ npm run e2e:scene
 
 - `AStarPlannerTest`：直线路网、不可达、封锁绕行、转弯惩罚、与状态空间 Bellman-Ford 对拍
 - `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区
-- `RoadNetValidatorTest`：单向环 12 条校验规则
+- `RoadNetValidatorTest`：单向环 11 条校验规则
 - `ApiSmokeTest`：登录、401/403、路网校验拦截、模板校验、错误码映射、实验快照回放、审计查询
 - `ExperimentReplayTest`：同 seed 回放指标一致、缺快照与缺指标的回放拒绝
 - `AuditLogTest`：动作记录、登录失败记录、管理员分页查询与权限拦截
