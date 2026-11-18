@@ -19,7 +19,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
 /**
- * 启动时初始化演示数据：两个角色账号、两本字典、两套路网模板。幂等，重启不会重复插入。
+ * 启动时初始化演示数据：两个角色账号、两本字典、三套单向环路网模板。幂等，重启不会重复插入。
  */
 @Component
 public class DataInitializer implements CommandLineRunner {
@@ -29,7 +29,7 @@ public class DataInitializer implements CommandLineRunner {
     /** 预置数据固定 ID，保持论文与 README 的复现参数 roadnetId=1、taskSetId=1 稳定。 */
     private static final long STANDARD_WORKSHOP_ID = 1L;
     private static final long LINE_WORKSHOP_ID = 2L;
-    private static final long DUAL_LANE_WORKSHOP_ID = 3L;
+    private static final long WIDE_STATION_WORKSHOP_ID = 3L;
     private static final long DEMO_TASK_SET_ID = 1L;
 
     private final SysUserRepository userRepository;
@@ -95,22 +95,25 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     private void seedTemplates() {
-        upsertTemplate("标准车间（双充电位）", RoadNetTemplates.STANDARD_WORKSHOP, STANDARD_WORKSHOP_ID);
-        upsertTemplate("直线车间（快速上手）", RoadNetTemplates.LINE_WORKSHOP, LINE_WORKSHOP_ID);
-        upsertTemplate("双车道车间（会车演示）", RoadNetTemplates.DUAL_LANE_WORKSHOP, DUAL_LANE_WORKSHOP_ID);
+        upsertTemplate(STANDARD_WORKSHOP_ID, "标准车间（单向环）", RoadNetTemplates.STANDARD_WORKSHOP);
+        upsertTemplate(LINE_WORKSHOP_ID, "直线车间（单向往返环）", RoadNetTemplates.LINE_WORKSHOP);
+        upsertTemplate(WIDE_STATION_WORKSHOP_ID, "高容量车间（宽工位单向环）", RoadNetTemplates.WIDE_STATION_WORKSHOP);
     }
 
-    /** 模板按名称幂等更新：已有库也会同步到最新的标准布局。 */
-    private void upsertTemplate(String name, String json, long id) {
-        for (RoadNetEntity map : mapRepository.findAllByOrderByIdAsc()) {
-            if (name.equals(map.getName()) && Boolean.TRUE.equals(map.getIsTemplate())) {
-                if (!json.equals(map.getRoadnetJson())) {
-                    map.setRoadnetJson(json);
-                    mapRepository.save(map);
-                    log.info("更新预置模板 {}", name);
-                }
-                return;
-            }
+    /**
+     * 预置模板按固定 ID 幂等更新：升级后名称和拓扑都会变，先按 ID 命中再覆盖，
+     * 避免按名称查找找不到时插入一条同 ID 的新记录。
+     */
+    private void upsertTemplate(long id, String name, String json) {
+        RoadNetEntity existing = mapRepository.findById(id)
+                .filter(map -> Boolean.TRUE.equals(map.getIsTemplate()))
+                .orElse(null);
+        if (existing != null) {
+            existing.setName(name);
+            existing.setRoadnetJson(json);
+            mapRepository.save(existing);
+            log.info("更新预置模板 {}", name);
+            return;
         }
         mapRepository.save(template(name, json, id));
         log.info("初始化预置模板 {}", name);
@@ -148,7 +151,7 @@ public class DataInitializer implements CommandLineRunner {
 
     private Long standardWorkshopId() {
         for (RoadNetEntity map : mapRepository.findAllByOrderByIdAsc()) {
-            if ("标准车间（双充电位）".equals(map.getName()) && Boolean.TRUE.equals(map.getIsTemplate())) {
+            if ("标准车间（单向环）".equals(map.getName()) && Boolean.TRUE.equals(map.getIsTemplate())) {
                 return map.getId();
             }
         }
