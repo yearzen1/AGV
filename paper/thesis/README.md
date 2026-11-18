@@ -30,7 +30,7 @@ python scripts/capture-figures.mjs    # 需要先启动前后端与无头 Edge�
 | 图 5-5 | `figures/fig-5-5-users.png`、`fig-5-5-dict.png` | 用户管理 / 数字字典 |
 | 图 6-1 | `figures/fig-6-1-roadnet.png` | 标准车间路网（三维） |
 | 图 6-2 | `figures/fig-6-2-line.png` | 完成时间随车队规模变化 |
-| 图 6-3 | `figures/fig-6-3-bars.png` | 6 台配置下五项指标对比 |
+| 图 6-3 | `figures/fig-6-3-bars.png` | 3 台配置下五项指标对比 |
 
 ## 数据来源
 
