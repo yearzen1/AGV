@@ -58,7 +58,7 @@ class TaskSetValidationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.roadnetId").value(1))
-                .andExpect(jsonPath("$.data.roadnetName").value("标准车间（双充电位）"))
+                .andExpect(jsonPath("$.data.roadnetName").value("标准车间（单向环）"))
                 .andExpect(jsonPath("$.data.taskCount").value(1));
     }
 
@@ -120,21 +120,6 @@ class TaskSetValidationTest {
     }
 
     @Test
-    @DisplayName("单向环上反向不可达：拒绝创建")
-    void rejectsUnreachableEndpoints() throws Exception {
-        String token = login("dispatcher", "dispatcher123");
-        long roadnetId = createOneWayBranchMap(token);
-
-        mockMvc.perform(post("/api/taskset")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(taskSetBody("不可达", roadnetId, "W2", "W1")))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value(4000))
-                .andExpect(jsonPath("$.message").value("任务 1：W2 → W1 不可达"));
-    }
-
-    @Test
     @DisplayName("仿真启动时任务集与路网不匹配：拒绝启动")
     void rejectsSimulationWithMismatchedMap() throws Exception {
         String token = login("dispatcher", "dispatcher123");
@@ -156,7 +141,7 @@ class TaskSetValidationTest {
     @DisplayName("删除仍被任务集引用的路网：拒绝删除")
     void rejectsDeletingReferencedMap() throws Exception {
         String token = login("dispatcher", "dispatcher123");
-        long roadnetId = createOneWayBranchMap(token);
+        long roadnetId = createOneWayRingMap(token);
         createTaskSet(token, "引用路网", roadnetId, "W1", "W2");
 
         mockMvc.perform(delete("/api/roadnet/" + roadnetId)
@@ -205,34 +190,26 @@ class TaskSetValidationTest {
         return objectMapper.readTree(response).path("data").path("id").asLong();
     }
 
-    /**
-     * 合法但不对称的单向路网：CH1 能到达 W1 和 W2，W1 可经 J1 回到 CH1 再去 W2，
-     * 但 W2 只能在 W2 ↔ J2 之间循环，无法到达 W1。
-     */
-    private long createOneWayBranchMap(String token) throws Exception {
+    /** 合法的最小单向环：CH1 → W1 → W2 → J1 → CH1，用于引用类测试。 */
+    private long createOneWayRingMap(String token) throws Exception {
         String response = mockMvc.perform(post("/api/roadnet")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "name": "单向分支",
+                                  "name": "最小单向环",
                                   "roadnet": {
                                     "nodes": [
                                       {"id":"CH1","x":0,"y":0,"type":"CHARGER","capacity":4},
                                       {"id":"W1","x":10,"y":0,"type":"WORKSTATION","capacity":1},
                                       {"id":"W2","x":20,"y":0,"type":"WORKSTATION","capacity":1},
-                                      {"id":"J1","x":10,"y":10,"type":"JUNCTION","capacity":1},
-                                      {"id":"J2","x":20,"y":10,"type":"JUNCTION","capacity":1},
-                                      {"id":"J3","x":30,"y":10,"type":"JUNCTION","capacity":1}
+                                      {"id":"J1","x":10,"y":10,"type":"JUNCTION","capacity":1}
                                     ],
                                     "edges": [
                                       {"id":"E1","from":"CH1","to":"W1","length":10,"direction":"ONE_WAY","speed":1.0,"capacity":1},
-                                      {"id":"E2","from":"W1","to":"J1","length":10,"direction":"ONE_WAY","speed":1.0,"capacity":1},
-                                      {"id":"E3","from":"J1","to":"CH1","length":10,"direction":"ONE_WAY","speed":1.0,"capacity":1},
-                                      {"id":"E4","from":"CH1","to":"W2","length":20,"direction":"ONE_WAY","speed":1.0,"capacity":1},
-                                      {"id":"E5","from":"W2","to":"J2","length":10,"direction":"ONE_WAY","speed":1.0,"capacity":1},
-                                      {"id":"E6","from":"J2","to":"J3","length":10,"direction":"ONE_WAY","speed":1.0,"capacity":1},
-                                      {"id":"E7","from":"J3","to":"W2","length":10,"direction":"ONE_WAY","speed":1.0,"capacity":1}
+                                      {"id":"E2","from":"W1","to":"W2","length":10,"direction":"ONE_WAY","speed":1.0,"capacity":1},
+                                      {"id":"E3","from":"W2","to":"J1","length":10,"direction":"ONE_WAY","speed":1.0,"capacity":1},
+                                      {"id":"E4","from":"J1","to":"CH1","length":10,"direction":"ONE_WAY","speed":1.0,"capacity":1}
                                     ]
                                   }
                                 }

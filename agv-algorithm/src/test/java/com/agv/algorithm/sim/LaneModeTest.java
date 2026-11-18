@@ -27,12 +27,12 @@ class LaneModeTest {
      */
     private static RoadNet line(LaneMode laneMode) {
         return RoadNet.of(
-                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                List.of(new NetNode("CH1", 0, 0, NodeType.CHARGER, 2),
                         node("W1", NodeType.WORKSTATION, 10, 0),
                         new NetNode("A1", 20, 0, NodeType.JUNCTION, 2),
                         new NetNode("A2", 50, 0, NodeType.JUNCTION, 2),
                         node("W2", NodeType.WORKSTATION, 60, 0),
-                        node("CH2", NodeType.CHARGER, 70, 0)),
+                        new NetNode("CH2", 70, 0, NodeType.CHARGER, 2)),
                 List.of(new NetEdge("E1", "CH1", "W1", 10,
                                 EdgeDirection.TWO_WAY, 1.0, 1),
                         new NetEdge("E2", "W1", "A1", 10,
@@ -47,11 +47,11 @@ class LaneModeTest {
 
     private static RoadNet crossing() {
         return RoadNet.of(
-                List.of(node("CH1", NodeType.CHARGER, 0, 10),
+                List.of(new NetNode("CH1", 0, 10, NodeType.CHARGER, 2),
                         node("W1", NodeType.WORKSTATION, 5, 10),
                         node("J1", NodeType.JUNCTION, 10, 10),
                         node("W2", NodeType.WORKSTATION, 15, 10),
-                        node("CH2", NodeType.CHARGER, 20, 10)),
+                        new NetNode("CH2", 20, 10, NodeType.CHARGER, 2)),
                 List.of(new NetEdge("E1", "CH1", "W1", 5,
                                 EdgeDirection.TWO_WAY, 1.0, 1),
                         new NetEdge("E2", "W1", "J1", 5,

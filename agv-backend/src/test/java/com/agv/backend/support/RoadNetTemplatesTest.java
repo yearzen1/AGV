@@ -47,7 +47,7 @@ class RoadNetTemplatesTest {
     }
 
     @Test
-    @DisplayName("标准车间（单向环）：8 节点 8 路段，环容量 14，上限受充电位限制为 8")
+    @DisplayName("标准车间（单向环）：8 节点 8 路段，环容量 14")
     void standardWorkshopIsOneWayRing() throws Exception {
         ValidationResult result = validate(RoadNetTemplates.STANDARD_WORKSHOP);
         assertTrue(result.valid(), () -> "模板必须通过校验，实际：" + result.errors());
@@ -57,7 +57,7 @@ class RoadNetTemplatesTest {
         assertEquals(8, net.edges().size());
         assertEquals(8, net.arcs().size(), "全部单向时，弧数等于路段数");
         assertEquals(14, RoadNetCapacity.minCycleCapacity(net));
-        assertEquals(8, RoadNetCapacity.maxAgvCount(net));
+        assertEquals(6, RoadNetCapacity.maxAgvCount(net));
     }
 
     @Test
@@ -70,7 +70,7 @@ class RoadNetTemplatesTest {
         assertEquals(10, net.nodes().size());
         assertEquals(10, net.edges().size());
         assertEquals(16, RoadNetCapacity.minCycleCapacity(net));
-        assertEquals(8, RoadNetCapacity.maxAgvCount(net));
+        assertEquals(6, RoadNetCapacity.maxAgvCount(net));
     }
 
     @Test
@@ -81,6 +81,6 @@ class RoadNetTemplatesTest {
 
         RoadNet net = toModel(RoadNetTemplates.WIDE_STATION_WORKSHOP);
         assertEquals(17, RoadNetCapacity.minCycleCapacity(net));
-        assertEquals(8, RoadNetCapacity.maxAgvCount(net));
+        assertEquals(6, RoadNetCapacity.maxAgvCount(net));
     }
 }

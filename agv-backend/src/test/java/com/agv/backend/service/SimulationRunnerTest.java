@@ -83,10 +83,10 @@ class SimulationRunnerTest {
     /** CH1 — W1 — W2 — CH2 共 4 个节点、3 条双向边。 */
     private RoadNet corridor() {
         List<NetNode> nodes = List.of(
-                new NetNode("CH1", 0, 0, NodeType.CHARGER),
+                new NetNode("CH1", 0, 0, NodeType.CHARGER, 2),
                 new NetNode("W1", 10, 0, NodeType.WORKSTATION),
                 new NetNode("W2", 20, 0, NodeType.WORKSTATION),
-                new NetNode("CH2", 30, 0, NodeType.CHARGER));
+                new NetNode("CH2", 30, 0, NodeType.CHARGER, 2));
         List<NetEdge> edges = List.of(
                 new NetEdge("E1", "CH1", "W1", 10, EdgeDirection.TWO_WAY, 1.0, 1),
                 new NetEdge("E2", "W1", "W2", 10, EdgeDirection.TWO_WAY, 1.0, 1),

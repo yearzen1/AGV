@@ -32,10 +32,10 @@ class SimulationEngineTest {
     /** CH1 — W1 — W2 — CH2 双向走廊，单车道。 */
     private RoadNet corridor() {
         return RoadNet.of(
-                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                List.of(new NetNode("CH1", 0, 0, NodeType.CHARGER, 2),
                         node("W1", NodeType.WORKSTATION, 10, 0),
                         node("W2", NodeType.WORKSTATION, 20, 0),
-                        node("CH2", NodeType.CHARGER, 30, 0)),
+                        new NetNode("CH2", 30, 0, NodeType.CHARGER, 2)),
                 List.of(edge("E1", "CH1", "W1", 10),
                         edge("E2", "W1", "W2", 10),
                         edge("E3", "W2", "CH2", 10)));
@@ -44,8 +44,8 @@ class SimulationEngineTest {
     /** 双列车间：两条纵向巷道，可以绕行。 */
     private RoadNet twoLaneWorkshop() {
         List<NetNode> nodes = new ArrayList<>(List.of(
-                new NetNode("CH1", 0, 0, NodeType.CHARGER, 4),
-                new NetNode("CH2", 20, 0, NodeType.CHARGER, 4),
+                new NetNode("CH1", 0, 0, NodeType.CHARGER, 3),
+                new NetNode("CH2", 20, 0, NodeType.CHARGER, 3),
                 node("J1", NodeType.JUNCTION, 0, 10),
                 node("J2", NodeType.JUNCTION, 20, 10),
                 node("J3", NodeType.JUNCTION, 0, 20),
@@ -192,10 +192,10 @@ class SimulationEngineTest {
     /** 带缓存位的走廊：W1、W2 各带一个叶子缓存位，用于让位。 */
     private RoadNet corridorWithSidings() {
         return RoadNet.of(
-                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                List.of(new NetNode("CH1", 0, 0, NodeType.CHARGER, 2),
                         node("W1", NodeType.WORKSTATION, 10, 0),
                         node("W2", NodeType.WORKSTATION, 20, 0),
-                        node("CH2", NodeType.CHARGER, 30, 0),
+                        new NetNode("CH2", 30, 0, NodeType.CHARGER, 2),
                         node("B1", NodeType.BUFFER, 10, 4),
                         node("B2", NodeType.BUFFER, 20, 4)),
                 List.of(edge("E1", "CH1", "W1", 10),

@@ -135,7 +135,7 @@ class ApiSmokeTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4004))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("8")));
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("6")));
     }
 
     @Test
@@ -151,7 +151,7 @@ class ApiSmokeTest {
                                 """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4004))
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("8")));
+                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("6")));
     }
 
     @Test

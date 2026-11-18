@@ -26,7 +26,12 @@ public final class DemoScenario {
     }
 
     public static RoadNet standardNet() throws Exception {
-        RoadNetPayload payload = standardPayload();
+        return toModel(RoadNetTemplates.STANDARD_WORKSHOP);
+    }
+
+    /** 把预置 JSON 转成算法层路网，供引擎单测与压测复用。 */
+    public static RoadNet toModel(String json) throws Exception {
+        RoadNetPayload payload = new ObjectMapper().readValue(json, RoadNetPayload.class);
         return RoadNet.of(
                 payload.nodes().stream()
                         .map(n -> new NetNode(n.id(), n.x(), n.y(), NodeType.valueOf(n.type()), n.capacity()))
