@@ -104,13 +104,36 @@ public final class SimulationEngine {
         }
         this.pending.addAll(allTasks);
 
-        for (int i = 0; i < config.agvCount(); i++) {
-            String charger = chargers.get(i % chargers.size());
+        List<String> slots = new ArrayList<>();
+        int assigned = 0;
+        int round = 0;
+        while (assigned < config.agvCount()) {
+            boolean progressed = false;
+            for (String charger : chargers) {
+                if (slots.size() >= config.agvCount()) {
+                    break;
+                }
+                if (round < nodeCapacity(charger)) {
+                    slots.add(charger);
+                    assigned++;
+                    progressed = true;
+                }
+            }
+            if (!progressed) {
+                break;
+            }
+            round++;
+        }
+        if (slots.size() < config.agvCount()) {
+            throw new IllegalArgumentException("充电位只能停放 " + slots.size() + " 台 AGV，"
+                    + "当前配置 " + config.agvCount() + " 台");
+        }
+
+        for (int i = 0; i < slots.size(); i++) {
+            String charger = slots.get(i);
             Agv agv = new Agv("AGV-" + (i + 1), i + 1, charger);
             agvs.put(agv.id, agv);
-            if (reservations.canReserve(charger, 0, Interval.FOREVER, nodeCapacity(charger))) {
-                reservations.reserve(agv.id, charger, 0, Interval.FOREVER);
-            }
+            reservations.reserve(agv.id, charger, 0, Interval.FOREVER);
         }
     }
 

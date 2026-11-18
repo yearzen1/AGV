@@ -34,10 +34,42 @@ public final class RoadNetCapacity {
         return best == Long.MAX_VALUE ? Integer.MAX_VALUE : (int) Math.min(Integer.MAX_VALUE, best);
     }
 
-    /** 车队上限 = 加权环容量 − 1。 */
+    /** 车队上限 = min(加权环容量 − 1, 充电位容量之和)。 */
     public static int maxAgvCount(RoadNet net) {
+        if (net == null || net.isEmpty()) {
+            return 0;
+        }
         int cycleCapacity = minCycleCapacity(net);
-        return cycleCapacity == Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.max(0, cycleCapacity - 1);
+        int structural = cycleCapacity == Integer.MAX_VALUE
+                ? Integer.MAX_VALUE
+                : Math.max(0, cycleCapacity - 1);
+        return Math.min(structural, chargerCapacitySum(net));
+    }
+
+    /** 所有充电位容量之和：车辆开始和结束都停在这里。 */
+    public static int chargerCapacitySum(RoadNet net) {
+        if (net == null) {
+            return 0;
+        }
+        int sum = 0;
+        for (NetNode node : net.nodes().values()) {
+            if (node.type() == NodeType.CHARGER) {
+                sum += Math.max(1, node.capacity());
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * 启动前校验车队规模。超出时抛出带上限值的异常，由调用方转成业务错误，
+     * 避免跑到一半才发现站不下。
+     */
+    public static void requireFleetFits(RoadNet net, int agvCount) {
+        int max = maxAgvCount(net);
+        if (agvCount > max) {
+            throw new IllegalArgumentException(
+                    "该路网最多支持 " + max + " 台 AGV（车队上限 = 加权环容量与充电位容量的较小值），请减少车辆数");
+        }
     }
 
     /**

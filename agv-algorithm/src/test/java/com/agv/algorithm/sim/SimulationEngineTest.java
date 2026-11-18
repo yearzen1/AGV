@@ -44,8 +44,8 @@ class SimulationEngineTest {
     /** 双列车间：两条纵向巷道，可以绕行。 */
     private RoadNet twoLaneWorkshop() {
         List<NetNode> nodes = new ArrayList<>(List.of(
-                node("CH1", NodeType.CHARGER, 0, 0),
-                node("CH2", NodeType.CHARGER, 20, 0),
+                new NetNode("CH1", 0, 0, NodeType.CHARGER, 4),
+                new NetNode("CH2", 20, 0, NodeType.CHARGER, 4),
                 node("J1", NodeType.JUNCTION, 0, 10),
                 node("J2", NodeType.JUNCTION, 20, 10),
                 node("J3", NodeType.JUNCTION, 0, 20),
@@ -304,6 +304,17 @@ class SimulationEngineTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new SimulationEngine(broken, List.of(new Task(1, "W1", "W9")),
                         SimConfig.defaults(1, 1L, "nearest")));
+    }
+
+    @Test
+    @DisplayName("充电位停不下全部车辆：构造期拒绝")
+    void rejectsFleetBeyondChargerSlots() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> new SimulationEngine(corridor(), List.of(new Task(1, "W1", "W2")),
+                        SimConfig.defaults(3, 42L, "nearest")));
+
+        assertTrue(error.getMessage().contains("充电位"),
+                () -> "错误信息应说明充电位不足，实际：" + error.getMessage());
     }
 
     @Test

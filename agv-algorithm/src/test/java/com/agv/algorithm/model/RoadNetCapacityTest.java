@@ -6,7 +6,10 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RoadNetCapacityTest {
 
@@ -18,7 +21,7 @@ class RoadNetCapacityTest {
         return new NetEdge(id, from, to, 1.0, EdgeDirection.ONE_WAY, 1.0, 1);
     }
 
-    /** 8 节点单环，两个充电位容量 4，其余节点容量 1。 */
+    /** 8 节点单环，两个充电位容量相同，其余节点容量 1。 */
     private RoadNet standardRing(int chargerCapacity) {
         return RoadNet.of(
                 List.of(node("CH1", NodeType.CHARGER, chargerCapacity),
@@ -45,13 +48,34 @@ class RoadNetCapacityTest {
         RoadNet net = standardRing(4);
 
         assertEquals(14, RoadNetCapacity.minCycleCapacity(net));
-        assertEquals(13, RoadNetCapacity.maxAgvCount(net));
+        assertEquals(8, RoadNetCapacity.chargerCapacitySum(net));
     }
 
     @Test
-    @DisplayName("充电位容量变化直接影响车队上限")
-    void chargerCapacityChangesFleetCap() {
-        assertEquals(7, RoadNetCapacity.maxAgvCount(standardRing(1)));
+    @DisplayName("车队上限取拓扑上限与充电位容量的较小值")
+    void fleetCapIsMinOfCycleAndChargerSlots() {
+        assertEquals(8, RoadNetCapacity.maxAgvCount(standardRing(4)));
+        assertEquals(2, RoadNetCapacity.maxAgvCount(standardRing(1)));
+    }
+
+    @Test
+    @DisplayName("存在小环时，拓扑上限比充电位更紧")
+    void smallSubLoopBindsBeforeChargerSlots() {
+        // A 是大充电位；J1→J2→J3→J1 构成容量只有 3 的小环
+        RoadNet net = RoadNet.of(
+                List.of(node("A", NodeType.CHARGER, 10),
+                        node("J1", NodeType.JUNCTION, 1),
+                        node("J2", NodeType.JUNCTION, 1),
+                        node("J3", NodeType.JUNCTION, 1)),
+                List.of(oneWay("E1", "A", "J1"),
+                        oneWay("E2", "J1", "J2"),
+                        oneWay("E3", "J2", "J3"),
+                        oneWay("E4", "J3", "J1"),
+                        oneWay("E5", "J3", "A")));
+
+        assertEquals(3, RoadNetCapacity.minCycleCapacity(net));
+        assertEquals(10, RoadNetCapacity.chargerCapacitySum(net));
+        assertEquals(2, RoadNetCapacity.maxAgvCount(net));
     }
 
     @Test
@@ -70,7 +94,7 @@ class RoadNetCapacityTest {
                         oneWay("E5", "A", "C")));
 
         assertEquals(3, RoadNetCapacity.minCycleCapacity(net));
-        assertEquals(2, RoadNetCapacity.maxAgvCount(net));
+        assertEquals(1, RoadNetCapacity.maxAgvCount(net));
     }
 
     @Test
@@ -81,12 +105,12 @@ class RoadNetCapacityTest {
                 List.of(oneWay("E1", "A", "B"), oneWay("E2", "B", "A")));
 
         assertEquals(5, RoadNetCapacity.minCycleCapacity(net));
-        assertEquals(4, RoadNetCapacity.maxAgvCount(net));
+        assertEquals(2, RoadNetCapacity.maxAgvCount(net));
     }
 
     @Test
-    @DisplayName("无环图：没有环可以占满，车队上限为无穷")
-    void acyclicGraphHasNoCap() {
+    @DisplayName("无环图：没有环可以占满，拓扑上限为无穷")
+    void acyclicGraphHasNoCycleLimit() {
         RoadNet net = RoadNet.of(
                 List.of(node("A", NodeType.CHARGER, 1),
                         node("B", NodeType.JUNCTION, 1),
@@ -94,13 +118,14 @@ class RoadNetCapacityTest {
                 List.of(oneWay("E1", "A", "B"), oneWay("E2", "B", "C")));
 
         assertEquals(Integer.MAX_VALUE, RoadNetCapacity.minCycleCapacity(net));
-        assertEquals(Integer.MAX_VALUE, RoadNetCapacity.maxAgvCount(net));
+        assertEquals(1, RoadNetCapacity.maxAgvCount(net), "没有环时由充电位容量决定");
     }
 
     @Test
-    @DisplayName("空图：没有环")
-    void emptyNetHasNoCap() {
+    @DisplayName("空图：没有环，也没有停放位")
+    void emptyNetHasNoCapacity() {
         assertEquals(Integer.MAX_VALUE, RoadNetCapacity.minCycleCapacity(RoadNet.empty()));
+        assertEquals(0, RoadNetCapacity.maxAgvCount(RoadNet.empty()));
     }
 
     @Test
@@ -118,6 +143,19 @@ class RoadNetCapacityTest {
                 oneWay("E4", "D", "A")));
 
         assertEquals(8, RoadNetCapacity.minCycleCapacity(net));
-        assertEquals(7, RoadNetCapacity.maxAgvCount(net));
+        assertEquals(4, RoadNetCapacity.maxAgvCount(net));
+    }
+
+    @Test
+    @DisplayName("启动校验：等于上限可以，超过上限报错并带上限值")
+    void requiresFleetWithinCap() {
+        RoadNet net = standardRing(4);
+
+        assertDoesNotThrow(() -> RoadNetCapacity.requireFleetFits(net, 8));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> RoadNetCapacity.requireFleetFits(net, 9));
+        assertTrue(error.getMessage().contains("8"),
+                () -> "错误信息应带出上限，实际：" + error.getMessage());
     }
 }
