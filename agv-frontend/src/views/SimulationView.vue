@@ -666,7 +666,7 @@ onBeforeUnmount(() => {
       </el-select>
       <span class="field-label">AGV 数量</span>
       <el-input-number v-model="agvCount" :min="1" :max="12" style="width: 120px" :disabled="running" />
-      <span class="field-label">随机种子</span>
+      <span class="field-label">种子</span>
       <el-input-number v-model="seed" :min="0" :controls="false" style="width: 140px" :disabled="running" />
       <el-button type="primary" :disabled="running || !selectedTaskSetId" @click="start">开始</el-button>
       <el-button :disabled="!running || paused" @click="pause">暂停</el-button>

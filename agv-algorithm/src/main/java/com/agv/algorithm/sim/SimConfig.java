@@ -4,7 +4,7 @@ package com.agv.algorithm.sim;
  * 仿真参数。默认值与实施计划一致：100ms/tick、每单 0.5s 装卸。
  *
  * @param agvCount     AGV 数量，不能超过路网的车队上限
- * @param seed         随机种子，同种子结果可复现
+ * @param seed         实验记录字段；引擎不含随机源，同一组输入必得同一结果
  * @param algorithm    调度算法字典码：nearest / greedy-eta
  * @param serviceTicks 每次装卸货耗时（tick）
  * @param maxTicks     最大推进 tick，防止死循环

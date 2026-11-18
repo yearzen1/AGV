@@ -195,14 +195,14 @@ onBeforeUnmount(() => {
         <span v-if="selectedRoadnetId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
         <span class="muted">AGV 数量</span>
         <el-input-number v-model="agvCount" :min="1" :max="12" style="width: 120px" />
-        <span class="muted">随机种子</span>
+        <span class="muted">种子</span>
         <el-input-number v-model="seed" :min="0" :controls="false" style="width: 150px" />
         <el-button type="primary" :loading="running" :disabled="!selectedTaskSetId" @click="runCompare">
           运行对比（两种算法）
         </el-button>
       </el-space>
       <div class="muted" style="margin-top: 8px">
-        同一路网、同一任务集、同一随机种子下依次跑就近分配与贪心 ETA，指标口径见实验报告。
+        同一路网、同一任务集、同一参数下依次跑就近分配与贪心 ETA，指标口径见实验报告。
       </div>
     </div>
 
