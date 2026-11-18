@@ -101,6 +101,10 @@ async function main() {
   await capture('fig-5-2-editor.png')
 
   // 图 6-1 标准车间路网（3D 场景，未启动仿真）
+  await fetch(`${API}/api/sim/reset`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${dispatcher.token}` }
+  })
   await useSession(dispatcher, '/simulation')
   await sleep(3000)
   await capture('fig-6-1-roadnet.png')
@@ -175,43 +179,41 @@ async function main() {
   await sleep(800)
   await capture('fig-5-1-architecture.png')
 
-  // 图 6-2 完成单数折线图（自绘 SVG）；5/8 台严格容量下死锁，只记录完成数
+  // 图 6-2 完成时间折线图（自绘 SVG）
   const data = [
-    { n: 2, nearest: 20, greedy: 20 },
-    { n: 3, nearest: 20, greedy: 20 },
-    { n: 5, nearest: 12, greedy: 2 },
-    { n: 8, nearest: 0, greedy: 1 }
+    { n: 1, nearest: 6420, greedy: 6420 },
+    { n: 2, nearest: 3972, greedy: 3366 },
+    { n: 3, nearest: 2760, greedy: 2668 },
+    { n: 4, nearest: 2576, greedy: 2062 },
+    { n: 5, nearest: 2235, greedy: 2056 },
+    { n: 6, nearest: 2234, greedy: 1970 }
   ]
   const W = 1680, H = 1050, L = 160, R = 120, T = 150, B = 150
-  const maxY = 20
+  const maxY = 7000
   const x = (i) => L + (i * (W - L - R)) / (data.length - 1)
   const y = (v) => H - B - (v / maxY) * (H - T - B)
   const poly = (key) => data.map((d, i) => `${x(i)},${y(d[key])}`).join(' ')
   const dots = (key, color) =>
     data.map((d, i) => `<circle cx="${x(i)}" cy="${y(d[key])}" r="7" fill="${color}"/>`).join('')
   const labels = (key, color, dy) =>
-    data.map((d, i) => i < 2
-      ? `<text x="${x(i)}" y="${y(d[key]) + dy}" font-size="20" fill="${color}" text-anchor="middle">${d[key]}</text>`
-      : '').join('')
-  const yTicks = Array.from({ length: 5 }, (_, i) => i * 5)
+    data.map((d, i) =>
+      `<text x="${x(i)}" y="${y(d[key]) + dy}" font-size="20" fill="${color}" text-anchor="middle">${d[key]}</text>`
+    ).join('')
+  const yTicks = Array.from({ length: 8 }, (_, i) => i * 1000)
     .map((v) => `<line x1="${L}" y1="${y(v)}" x2="${W - R}" y2="${y(v)}" stroke="#ebeef5" stroke-width="1"/>
       <text x="${L - 16}" y="${y(v) + 7}" font-size="18" fill="#909399" text-anchor="end">${v}</text>`).join('')
   const xTicks = data.map((d, i) => `<text x="${x(i)}" y="${H - B + 40}" font-size="20" fill="#606266" text-anchor="middle">${d.n} 台</text>`).join('')
-  const deadlockNotes =
-    `<text x="${x(2)}" y="${y(12) - 18}" font-size="18" fill="#1f3b73" text-anchor="middle">12/20 死锁</text>` +
-    `<text x="${x(2)}" y="${y(2) + 36}" font-size="18" fill="#e6a23c" text-anchor="middle">2/20 死锁</text>`
 
   const lineHtml = `<!doctype html><html><head><meta charset="utf-8"></head>
-<body style="margin:0;background:#fff;font-family:'Microsoft YaHei',sans-serif">
-<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+<body style="margin:0;background:#fff;overflow:hidden;font-family:'Microsoft YaHei',sans-serif">
+<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="display:block">
   <rect width="${W}" height="${H}" fill="#ffffff"/>
-  <text x="80" y="70" font-size="30" font-weight="bold" fill="#1f3b73">图 6-2　完成单数随车队规模变化</text>
-  <text x="80" y="110" font-size="18" fill="#909399">20 单任务集，seed = 20261107；5/8 台为严格容量死锁</text>
+  <text x="80" y="70" font-size="30" font-weight="bold" fill="#1f3b73">图 6-2　完成时间随车队规模变化</text>
+  <text x="80" y="110" font-size="18" fill="#909399">20 单任务集，标准车间（单向环），车队上限 6 台；1~6 台全部完成</text>
   ${yTicks}
   <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="#c0c4cc" stroke-width="2"/>
   <line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" stroke="#c0c4cc" stroke-width="2"/>
   ${xTicks}
-  ${deadlockNotes}
   <polyline points="${poly('nearest')}" fill="none" stroke="#1f3b73" stroke-width="4"/>
   ${dots('nearest', '#1f3b73')}
   ${labels('nearest', '#1f3b73', -18)}
