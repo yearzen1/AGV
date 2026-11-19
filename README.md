@@ -114,7 +114,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 - 未预期的 500 只返回通用文案与请求编号（响应头 `X-Request-Id`），堆栈只写服务端日志。
 - 列表接口默认不强制分页；实验历史与审计日志使用 `page`（从 0 起）和 `size`（1–100，默认 20），返回 `{ total, page, size, records }`。
 - 任务集接口是 `/api/taskset`，不是 `/api/task-set`。
-- 任务集必须绑定一个路网。任务的起点与终点只能是该路网的**工位**（`WORKSTATION`），保存时校验节点存在、类型正确、起终点不同且 A* 可达；仿真与对比实验启动前会再次校验，避免旧数据或改图后残留的非法任务进入引擎。新建或修改任务集的载荷：
+- 任务集必须绑定一个路网。任务用 `LOAD` / `UNLOAD` 标注装货或卸货，起点与终点只能是该路网的服务节点（`PICKING` / `LOADING` / `STORAGE`），保存时校验节点存在、作业类型与端点类型匹配、起终点不同且 A* 可达；仿真与对比实验启动前会再次校验，避免旧数据或改图后残留的非法任务进入引擎。新建或修改任务集的载荷：
 
   ```json
   {
@@ -122,7 +122,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
     "roadnetId": 1,
     "taskSet": {
       "tasks": [
-        { "id": 1, "from": "W1", "to": "W2" }
+        { "id": 1, "from": "P1", "to": "L1", "operation": "LOAD" }
       ]
     }
   }
@@ -312,7 +312,7 @@ npm run e2e:scene
 - `ApiSmokeTest`：登录、401/403、路网校验拦截、模板校验、错误码映射、实验快照回放、审计查询
 - `ExperimentReplayTest`：同 seed 回放指标一致、缺快照与缺指标的回放拒绝
 - `AuditLogTest`：动作记录、登录失败记录、管理员分页查询与权限拦截
-- `TaskSetValidationTest`：任务集绑定路网、工位校验、跨图启动拦截、删除保护
+- `TaskSetValidationTest`：任务集绑定路网、作业类型与端点校验、跨图启动拦截、删除保护
 - `SimSocketHandlerTest`：WebSocket 连接、echo、按用户路由与坏会话隔离
 - `JwtHandshakeInterceptorTest`：握手令牌校验与账号状态拦截
 - `MultiUserSimulationTest`：两个用户并发仿真互不干扰，暂停/重置只影响自己
