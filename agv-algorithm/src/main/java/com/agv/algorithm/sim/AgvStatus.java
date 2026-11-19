@@ -10,10 +10,14 @@ public enum AgvStatus {
     MOVING,
     /** 冲突等待：已到达节点，但要进入的下一条弧/节点被占 */
     WAITING,
-    /** 装卸货中 */
+    /** 装货中 */
     LOADING,
+    /** 卸货中 */
+    UNLOADING,
     /** 回充后停靠 */
     CHARGING,
+    /** 在停放位待命 */
+    PARKED,
     /** 全部任务完成后无任务可接且已回位 */
     DONE
 }

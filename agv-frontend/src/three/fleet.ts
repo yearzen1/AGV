@@ -175,7 +175,7 @@ export class AgvFleet {
       if (entry.status !== pose.status) {
         entry.status = pose.status
         entry.body.material = this.bodyMaterials.get(pose.status) ?? this.defaultBodyMaterial()
-        entry.cargo.visible = pose.status === 'LOADING'
+        entry.cargo.visible = pose.status === 'LOADING' || pose.status === 'UNLOADING'
       }
 
       const color = STATUS_COLORS[pose.status] ?? DEFAULT_STATUS_COLOR
@@ -345,7 +345,7 @@ export class AgvFleet {
 
 function beaconIntensity(status: string, now: number): number {
   if (status === 'WAITING') return 1.1 + Math.sin(now / 110) * 0.75
-  if (status === 'CHARGING') return 0.9 + Math.sin(now / 320) * 0.35
+  if (status === 'CHARGING' || status === 'PARKED') return 0.9 + Math.sin(now / 320) * 0.35
   if (status === 'DONE') return 0.25
   return 0.9
 }

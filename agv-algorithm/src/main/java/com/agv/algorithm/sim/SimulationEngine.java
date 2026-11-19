@@ -53,6 +53,7 @@ public final class SimulationEngine {
     private final List<Task> pending = new ArrayList<>();
     private final Map<String, String> edgeOwner = new HashMap<>();
     private final List<String> chargers;
+    private final List<String> parkings;
     private final Random random;
 
     private long tick;
@@ -80,6 +81,10 @@ public final class SimulationEngine {
 
         this.chargers = net.nodes().values().stream()
                 .filter(n -> n.type() == NodeType.CHARGER)
+                .map(NetNode::id)
+                .toList();
+        this.parkings = net.nodes().values().stream()
+                .filter(n -> n.type() == NodeType.PARKING)
                 .map(NetNode::id)
                 .toList();
         if (chargers.isEmpty()) {
@@ -128,6 +133,12 @@ public final class SimulationEngine {
             if (agv.status == AgvStatus.LOADING) {
                 if (--agv.serviceTicksLeft <= 0) {
                     startDelivery(agv, events);
+                }
+                continue;
+            }
+            if (agv.status == AgvStatus.UNLOADING) {
+                if (--agv.serviceTicksLeft <= 0) {
+                    completeTask(agv, events);
                 }
                 continue;
             }
@@ -230,24 +241,33 @@ public final class SimulationEngine {
             }
             case DELIVERY -> {
                 if (agv.currentNode.equals(agv.task.to())) {
-                    completeTask(agv, events);
+                    startUnloading(agv, events);
                 } else {
                     planAndProceed(agv, agv.task.to(), events);
                 }
             }
             case NONE -> {
                 if (agv.returning) {
-                    if (chargers.contains(agv.currentNode)) {
+                    if (parkings.contains(agv.currentNode)) {
+                        agv.returning = false;
+                        agv.status = AgvStatus.PARKED;
+                        agv.homeGoal = null;
+                        events.add(new SimEvent(tick, agv.id, SimEvent.Type.PARKED,
+                                agv.currentNode, "已停放"));
+                    } else if (chargers.contains(agv.currentNode)) {
                         agv.returning = false;
                         agv.status = AgvStatus.CHARGING;
+                        agv.homeGoal = null;
                         events.add(new SimEvent(tick, agv.id, SimEvent.Type.CHARGING,
                                 agv.currentNode, "回充完成"));
                     } else {
-                        String charger = nearestFreeCharger(agv.currentNode);
-                        if (charger == null) {
+                        String home = nearestFreeHome(agv.currentNode);
+                        if (home == null) {
                             agv.status = AgvStatus.DONE;
+                            agv.homeGoal = null;
                         } else {
-                            planAndProceed(agv, charger, events);
+                            agv.homeGoal = home;
+                            planAndProceed(agv, home, events);
                         }
                     }
                 } else {
@@ -259,9 +279,30 @@ public final class SimulationEngine {
 
     private void startLoading(Agv agv, List<SimEvent> events) {
         agv.status = AgvStatus.LOADING;
-        agv.serviceTicksLeft = Math.max(1, config.serviceTicks());
+        agv.serviceTicksLeft = Math.max(1, serviceTicksAt(agv.currentNode, config.serviceTicks()));
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.LOADING,
                 agv.currentNode, "开始装货，任务 " + agv.task.id()));
+    }
+
+    /** 终点卸货：节点没配服务时间时保持旧行为，到达即完成。 */
+    private void startUnloading(Agv agv, List<SimEvent> events) {
+        int ticks = serviceTicksAt(agv.currentNode, 0);
+        if (ticks <= 0) {
+            completeTask(agv, events);
+            return;
+        }
+        agv.status = AgvStatus.UNLOADING;
+        agv.serviceTicksLeft = ticks;
+        events.add(new SimEvent(tick, agv.id, SimEvent.Type.UNLOADING,
+                agv.currentNode, "开始卸货，任务 " + agv.task.id()));
+    }
+
+    private int serviceTicksAt(String nodeId, int fallback) {
+        NetNode node = net.node(nodeId);
+        if (node == null || node.serviceTicks() <= 0) {
+            return fallback;
+        }
+        return node.serviceTicks();
     }
 
     private void startDelivery(Agv agv, List<SimEvent> events) {
@@ -305,19 +346,25 @@ public final class SimulationEngine {
         planAndProceed(agv, chosen.from(), events);
     }
 
+    /** 没有可接任务：优先回停放位，其次充电位；都不可用就收尾。 */
     private void returnToCharger(Agv agv, List<SimEvent> events) {
+        if (parkings.contains(agv.currentNode)) {
+            agv.status = AgvStatus.PARKED;
+            return;
+        }
         if (chargers.contains(agv.currentNode)) {
             agv.status = AgvStatus.CHARGING;
             return;
         }
-        String charger = nearestFreeCharger(agv.currentNode);
-        if (charger == null) {
+        String home = nearestFreeHome(agv.currentNode);
+        if (home == null) {
             agv.status = AgvStatus.DONE;
             return;
         }
         agv.returning = true;
         agv.leg = Leg.NONE;
-        planAndProceed(agv, charger, events);
+        agv.homeGoal = home;
+        planAndProceed(agv, home, events);
     }
 
     private void planAndProceed(Agv agv, String goal, List<SimEvent> events) {
@@ -447,7 +494,7 @@ public final class SimulationEngine {
             return agv.leg == Leg.PICKUP ? agv.task.from() : agv.task.to();
         }
         if (agv.returning) {
-            return nearestCharger(agv.currentNode, Set.of());
+            return agv.homeGoal != null ? agv.homeGoal : nearestHome(agv.currentNode, Set.of());
         }
         return null;
     }
@@ -592,7 +639,9 @@ public final class SimulationEngine {
             return;
         }
         boolean allParked = agvs.values().stream()
-                .allMatch(a -> a.status == AgvStatus.CHARGING || a.status == AgvStatus.DONE);
+                .allMatch(a -> a.status == AgvStatus.CHARGING
+                        || a.status == AgvStatus.PARKED
+                        || a.status == AgvStatus.DONE);
         // 充电位数量可能少于车辆数，允许一段回充宽限期后收尾，避免因停不进去而永不结束
         boolean graceExpired = tasksDoneTick >= 0 && tick - tasksDoneTick > PARK_GRACE_TICKS;
         if (allParked || graceExpired) {
@@ -669,31 +718,43 @@ public final class SimulationEngine {
         }
     }
 
-    /** 就近挑一个没人占的充电位，避免两台车抢同一个车位形成新的僵局。 */
-    private String nearestFreeCharger(String fromNode) {
-        String best = null;
-        double bestCost = Double.POSITIVE_INFINITY;
-        for (String charger : chargers) {
-            if (!charger.equals(fromNode) && !reservations.isFree(charger)) {
-                continue;
-            }
-            PathResult result = planner.plan(net, fromNode, charger);
-            if (result.found() && result.costSeconds() < bestCost) {
-                bestCost = result.costSeconds();
-                best = charger;
-            }
-        }
-        return best != null ? best : nearestCharger(fromNode, Set.of());
+    /** 就近挑一个没人占的停放位，其次充电位，避免多车抢同一个位置形成僵局。 */
+    private String nearestFreeHome(String fromNode) {
+        String parking = nearestFreeIn(parkings, fromNode);
+        return parking != null ? parking : nearestFreeIn(chargers, fromNode);
     }
 
-    private String nearestCharger(String fromNode, Set<String> blocked) {
+    private String nearestFreeIn(List<String> candidates, String fromNode) {
         String best = null;
         double bestCost = Double.POSITIVE_INFINITY;
-        for (String charger : chargers) {
-            PathResult result = planner.plan(net, fromNode, charger, blocked);
+        for (String candidate : candidates) {
+            if (!candidate.equals(fromNode)
+                    && !reservations.canReserve(candidate, tick, Interval.FOREVER,
+                            nodeCapacity(candidate), null)) {
+                continue;
+            }
+            PathResult result = planner.plan(net, fromNode, candidate);
             if (result.found() && result.costSeconds() < bestCost) {
                 bestCost = result.costSeconds();
-                best = charger;
+                best = candidate;
+            }
+        }
+        return best;
+    }
+
+    private String nearestHome(String fromNode, Set<String> blocked) {
+        String best = nearestIn(parkings, fromNode, blocked);
+        return best != null ? best : nearestIn(chargers, fromNode, blocked);
+    }
+
+    private String nearestIn(List<String> candidates, String fromNode, Set<String> blocked) {
+        String best = null;
+        double bestCost = Double.POSITIVE_INFINITY;
+        for (String candidate : candidates) {
+            PathResult result = planner.plan(net, fromNode, candidate, blocked);
+            if (result.found() && result.costSeconds() < bestCost) {
+                bestCost = result.costSeconds();
+                best = candidate;
             }
         }
         return best;
@@ -719,6 +780,7 @@ public final class SimulationEngine {
         String wantedEdgeId;
         String wantedNodeId;
         String retreatGoal;
+        String homeGoal;
         boolean returning;
         double totalDistance;
         final Set<String> bannedEdges = new HashSet<>();

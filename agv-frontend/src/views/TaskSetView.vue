@@ -15,6 +15,7 @@ import {
   listTaskSets,
   updateTaskSet,
   type TaskDto,
+  type TaskOperation,
   type TaskSetSummary
 } from '@/api/sim'
 import { formatDateTime } from '@/utils/format'
@@ -41,10 +42,40 @@ let lastRoadnetId: number | null = null
 const pickerVisible = ref(false)
 const pickerIndex = ref<number | null>(null)
 const pickerField = ref<'from' | 'to'>('from')
+const pickerOperation = ref<TaskOperation>('LOAD')
 
-const stationNodes = computed<NetNode[]>(() =>
-  (dialogRoadnet.value?.nodes ?? []).filter((node) => node.type === 'WORKSTATION')
+const SERVICE_TYPES = new Set<NetNode['type']>(['PICKING', 'LOADING', 'STORAGE'])
+
+const serviceNodes = computed<NetNode[]>(() =>
+  (dialogRoadnet.value?.nodes ?? []).filter((node) => SERVICE_TYPES.has(node.type))
 )
+
+const pickerTypes = computed<NetNode['type'][]>(() =>
+  pickerField.value === 'from'
+    ? fromTypes(pickerOperation.value)
+    : toTypes(pickerOperation.value)
+)
+
+function fromTypes(operation: TaskOperation): NetNode['type'][] {
+  return operation === 'LOAD' ? ['PICKING', 'STORAGE'] : ['LOADING', 'STORAGE']
+}
+
+function toTypes(operation: TaskOperation): NetNode['type'][] {
+  return operation === 'LOAD' ? ['LOADING', 'STORAGE'] : ['PICKING', 'STORAGE']
+}
+
+function nodesFor(operation: TaskOperation, field: 'from' | 'to') {
+  const types = field === 'from' ? fromTypes(operation) : toTypes(operation)
+  return serviceNodes.value.filter((node) => types.includes(node.type))
+}
+
+function onOperationChange(task: TaskDto) {
+  const fromOk = nodesFor(task.operation, 'from').some((node) => node.id === task.from)
+  const toOk = nodesFor(task.operation, 'to').some((node) => node.id === task.to)
+  if (!fromOk) task.from = nodesFor(task.operation, 'from')[0]?.id ?? ''
+  if (!toOk) task.to = nodesFor(task.operation, 'to')[0]?.id ?? ''
+  clearErrors()
+}
 
 const pickerValue = computed(() => {
   if (pickerIndex.value === null) return null
@@ -52,7 +83,7 @@ const pickerValue = computed(() => {
 })
 
 const pickerTitle = computed(() => {
-  if (pickerIndex.value === null) return '选择工位'
+  if (pickerIndex.value === null) return '选择服务节点'
   return `第 ${pickerIndex.value + 1} 行 · ${pickerField.value === 'from' ? '起点' : '终点'}`
 })
 
@@ -94,24 +125,27 @@ function renumberTasks() {
 }
 
 function defaultTasks(): TaskDto[] {
-  if (stationNodes.value.length < 2) return []
-  return [{ id: 1, from: stationNodes.value[0].id, to: stationNodes.value[1].id }]
+  const from = nodesFor('LOAD', 'from')[0]
+  const to = nodesFor('LOAD', 'to')[0]
+  if (!from || !to) return []
+  return [{ id: 1, from: from.id, to: to.id, operation: 'LOAD' }]
 }
 
-/** 新行优先选一组没出现过的起终点，避免连续点击得到重复任务。 */
+/** 新行优先选一组没出现过的装货起终点，避免连续点击得到重复任务。 */
 function nextTaskPair(): { from: string; to: string } | null {
-  const stations = stationNodes.value
-  if (stations.length < 2) return null
-  const used = new Set(form.tasks.map((task) => `${task.from}->${task.to}`))
-  for (const from of stations) {
-    for (const to of stations) {
+  const fromNodes = nodesFor('LOAD', 'from')
+  const toNodes = nodesFor('LOAD', 'to')
+  if (fromNodes.length === 0 || toNodes.length === 0) return null
+  const used = new Set(form.tasks.map((task) => `${task.operation}:${task.from}->${task.to}`))
+  for (const from of fromNodes) {
+    for (const to of toNodes) {
       if (from.id === to.id) continue
-      if (!used.has(`${from.id}->${to.id}`)) {
+      if (!used.has(`LOAD:${from.id}->${to.id}`)) {
         return { from: from.id, to: to.id }
       }
     }
   }
-  return { from: stations[0].id, to: stations[1].id }
+  return { from: fromNodes[0].id, to: toNodes[0].id }
 }
 
 async function openCreate() {
@@ -138,7 +172,7 @@ async function openEdit(row: TaskSetSummary) {
     form.roadnetId = row.roadnetId ?? maps.value[0]?.id ?? null
     lastRoadnetId = form.roadnetId
     await loadDialogMap(form.roadnetId)
-    form.tasks = payload.tasks.map((task) => ({ ...task }))
+    form.tasks = payload.tasks.map((task) => ({ ...task, operation: task.operation ?? 'LOAD' }))
     renumberTasks()
     dialogVisible.value = true
   } catch (error: any) {
@@ -168,10 +202,10 @@ async function onMapChange(roadnetId: number) {
 function addTask() {
   const pair = nextTaskPair()
   if (!pair) {
-    ElMessage.warning('该路网至少需要两个工位才能创建任务')
+    ElMessage.warning('该路网至少需要一个拣货位和一个上货位才能创建任务')
     return
   }
-  form.tasks.push({ id: form.tasks.length + 1, ...pair })
+  form.tasks.push({ id: form.tasks.length + 1, ...pair, operation: 'LOAD' })
   clearErrors()
 }
 
@@ -197,9 +231,10 @@ async function clearTasks() {
 }
 
 async function fillDemo() {
-  const stations = stationNodes.value
-  if (stations.length < 2) {
-    ElMessage.warning('该路网至少需要两个工位才能填充演示数据')
+  const pickings = nodesFor('LOAD', 'from').filter((node) => node.type === 'PICKING')
+  const loadings = nodesFor('LOAD', 'to').filter((node) => node.type === 'LOADING')
+  if (pickings.length === 0 || loadings.length === 0) {
+    ElMessage.warning('该路网至少需要一个拣货位和一个上货位才能填充演示数据')
     return
   }
   if (form.tasks.length > 0) {
@@ -214,12 +249,15 @@ async function fillDemo() {
     }
   }
   form.tasks = Array.from({ length: 20 }, (_, i) => {
-    const from = stations[i % stations.length].id
-    let to = stations[(i + 1 + Math.floor(i / 3)) % stations.length].id
-    if (to === from) {
-      to = stations[(i + 2) % stations.length].id
+    const unload = i % 4 === 3
+    const picking = pickings[i % pickings.length].id
+    const loading = loadings[i % loadings.length].id
+    return {
+      id: i + 1,
+      from: unload ? loading : picking,
+      to: unload ? picking : loading,
+      operation: (unload ? 'UNLOAD' : 'LOAD') as TaskOperation
     }
-    return { id: i + 1, from, to }
   })
   clearErrors()
 }
@@ -227,6 +265,7 @@ async function fillDemo() {
 function openPicker(index: number, field: 'from' | 'to') {
   pickerIndex.value = index
   pickerField.value = field
+  pickerOperation.value = form.tasks[index]?.operation ?? 'LOAD'
   pickerVisible.value = true
 }
 
@@ -369,7 +408,7 @@ onMounted(load)
           >
             <el-option v-for="map in maps" :key="map.id" :label="map.name" :value="map.id" />
           </el-select>
-          <span class="hint">起终点只能选该路网的工位</span>
+          <span class="hint">起终点只能选该路网的服务节点，并匹配装货/卸货类型</span>
         </el-form-item>
       </el-form>
 
@@ -394,8 +433,8 @@ onMounted(load)
         </el-button>
         <el-button size="small" :disabled="form.tasks.length === 0" @click="clearTasks">清空</el-button>
         <span class="muted">共 {{ form.tasks.length }} 条</span>
-        <span v-if="stationNodes.length < 2" class="warning">
-          当前路网只有 {{ stationNodes.length }} 个工位，至少需要两个
+        <span v-if="serviceNodes.length < 2" class="warning">
+          当前路网只有 {{ serviceNodes.length }} 个服务节点，至少需要两个
         </span>
       </div>
 
@@ -408,6 +447,14 @@ onMounted(load)
         :row-class-name="rowClassName"
       >
         <el-table-column prop="id" label="序号" width="70" />
+        <el-table-column label="作业" width="110">
+          <template #default="{ row }">
+            <el-select v-model="row.operation" size="small" @change="onOperationChange(row)">
+              <el-option label="装货" value="LOAD" />
+              <el-option label="卸货" value="UNLOAD" />
+            </el-select>
+          </template>
+        </el-table-column>
         <el-table-column label="起点" min-width="190">
           <template #default="{ row, $index }">
             <div class="station-cell">
@@ -420,7 +467,7 @@ onMounted(load)
                 @change="clearErrors"
               >
                 <el-option
-                  v-for="node in stationNodes"
+                  v-for="node in nodesFor(row.operation, 'from')"
                   :key="node.id"
                   :label="`${node.id} · (${node.x}, ${node.y})`"
                   :value="node.id"
@@ -444,7 +491,7 @@ onMounted(load)
                 @change="clearErrors"
               >
                 <el-option
-                  v-for="node in stationNodes"
+                  v-for="node in nodesFor(row.operation, 'to')"
                   :key="node.id"
                   :label="`${node.id} · (${node.x}, ${node.y})`"
                   :value="node.id"
@@ -473,6 +520,7 @@ onMounted(load)
       <StationPicker
         :roadnet="dialogRoadnet"
         :model-value="pickerValue"
+        :accepted-types="pickerTypes"
         @update:model-value="applyPickedNode"
         @close="closePicker"
       />

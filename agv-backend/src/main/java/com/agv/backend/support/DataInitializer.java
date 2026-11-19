@@ -1,5 +1,6 @@
 package com.agv.backend.support;
 
+import com.agv.algorithm.sim.TaskOperation;
 import com.agv.backend.dto.TaskDto;
 import com.agv.backend.dto.TaskSetPayload;
 import com.agv.backend.entity.SysDict;
@@ -30,7 +31,9 @@ public class DataInitializer implements CommandLineRunner {
     private static final long STANDARD_WORKSHOP_ID = 1L;
     private static final long LINE_WORKSHOP_ID = 2L;
     private static final long DUAL_LANE_WORKSHOP_ID = 3L;
+    private static final long WAREHOUSE_WORKSHOP_ID = 4L;
     private static final long DEMO_TASK_SET_ID = 1L;
+    private static final long WAREHOUSE_TASK_SET_ID = 2L;
 
     private final SysUserRepository userRepository;
     private final SysDictRepository dictRepository;
@@ -98,6 +101,7 @@ public class DataInitializer implements CommandLineRunner {
         upsertTemplate("标准车间（双充电位）", RoadNetTemplates.STANDARD_WORKSHOP, STANDARD_WORKSHOP_ID);
         upsertTemplate("直线车间（快速上手）", RoadNetTemplates.LINE_WORKSHOP, LINE_WORKSHOP_ID);
         upsertTemplate("双车道车间（会车演示）", RoadNetTemplates.DUAL_LANE_WORKSHOP, DUAL_LANE_WORKSHOP_ID);
+        upsertTemplate("仓储车间（分区布局）", RoadNetTemplates.WAREHOUSE_WORKSHOP, WAREHOUSE_WORKSHOP_ID);
     }
 
     /** 模板按名称幂等更新：已有库也会同步到最新的标准布局。 */
@@ -158,32 +162,56 @@ public class DataInitializer implements CommandLineRunner {
                 .orElse(null);
     }
 
-    /** 演示任务集：20 单在三个工位之间循环，覆盖空驶、会车与等待冲突。 */
+    /** 演示任务集：标准车间 20 单装货/卸货循环，覆盖空驶、会车与等待冲突。 */
     private void seedTaskSet() {
         if (taskSetRepository.count() > 0) {
             return;
         }
-        String[] stations = {"W1", "W2", "W3"};
+        String[] pickings = {"P1", "P2"};
+        String[] loadings = {"L1"};
         java.util.List<TaskDto> tasks = new java.util.ArrayList<>();
         for (int i = 0; i < 20; i++) {
-            String from = stations[i % 3];
-            String to = stations[(i + 1 + i / 3) % 3];
-            if (from.equals(to)) {
-                to = stations[(i + 2) % 3];
-            }
-            tasks.add(new TaskDto(i + 1, from, to));
+            boolean load = i % 4 != 3;
+            String from = load ? pickings[i % pickings.length] : loadings[i % loadings.length];
+            String to = load ? loadings[i % loadings.length] : pickings[i % pickings.length];
+            tasks.add(new TaskDto(i + 1, from, to, load ? TaskOperation.LOAD : TaskOperation.UNLOAD));
+        }
+        saveTaskSet(DEMO_TASK_SET_ID, "演示任务集（20 单）", standardWorkshopId(), tasks);
+        seedWarehouseTaskSet();
+    }
+
+    /** 仓储车间任务集：拣货区 → 上货区、上货区 → 拣货区，并覆盖存储区取放。 */
+    private void seedWarehouseTaskSet() {
+        java.util.List<TaskDto> tasks = new java.util.ArrayList<>();
+        String[][] flows = {
+                {"P1", "L1", "LOAD"}, {"P2", "L2", "LOAD"}, {"P3", "L3", "LOAD"},
+                {"L1", "P1", "UNLOAD"}, {"L2", "P2", "UNLOAD"}, {"L3", "P3", "UNLOAD"},
+                {"S1", "L1", "LOAD"}, {"S2", "L2", "LOAD"},
+                {"P1", "S1", "LOAD"}, {"P2", "S2", "LOAD"}
+        };
+        for (int i = 0; i < 20; i++) {
+            String[] flow = flows[i % flows.length];
+            tasks.add(new TaskDto(i + 1, flow[0], flow[1], TaskOperation.valueOf(flow[2])));
+        }
+        saveTaskSet(WAREHOUSE_TASK_SET_ID, "仓储任务集（20 单）", WAREHOUSE_WORKSHOP_ID, tasks);
+    }
+
+    private void saveTaskSet(long id, String name, Long roadnetId, java.util.List<TaskDto> tasks) {
+        if (roadnetId == null) {
+            log.warn("没有可用的路网，跳过任务集 {}", name);
+            return;
         }
         try {
             TaskSet set = new TaskSet();
-            set.setId(DEMO_TASK_SET_ID);
-            set.setName("演示任务集（20 单）");
-            set.setRoadnetId(standardWorkshopId());
+            set.setId(id);
+            set.setName(name);
+            set.setRoadnetId(roadnetId);
             set.setTasksJson(objectMapper.writeValueAsString(new TaskSetPayload(tasks)));
             set.setCreateUser(null);
             taskSetRepository.save(set);
-            log.info("初始化演示任务集：20 单");
+            log.info("初始化任务集 {}：{} 单", name, tasks.size());
         } catch (JsonProcessingException ex) {
-            log.warn("演示任务集初始化失败", ex);
+            log.warn("任务集 {} 初始化失败", name, ex);
         }
     }
 }

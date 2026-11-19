@@ -8,6 +8,8 @@ import com.agv.algorithm.model.NodeType;
 import com.agv.algorithm.model.RoadNet;
 import com.agv.algorithm.model.RoadNetValidator;
 import com.agv.algorithm.model.ValidationResult;
+import com.agv.algorithm.model.Zone;
+import com.agv.algorithm.model.ZoneKind;
 import com.agv.backend.common.BusinessException;
 import com.agv.backend.common.RoadNetInvalidException;
 import com.agv.backend.dto.EdgeDto;
@@ -15,6 +17,7 @@ import com.agv.backend.dto.NodeDto;
 import com.agv.backend.dto.RoadNetPayload;
 import com.agv.backend.dto.RoadNetSummary;
 import com.agv.backend.dto.SaveRoadNetRequest;
+import com.agv.backend.dto.ZoneDto;
 import com.agv.backend.entity.SysUser;
 import com.agv.backend.entity.RoadNetEntity;
 import com.agv.backend.repository.TaskSetRepository;
@@ -127,7 +130,7 @@ public class RoadNetService {
      * 只做校验不落库，供编辑器边改边验。
      */
     public ValidationResult validate(RoadNetPayload payload) {
-        return RoadNetValidator.validate(toNodes(payload), toEdges(payload));
+        return RoadNetValidator.validate(toNodes(payload), toEdges(payload), toZones(payload));
     }
 
     public RoadNet toModel(RoadNetPayload payload) {
@@ -148,9 +151,29 @@ public class RoadNetService {
                 throw new BusinessException("节点编号不能为空");
             }
             nodes.add(new NetNode(dto.id(), dto.x(), dto.y(),
-                    parseNodeType(dto.type(), dto.id()), dto.capacity()));
+                    parseNodeType(dto.type(), dto.id()), dto.capacity(), dto.serviceTicks()));
         }
         return nodes;
+    }
+
+    private List<Zone> toZones(RoadNetPayload payload) {
+        List<Zone> zones = new ArrayList<>();
+        for (ZoneDto dto : payload.zones()) {
+            if (dto.id() == null || dto.id().isBlank()) {
+                throw new BusinessException("区域编号不能为空");
+            }
+            zones.add(new Zone(dto.id(), parseZoneKind(dto.kind(), dto.id()),
+                    dto.x(), dto.y(), dto.width(), dto.height(), dto.label()));
+        }
+        return zones;
+    }
+
+    private ZoneKind parseZoneKind(String kind, String zoneId) {
+        try {
+            return ZoneKind.valueOf(kind);
+        } catch (RuntimeException ex) {
+            throw new BusinessException("区域 " + zoneId + " 的类型非法：" + kind);
+        }
     }
 
     private List<NetEdge> toEdges(RoadNetPayload payload) {

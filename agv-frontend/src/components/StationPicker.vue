@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { RoadNetPayload } from '@/api/roadnet'
+import type { NetNode, RoadNetPayload } from '@/api/roadnet'
 
 const props = defineProps<{
   roadnet: RoadNetPayload | null
   modelValue: string | null
+  acceptedTypes?: NetNode['type'][]
 }>()
 
 const emit = defineEmits<{
@@ -12,12 +13,14 @@ const emit = defineEmits<{
   close: []
 }>()
 
+const accepted = computed(() => new Set(props.acceptedTypes ?? []))
+
 const nodes = computed(() =>
   (props.roadnet?.nodes ?? []).map((node) => ({
     id: node.id,
     x: node.x,
     y: -node.y,
-    station: node.type === 'WORKSTATION',
+    station: accepted.value.size === 0 ? node.type !== 'JUNCTION' : accepted.value.has(node.type),
     selected: node.id === props.modelValue
   }))
 )
@@ -81,8 +84,8 @@ function choose(node: { id: string; station: boolean }) {
       </g>
     </svg>
     <div class="legend">
-      <span class="dot station"></span>工位（可点击）
-      <span class="dot"></span>其他节点
+      <span class="dot station"></span>可选节点
+      <span class="dot"></span>不可选节点
     </div>
   </div>
 </template>

@@ -90,6 +90,7 @@ export function buildRoadNet(net: RoadNetPayload, labels: LabelFactory): RoadNet
     group.add(divider)
   }
 
+  addZones(group, net)
   addNodePads(group, net.nodes)
   addNodeLabels(group, net.nodes, labels)
 
@@ -205,10 +206,28 @@ function makeDashTexture(): THREE.CanvasTexture {
 }
 
 const PAD_DEFINITIONS: Record<string, PadDefinition> = {
-  WORKSTATION: {
+  PICKING: {
     create: () => new THREE.BoxGeometry(2.4, 0.04, 2.4),
     color: 0x3d6f9e,
     emissiveIntensity: 0.22,
+    height: 0.04
+  },
+  LOADING: {
+    create: () => new THREE.BoxGeometry(2.4, 0.04, 2.4),
+    color: 0x2b8f88,
+    emissiveIntensity: 0.22,
+    height: 0.04
+  },
+  STORAGE: {
+    create: () => new THREE.BoxGeometry(2.0, 0.04, 2.0),
+    color: 0x7a4f96,
+    emissiveIntensity: 0.2,
+    height: 0.04
+  },
+  PARKING: {
+    create: () => new THREE.BoxGeometry(1.8, 0.04, 1.8),
+    color: 0xa8842a,
+    emissiveIntensity: 0.18,
     height: 0.04
   },
   CHARGER: {
@@ -229,6 +248,106 @@ const PAD_DEFINITIONS: Record<string, PadDefinition> = {
     emissiveIntensity: 0.05,
     height: 0.03
   }
+}
+
+const ZONE_COLORS: Record<string, number> = {
+  CHARGING: 0x2f7d4a,
+  PARKING: 0x8a6d1e,
+  STORAGE: 0x4c3560,
+  PICKING: 0x2f5f8a,
+  LOADING: 0x256f6a
+}
+
+/**
+ * 区域地贴与存储区货架。区域只做视觉标注，不参与路径与预约。
+ * 货架生成时与所有路段包围盒判交，压到车道的货架直接跳过。
+ */
+function addZones(group: THREE.Group, net: RoadNetPayload) {
+  const zones = net.zones ?? []
+  if (zones.length === 0) return
+
+  for (const zone of zones) {
+    const geometry = new THREE.PlaneGeometry(zone.width, zone.height)
+    const material = new THREE.MeshBasicMaterial({
+      color: ZONE_COLORS[zone.kind] ?? 0x3a4a60,
+      transparent: true,
+      opacity: 0.32,
+      depthWrite: false,
+      toneMapped: false
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.rotation.x = -Math.PI / 2
+    mesh.position.set(zone.x + zone.width / 2, ROAD_Y - 0.004, zone.y + zone.height / 2)
+    mesh.renderOrder = -1
+    mesh.name = `zone-${zone.id}`
+    group.add(mesh)
+  }
+
+  const storage = zones.filter((zone) => zone.kind === 'STORAGE')
+  if (storage.length === 0) return
+
+  const positions: { x: number; z: number }[] = []
+  const rackWidth = 1.2
+  const rackDepth = 2.0
+  const gapX = 2.4
+  const gapZ = 3.0
+  for (const zone of storage) {
+    const startX = zone.x + 1.2
+    const endX = zone.x + zone.width - 1.2
+    const startZ = zone.y + 1.2
+    const endZ = zone.y + zone.height - 1.2
+    for (let x = startX; x + rackWidth <= endX; x += gapX) {
+      for (let z = startZ; z + rackDepth <= endZ; z += gapZ) {
+        if (intersectsLane(x, z, rackWidth, rackDepth, net)) continue
+        positions.push({ x: x + rackWidth / 2, z: z + rackDepth / 2 })
+      }
+    }
+  }
+  if (positions.length === 0) return
+
+  const geometry = new THREE.BoxGeometry(rackWidth, 1.2, rackDepth)
+  const material = new THREE.MeshStandardMaterial({
+    color: 0x5b4b74,
+    roughness: 0.85,
+    metalness: 0.05
+  })
+  const racks = new THREE.InstancedMesh(geometry, material, positions.length)
+  const matrix = new THREE.Matrix4()
+  positions.forEach((position, index) => {
+    matrix.makeTranslation(position.x, ROAD_Y + 0.6, position.z)
+    racks.setMatrixAt(index, matrix)
+  })
+  racks.instanceMatrix.needsUpdate = true
+  racks.castShadow = true
+  racks.receiveShadow = true
+  racks.name = 'storage-racks'
+  group.add(racks)
+}
+
+function intersectsLane(x: number, z: number, width: number, depth: number, net: RoadNetPayload): boolean {
+  const byId = new Map(net.nodes.map((node) => [node.id, node]))
+  const margin = 1.0
+  const left = x - margin
+  const right = x + width + margin
+  const near = z - margin
+  const far = z + depth + margin
+  for (const edge of net.edges) {
+    const from = byId.get(edge.from)
+    const to = byId.get(edge.to)
+    if (!from || !to) continue
+    const dx = to.x - from.x
+    const dz = to.y - from.y
+    const lengthSq = dx * dx + dz * dz
+    if (lengthSq === 0) continue
+    const t = Math.max(0, Math.min(1,
+      ((x + width / 2 - from.x) * dx + (z + depth / 2 - from.y) * dz) / lengthSq))
+    const nearestX = from.x + dx * t
+    const nearestZ = from.y + dz * t
+    if (nearestX >= left && nearestX <= right && nearestZ >= near && nearestZ <= far) {
+      return true
+    }
+  }
+  return false
 }
 
 function addNodePads(group: THREE.Group, nodes: NetNode[]) {

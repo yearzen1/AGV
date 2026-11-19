@@ -11,7 +11,15 @@ export interface SimMetrics {
 
 export interface AgvSnapshot {
   id: string
-  status: 'IDLE' | 'MOVING' | 'WAITING' | 'LOADING' | 'CHARGING' | 'DONE'
+  status:
+    | 'IDLE'
+    | 'MOVING'
+    | 'WAITING'
+    | 'LOADING'
+    | 'UNLOADING'
+    | 'CHARGING'
+    | 'PARKED'
+    | 'DONE'
   arcId: string | null
   s: number
   x: number
@@ -84,10 +92,13 @@ export function simStatus() {
   return http.get<any, SimStatus>('/sim/status')
 }
 
+export type TaskOperation = 'LOAD' | 'UNLOAD'
+
 export interface TaskDto {
   id: number
   from: string
   to: string
+  operation: TaskOperation
 }
 
 export interface TaskSetSummary {

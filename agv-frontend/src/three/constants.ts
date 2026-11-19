@@ -12,8 +12,11 @@ export const COLORS = {
 } as const
 
 export const NODE_COLORS: Record<string, number> = {
+  PICKING: 0x409eff,
+  LOADING: 0x2ec4b6,
+  STORAGE: 0x9b59b6,
   CHARGER: 0x67c23a,
-  WORKSTATION: 0x409eff,
+  PARKING: 0xd4a017,
   BUFFER: 0xe6a23c,
   JUNCTION: 0x8fa3bd
 }
@@ -22,8 +25,10 @@ export const STATUS_COLORS: Record<string, number> = {
   MOVING: 0x409eff,
   WAITING: 0xf56c6c,
   LOADING: 0xe6a23c,
+  UNLOADING: 0x9b59b6,
   IDLE: 0x8fa3bd,
   CHARGING: 0x67c23a,
+  PARKED: 0xd4a017,
   DONE: 0x5c6b80
 }
 

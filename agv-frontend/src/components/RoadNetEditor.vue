@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import type { NetEdge, NetNode, RoadNetPayload, ValidationError } from '@/api/roadnet'
+import type { NetEdge, NetNode, RoadNetPayload, ValidationError, Zone } from '@/api/roadnet'
 
 const props = defineProps<{
   initial: RoadNetPayload
@@ -24,22 +24,62 @@ const MIN_SIZE = 10
 const MAX_SIZE = 200
 const HISTORY_LIMIT = 60
 
-type Tool = 'select' | 'pan' | 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION' | 'connect'
+type Tool =
+  | 'select'
+  | 'pan'
+  | 'PICKING'
+  | 'LOADING'
+  | 'STORAGE'
+  | 'CHARGER'
+  | 'PARKING'
+  | 'BUFFER'
+  | 'JUNCTION'
+  | 'connect'
 
-const NODE_TOOLS: Tool[] = ['WORKSTATION', 'CHARGER', 'BUFFER', 'JUNCTION']
+const NODE_TOOLS: Tool[] = [
+  'PICKING',
+  'LOADING',
+  'STORAGE',
+  'CHARGER',
+  'PARKING',
+  'BUFFER',
+  'JUNCTION'
+]
 
 const TYPE_LABEL: Record<string, string> = {
-  WORKSTATION: '工位',
+  PICKING: '拣货位',
+  LOADING: '上货位',
+  STORAGE: '存储位',
   CHARGER: '充电位',
+  PARKING: '停放位',
   BUFFER: '缓存位',
   JUNCTION: '路口'
 }
 
 const TYPE_COLOR: Record<string, string> = {
-  WORKSTATION: '#409eff',
+  PICKING: '#409eff',
+  LOADING: '#2ec4b6',
+  STORAGE: '#9b59b6',
   CHARGER: '#67c23a',
+  PARKING: '#d4a017',
   BUFFER: '#e6a23c',
   JUNCTION: '#909399'
+}
+
+const ZONE_LABEL: Record<string, string> = {
+  CHARGING: 'AGV充电区',
+  PARKING: 'AGV停放区',
+  STORAGE: '存储区',
+  PICKING: '拣货区',
+  LOADING: '上货区'
+}
+
+const ZONE_COLOR: Record<string, string> = {
+  CHARGING: '#67c23a',
+  PARKING: '#d4a017',
+  STORAGE: '#9b59b6',
+  PICKING: '#409eff',
+  LOADING: '#2ec4b6'
 }
 
 /** 工具栏内联图标，避免额外依赖。 */
@@ -58,8 +98,11 @@ const ICONS: Record<string, string> = {
 }
 
 const PREFIX: Record<string, string> = {
-  WORKSTATION: 'W',
+  PICKING: 'P',
+  LOADING: 'L',
+  STORAGE: 'S',
   CHARGER: 'CH',
+  PARKING: 'PK',
   BUFFER: 'B',
   JUNCTION: 'J'
 }
@@ -68,6 +111,7 @@ const mapWidth = ref(50)
 const mapHeight = ref(34)
 const nodes = ref<NetNode[]>([])
 const edges = ref<NetEdge[]>([])
+const zones = ref<Zone[]>([])
 
 const svgRef = ref<SVGSVGElement | null>(null)
 const contentRef = ref<SVGGElement | null>(null)
@@ -146,7 +190,7 @@ const contextMenu = ref<{
   world?: { x: number; y: number }
 } | null>(null)
 
-const batchNodeType = ref('WORKSTATION')
+const batchNodeType = ref('PICKING')
 const batchNodeCapacity = ref(1)
 const batchEdgeDirection = ref<'ONE_WAY' | 'TWO_WAY'>('TWO_WAY')
 const batchEdgeSpeed = ref(1)
@@ -407,6 +451,10 @@ function cloneNodes(list: NetNode[]) {
     ...node,
     capacity: typeof node.capacity === 'number' && node.capacity >= 1 ? node.capacity : 1
   }))
+}
+
+function cloneZones(list: Zone[]) {
+  return list.map((zone) => ({ ...zone }))
 }
 
 function cloneEdges(list: NetEdge[]) {
@@ -859,7 +907,8 @@ function onCanvasClick(event: MouseEvent) {
     x: point.x,
     y: point.y,
     type: type as NetNode['type'],
-    capacity: 1
+    capacity: 1,
+    serviceTicks: 0
   })
   selectedNodeIds.value = [nodes.value[nodes.value.length - 1].id]
   selectedEdgeIds.value = []
@@ -869,7 +918,14 @@ function addNodeAt(type: Tool, point: { x: number; y: number }) {
   if (!editable.value) return
   const x = clamp(Math.round(point.x / SNAP) * SNAP, 0, mapWidth.value)
   const y = clamp(Math.round(point.y / SNAP) * SNAP, 0, mapHeight.value)
-  const node: NetNode = { id: nextNodeId(type), x, y, type: type as NetNode['type'], capacity: 1 }
+  const node: NetNode = {
+    id: nextNodeId(type),
+    x,
+    y,
+    type: type as NetNode['type'],
+    capacity: 1,
+    serviceTicks: 0
+  }
   nodes.value.push(node)
   selectedNodeIds.value = [node.id]
   selectedEdgeIds.value = []
@@ -1839,6 +1895,7 @@ function loadPayload(payload: RoadNetPayload, resetHistory = true) {
   mapHeight.value = sizeValue(payload.height, 34)
   nodes.value = cloneNodes(payload.nodes ?? [])
   edges.value = cloneEdges(payload.edges ?? [])
+  zones.value = cloneZones(payload.zones ?? [])
   nodes.value.forEach((node) => {
     node.x = clamp(node.x, 0, mapWidth.value)
     node.y = clamp(node.y, 0, mapHeight.value)
@@ -1867,6 +1924,7 @@ function getPayload(): RoadNetPayload {
   return {
     nodes: cloneNodes(nodes.value),
     edges: cloneEdges(edges.value),
+    zones: cloneZones(zones.value),
     width: mapWidth.value,
     height: mapHeight.value
   }
@@ -2292,6 +2350,32 @@ defineExpose({
               </g>
             </g>
 
+            <g class="zone-layer" pointer-events="none">
+              <g v-for="zone in zones" :key="zone.id">
+                <rect
+                  :x="zone.x"
+                  :y="zone.y"
+                  :width="zone.width"
+                  :height="zone.height"
+                  :fill="ZONE_COLOR[zone.kind] ?? '#909399'"
+                  fill-opacity="0.12"
+                  :stroke="ZONE_COLOR[zone.kind] ?? '#909399'"
+                  stroke-opacity="0.55"
+                  stroke-dasharray="1 1"
+                  stroke-width="0.4"
+                  rx="0.6"
+                />
+                <text
+                  :x="zone.x + 0.8"
+                  :y="zone.y + 1.6"
+                  class="zone-label"
+                  :fill="ZONE_COLOR[zone.kind] ?? '#606266'"
+                >
+                  {{ zone.label || ZONE_LABEL[zone.kind] || zone.kind }}
+                </text>
+              </g>
+            </g>
+
             <g v-for="edge in edges" :key="edge.id">
               <line
                 v-for="lane in edgeLanes(edge)"
@@ -2436,17 +2520,14 @@ defineExpose({
             <span>图例</span>
             <button type="button" title="收起图例" @click="toggleLegend">−</button>
           </div>
-          <div class="legend-row">
-            <span class="dot" :style="{ background: TYPE_COLOR.WORKSTATION }"></span>工位
+          <div v-for="type in NODE_TOOLS" :key="type" class="legend-row">
+            <span class="dot" :style="{ background: TYPE_COLOR[type] }"></span>{{ TYPE_LABEL[type] }}
           </div>
-          <div class="legend-row">
-            <span class="dot" :style="{ background: TYPE_COLOR.CHARGER }"></span>充电位
-          </div>
-          <div class="legend-row">
-            <span class="dot" :style="{ background: TYPE_COLOR.BUFFER }"></span>缓存位
-          </div>
-          <div class="legend-row">
-            <span class="dot" :style="{ background: TYPE_COLOR.JUNCTION }"></span>路口
+          <div v-for="(label, kind) in ZONE_LABEL" :key="kind" class="legend-row">
+            <span
+              class="dot zone"
+              :style="{ borderColor: ZONE_COLOR[kind], background: 'transparent' }"
+            ></span>{{ label }}
           </div>
           <div class="legend-row">
             <span class="legend-symbol">→</span>单车道单向
@@ -2599,6 +2680,14 @@ defineExpose({
                     v-model="selectedNode.capacity"
                     :min="1"
                     :max="99"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+                <el-form-item label="装卸tick">
+                  <el-input-number
+                    v-model="selectedNode.serviceTicks"
+                    :min="0"
+                    :max="999"
                     style="width: 100%"
                   />
                 </el-form-item>
@@ -3203,6 +3292,18 @@ defineExpose({
 
 .dot.error {
   background: #f56c6c;
+}
+
+.dot.zone {
+  border: 1.5px dashed;
+  box-sizing: border-box;
+}
+
+.zone-label {
+  font-size: 1.6px;
+  opacity: 0.75;
+  user-select: none;
+  letter-spacing: 0.1px;
 }
 
 .legend-line {

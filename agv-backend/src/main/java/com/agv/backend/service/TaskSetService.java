@@ -139,7 +139,7 @@ public class TaskSetService {
             int id = dto.id() == null || ids.contains(dto.id()) ? nextId : dto.id();
             ids.add(id);
             nextId = Math.max(nextId, id + 1);
-            normalized.add(new TaskDto(id, dto.from(), dto.to()));
+            normalized.add(new TaskDto(id, dto.from(), dto.to(), dto.operation()));
         }
         normalized.sort((a, b) -> Integer.compare(a.id(), b.id()));
 

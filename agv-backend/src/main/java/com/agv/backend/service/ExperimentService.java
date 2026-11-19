@@ -244,7 +244,8 @@ public class ExperimentService {
 
     private List<Task> toTasks(TaskSetPayload payload) {
         return payload.tasks().stream()
-                .map(dto -> new Task(dto.id() == null ? 0 : dto.id(), dto.from(), dto.to()))
+                .map(dto -> new Task(dto.id() == null ? 0 : dto.id(), dto.from(), dto.to(),
+                        dto.operation()))
                 .toList();
     }
 

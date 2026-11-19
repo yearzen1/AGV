@@ -1,11 +1,33 @@
 import http from './http'
 
+export type NodeType =
+  | 'PICKING'
+  | 'LOADING'
+  | 'STORAGE'
+  | 'CHARGER'
+  | 'PARKING'
+  | 'BUFFER'
+  | 'JUNCTION'
+
+export type ZoneKind = 'CHARGING' | 'PARKING' | 'STORAGE' | 'PICKING' | 'LOADING'
+
 export interface NetNode {
   id: string
   x: number
   y: number
-  type: 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION'
+  type: NodeType
   capacity?: number
+  serviceTicks?: number
+}
+
+export interface Zone {
+  id: string
+  kind: ZoneKind
+  x: number
+  y: number
+  width: number
+  height: number
+  label?: string
 }
 
 export interface NetEdge {
@@ -22,6 +44,7 @@ export interface NetEdge {
 export interface RoadNetPayload {
   nodes: NetNode[]
   edges: NetEdge[]
+  zones?: Zone[]
   width?: number
   height?: number
 }

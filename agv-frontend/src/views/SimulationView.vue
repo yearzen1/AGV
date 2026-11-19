@@ -106,11 +106,13 @@ const progress = computed(() => {
 const eventTypeLabel: Record<string, string> = {
   TASK_ASSIGNED: '分配任务',
   LOADING: '装货',
+  UNLOADING: '卸货',
   TASK_DONE: '任务完成',
   WAIT_CONFLICT: '冲突等待',
   REPLAN: '重规划',
   DEADLOCK_BREAK: '打破僵局',
   CHARGING: '回充',
+  PARKED: '停放',
   FINISHED: '结束'
 }
 
@@ -348,8 +350,10 @@ function statusText(value: string) {
       IDLE: '空闲',
       MOVING: '行驶',
       WAITING: '等待',
-      LOADING: '装卸',
+      LOADING: '装货',
+      UNLOADING: '卸货',
       CHARGING: '充电',
+      PARKED: '停放',
       DONE: '完成'
     }[value] || value
   )
@@ -361,7 +365,9 @@ function statusTagType(value: string) {
       MOVING: 'primary',
       WAITING: 'danger',
       LOADING: 'warning',
+      UNLOADING: 'warning',
       CHARGING: 'success',
+      PARKED: 'success',
       IDLE: 'info',
       DONE: 'info'
     }[value] || 'info'

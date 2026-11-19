@@ -28,11 +28,16 @@ public final class RoadNetValidator {
     public static final String DUP_EDGE_PAIR = "DUP_EDGE_PAIR";
     public static final String SELF_LOOP = "SELF_LOOP";
     public static final String EMPTY = "EMPTY";
+    public static final String ZONE_INVALID = "ZONE_INVALID";
 
     private RoadNetValidator() {
     }
 
     public static ValidationResult validate(List<NetNode> nodes, List<NetEdge> edges) {
+        return validate(nodes, edges, List.of());
+    }
+
+    public static ValidationResult validate(List<NetNode> nodes, List<NetEdge> edges, List<Zone> zones) {
         List<ValidationError> errors = new ArrayList<>();
 
         if (nodes == null || nodes.isEmpty()) {
@@ -56,12 +61,22 @@ public final class RoadNetValidator {
         }
 
         // 6. 数值合法
+        for (Zone zone : zones == null ? List.<Zone>of() : zones) {
+            if (!Double.isFinite(zone.x()) || !Double.isFinite(zone.y())
+                    || !(zone.width() > 0) || !(zone.height() > 0)) {
+                errors.add(ValidationError.of(ZONE_INVALID, "区域尺寸或坐标非法：" + zone.id()));
+            }
+        }
         for (NetNode node : nodes) {
             if (!Double.isFinite(node.x()) || !Double.isFinite(node.y())) {
                 errors.add(ValidationError.node(INVALID_NUMBER, "节点坐标非法：" + node.id(), node.id()));
             }
             if (node.capacity() < 1) {
                 errors.add(ValidationError.node(INVALID_NUMBER, "节点容量必须不小于 1：" + node.id(), node.id()));
+            }
+            if (node.serviceTicks() < 0) {
+                errors.add(ValidationError.node(INVALID_NUMBER,
+                        "节点服务时间不能为负数：" + node.id(), node.id()));
             }
         }
         for (NetEdge edge : edges) {
@@ -141,18 +156,18 @@ public final class RoadNetValidator {
             }
         }
 
-        // 8. 连通性：任一充电位可达全部工位
+        // 8. 连通性：任一充电位可达全部服务节点
         List<NetNode> chargers = net.nodes().values().stream()
                 .filter(n -> n.type() == NodeType.CHARGER).toList();
-        List<NetNode> workstations = net.nodes().values().stream()
-                .filter(n -> n.type() == NodeType.WORKSTATION).toList();
+        List<NetNode> services = net.nodes().values().stream()
+                .filter(NetNode::isServiceNode).toList();
 
         for (NetNode charger : chargers) {
             Set<String> reachable = reachableFrom(net, charger.id());
-            for (NetNode station : workstations) {
-                if (!reachable.contains(station.id())) {
+            for (NetNode service : services) {
+                if (!reachable.contains(service.id())) {
                     errors.add(ValidationError.node(NOT_CONNECTED,
-                            "充电位 " + charger.id() + " 无法到达工位 " + station.id(), station.id()));
+                            "充电位 " + charger.id() + " 无法到达服务节点 " + service.id(), service.id()));
                 }
             }
         }
