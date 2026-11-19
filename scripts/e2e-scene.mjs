@@ -87,13 +87,13 @@ const DUAL_NET = {
     { id: 'CH1', x: 0, y: 0, type: 'CHARGER', capacity: 4 },
     { id: 'J1', x: 10, y: 0, type: 'JUNCTION', capacity: 1 },
     { id: 'J2', x: 10, y: 10, type: 'JUNCTION', capacity: 1 },
-    { id: 'W1', x: 0, y: 10, type: 'WORKSTATION', capacity: 1 }
+    { id: 'P1', x: 0, y: 10, type: 'PICKING', capacity: 1 }
   ],
   edges: [
     { id: 'E1', from: 'CH1', to: 'J1', length: 10, direction: 'TWO_WAY', speed: 1, capacity: 1, laneMode: 'DUAL' },
     { id: 'E2', from: 'J1', to: 'J2', length: 10, direction: 'TWO_WAY', speed: 1, capacity: 1, laneMode: 'DUAL' },
-    { id: 'E3', from: 'J2', to: 'W1', length: 10, direction: 'TWO_WAY', speed: 1, capacity: 1, laneMode: 'DUAL' },
-    { id: 'E4', from: 'W1', to: 'CH1', length: 10, direction: 'TWO_WAY', speed: 1, capacity: 1, laneMode: 'SINGLE' }
+    { id: 'E3', from: 'J2', to: 'P1', length: 10, direction: 'TWO_WAY', speed: 1, capacity: 1, laneMode: 'DUAL' },
+    { id: 'E4', from: 'P1', to: 'CH1', length: 10, direction: 'TWO_WAY', speed: 1, capacity: 1, laneMode: 'SINGLE' }
   ]
 }
 

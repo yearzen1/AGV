@@ -7,7 +7,7 @@ interface TestNode {
   id: string
   x: number
   y: number
-  type: 'WORKSTATION' | 'CHARGER' | 'BUFFER' | 'JUNCTION'
+  type: 'PICKING' | 'CHARGER' | 'BUFFER' | 'JUNCTION'
   capacity?: number
 }
 
@@ -301,7 +301,7 @@ test('a T junction between dual lanes and a single branch gets an apron too', ()
         { id: 'A', x: 0, y: 0, type: 'JUNCTION' },
         { id: 'B', x: 10, y: 0, type: 'JUNCTION' },
         { id: 'C', x: 20, y: 0, type: 'JUNCTION' },
-        { id: 'D', x: 10, y: 10, type: 'WORKSTATION' }
+        { id: 'D', x: 10, y: 10, type: 'PICKING' }
       ],
       [
         edge({ id: 'E1', from: 'A', to: 'B' }),

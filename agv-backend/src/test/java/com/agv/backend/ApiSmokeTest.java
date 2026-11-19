@@ -58,7 +58,7 @@ class ApiSmokeTest {
         mockMvc.perform(get("/api/roadnet/list").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.length()").value(3))
+                .andExpect(jsonPath("$.data.length()").value(4))
                 .andExpect(jsonPath("$.data[0].isTemplate").value(true));
     }
 
@@ -156,7 +156,7 @@ class ApiSmokeTest {
                                 {
                                   "name": "坏路网",
                                   "roadnet": {
-                                    "nodes": [{"id":"W1","x":0,"y":0,"type":"WORKSTATION"}],
+                                    "nodes": [{"id":"W1","x":0,"y":0,"type":"PICKING"}],
                                     "edges": []
                                   }
                                 }
@@ -244,7 +244,7 @@ class ApiSmokeTest {
 
         mockMvc.perform(get("/api/taskset/list").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data.length()").value(2))
                 .andExpect(jsonPath("$.data[0].taskCount").value(20));
 
         mockMvc.perform(post("/api/experiment/compare")

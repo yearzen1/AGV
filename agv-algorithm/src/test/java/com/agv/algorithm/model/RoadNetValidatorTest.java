@@ -28,7 +28,7 @@ class RoadNetValidatorTest {
         ValidationResult result = RoadNetValidator.validate(
                 List.of(node("CH1", NodeType.CHARGER, 0, 0),
                         node("J1", NodeType.JUNCTION, 5, 0),
-                        node("W1", NodeType.WORKSTATION, 10, 0)),
+                        node("W1", NodeType.PICKING, 10, 0)),
                 List.of(twoWay("E1", "CH1", "J1", 5), twoWay("E2", "J1", "W1", 5)));
 
         assertTrue(result.valid(), () -> "预期合法，实际错误：" + result.errors());
@@ -38,7 +38,7 @@ class RoadNetValidatorTest {
     @DisplayName("没有充电位：拦截")
     void rejectsNetworkWithoutCharger() {
         ValidationResult result = RoadNetValidator.validate(
-                List.of(node("W1", NodeType.WORKSTATION, 0, 0), node("W2", NodeType.WORKSTATION, 5, 0)),
+                List.of(node("W1", NodeType.PICKING, 0, 0), node("W2", NodeType.PICKING, 5, 0)),
                 List.of(twoWay("E1", "W1", "W2", 5)));
 
         assertFalse(result.valid());
@@ -50,8 +50,8 @@ class RoadNetValidatorTest {
     void rejectsDisconnectedWorkstation() {
         ValidationResult result = RoadNetValidator.validate(
                 List.of(node("CH1", NodeType.CHARGER, 0, 0),
-                        node("W1", NodeType.WORKSTATION, 5, 0),
-                        node("W2", NodeType.WORKSTATION, 99, 99)),
+                        node("W1", NodeType.PICKING, 5, 0),
+                        node("W2", NodeType.PICKING, 99, 99)),
                 List.of(twoWay("E1", "CH1", "W1", 5)));
 
         assertFalse(result.valid());
@@ -65,7 +65,7 @@ class RoadNetValidatorTest {
     void rejectsDuplicateEdgePair() {
         ValidationResult result = RoadNetValidator.validate(
                 List.of(node("CH1", NodeType.CHARGER, 0, 0),
-                        node("W1", NodeType.WORKSTATION, 5, 0)),
+                        node("W1", NodeType.PICKING, 5, 0)),
                 List.of(twoWay("E1", "CH1", "W1", 5),
                         twoWay("E2", "W1", "CH1", 5)));
 
@@ -78,7 +78,7 @@ class RoadNetValidatorTest {
     void rejectsNonPositiveLength() {
         ValidationResult result = RoadNetValidator.validate(
                 List.of(node("CH1", NodeType.CHARGER, 0, 0),
-                        node("W1", NodeType.WORKSTATION, 5, 0)),
+                        node("W1", NodeType.PICKING, 5, 0)),
                 List.of(twoWay("E1", "CH1", "W1", 0)));
 
         assertFalse(result.valid());
@@ -90,7 +90,7 @@ class RoadNetValidatorTest {
     void rejectsDeadEnd() {
         ValidationResult result = RoadNetValidator.validate(
                 List.of(node("CH1", NodeType.CHARGER, 0, 0),
-                        node("W1", NodeType.WORKSTATION, 5, 0)),
+                        node("W1", NodeType.PICKING, 5, 0)),
                 List.of(new NetEdge("E1", "CH1", "W1", 5, EdgeDirection.ONE_WAY, 1.0, 1)));
 
         assertFalse(result.valid());
@@ -104,7 +104,7 @@ class RoadNetValidatorTest {
                 List.of(node("CH1", NodeType.CHARGER, 0, 0),
                         node("J1", NodeType.JUNCTION, 5, 0),
                         node("B1", NodeType.BUFFER, 7, 0),
-                        node("W1", NodeType.WORKSTATION, 10, 0)),
+                        node("W1", NodeType.PICKING, 10, 0)),
                 List.of(twoWay("E1", "CH1", "J1", 5),
                         twoWay("E2", "J1", "B1", 2),
                         twoWay("E3", "B1", "W1", 3)));
@@ -118,11 +118,36 @@ class RoadNetValidatorTest {
     void rejectsInvalidNodeCapacity() {
         ValidationResult result = RoadNetValidator.validate(
                 List.of(new NetNode("CH1", 0, 0, NodeType.CHARGER, 0),
-                        node("W1", NodeType.WORKSTATION, 5, 0)),
+                        node("W1", NodeType.PICKING, 5, 0)),
                 List.of(twoWay("E1", "CH1", "W1", 5)));
 
         assertFalse(result.valid());
         assertTrue(hasCode(result, RoadNetValidator.INVALID_NUMBER));
+    }
+
+    @Test
+    @DisplayName("区域宽高非法：拦截")
+    void rejectsInvalidZone() {
+        ValidationResult result = RoadNetValidator.validate(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("P1", NodeType.PICKING, 5, 0)),
+                List.of(twoWay("E1", "CH1", "P1", 5)),
+                List.of(new Zone("Z1", ZoneKind.PICKING, 0, 0, 0, 5, "拣货区")));
+
+        assertFalse(result.valid());
+        assertTrue(hasCode(result, RoadNetValidator.ZONE_INVALID));
+    }
+
+    @Test
+    @DisplayName("区域只做标注，不影响合法路网")
+    void validZoneDoesNotAffectValidation() {
+        ValidationResult result = RoadNetValidator.validate(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("P1", NodeType.PICKING, 5, 0)),
+                List.of(twoWay("E1", "CH1", "P1", 5)),
+                List.of(new Zone("Z1", ZoneKind.PICKING, -1, -1, 8, 4, "拣货区")));
+
+        assertTrue(result.valid(), () -> "区域不应产生拓扑错误：" + result.errors());
     }
 
     @Test

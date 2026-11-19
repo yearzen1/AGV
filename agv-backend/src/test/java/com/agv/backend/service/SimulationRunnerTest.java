@@ -84,8 +84,8 @@ class SimulationRunnerTest {
     private RoadNet corridor() {
         List<NetNode> nodes = List.of(
                 new NetNode("CH1", 0, 0, NodeType.CHARGER),
-                new NetNode("W1", 10, 0, NodeType.WORKSTATION),
-                new NetNode("W2", 20, 0, NodeType.WORKSTATION),
+                new NetNode("W1", 10, 0, NodeType.PICKING),
+                new NetNode("W2", 20, 0, NodeType.PICKING),
                 new NetNode("CH2", 30, 0, NodeType.CHARGER));
         List<NetEdge> edges = List.of(
                 new NetEdge("E1", "CH1", "W1", 10, EdgeDirection.TWO_WAY, 1.0, 1),

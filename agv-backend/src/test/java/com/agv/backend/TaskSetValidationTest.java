@@ -54,7 +54,7 @@ class TaskSetValidationTest {
         mockMvc.perform(post("/api/taskset")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(taskSetBody("绑定测试", 1, "W1", "W2")))
+                        .content(taskSetBody("绑定测试", 1, "P1", "L1")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.roadnetId").value(1))
@@ -85,7 +85,7 @@ class TaskSetValidationTest {
         mockMvc.perform(post("/api/taskset")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(taskSetBody("未知节点", 1, "W9", "W2")))
+                        .content(taskSetBody("未知节点", 1, "W9", "L1")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4000))
                 .andExpect(jsonPath("$.message").value("任务 1：起点 W9 不在该路网中"));
@@ -99,10 +99,11 @@ class TaskSetValidationTest {
         mockMvc.perform(post("/api/taskset")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(taskSetBody("充电位端点", 1, "CH1", "W2")))
+                        .content(taskSetBody("充电位端点", 1, "CH1", "L1")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4000))
-                .andExpect(jsonPath("$.message").value("任务 1：起点 CH1 不是工位"));
+                .andExpect(jsonPath("$.message").value(
+                        "任务 1：LOAD 任务的起点 CH1 必须是拣货位或存储位"));
     }
 
     @Test
@@ -113,7 +114,7 @@ class TaskSetValidationTest {
         mockMvc.perform(post("/api/taskset")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(taskSetBody("同点", 1, "W1", "W1")))
+                        .content(taskSetBody("同点", 1, "P1", "P1")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4000))
                 .andExpect(jsonPath("$.message").value("任务 1：起点与终点不能相同"));
@@ -128,7 +129,7 @@ class TaskSetValidationTest {
         mockMvc.perform(post("/api/taskset")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(taskSetBody("不可达", roadnetId, "W2", "W1")))
+                        .content(taskSetBody("不可达", roadnetId, "W2", "W1", "UNLOAD")))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(4000))
                 .andExpect(jsonPath("$.message").value("任务 1：W2 → W1 不可达"));
@@ -138,7 +139,7 @@ class TaskSetValidationTest {
     @DisplayName("仿真启动时任务集与路网不匹配：拒绝启动")
     void rejectsSimulationWithMismatchedMap() throws Exception {
         String token = login("dispatcher", "dispatcher123");
-        long taskSetId = createTaskSet(token, "跨图启动", 1, "W1", "W2");
+        long taskSetId = createTaskSet(token, "跨图启动", 1, "P1", "L1");
 
         mockMvc.perform(post("/api/sim/start")
                         .header("Authorization", "Bearer " + token)
@@ -185,13 +186,17 @@ class TaskSetValidationTest {
     }
 
     private String taskSetBody(String name, long roadnetId, String from, String to) {
+        return taskSetBody(name, roadnetId, from, to, "LOAD");
+    }
+
+    private String taskSetBody(String name, long roadnetId, String from, String to, String operation) {
         return """
                 {
                   "name": "%s",
                   "roadnetId": %d,
-                  "taskSet": {"tasks": [{"id": 1, "from": "%s", "to": "%s"}]}
+                  "taskSet": {"tasks": [{"id": 1, "from": "%s", "to": "%s", "operation": "%s"}]}
                 }
-                """.formatted(name, roadnetId, from, to);
+                """.formatted(name, roadnetId, from, to, operation);
     }
 
     private long createTaskSet(String token, String name, long roadnetId, String from, String to)
@@ -219,8 +224,8 @@ class TaskSetValidationTest {
                                   "roadnet": {
                                     "nodes": [
                                       {"id":"CH1","x":0,"y":0,"type":"CHARGER","capacity":4},
-                                      {"id":"W1","x":10,"y":0,"type":"WORKSTATION","capacity":1},
-                                      {"id":"W2","x":20,"y":0,"type":"WORKSTATION","capacity":1},
+                                      {"id":"W1","x":10,"y":0,"type":"PICKING","capacity":1},
+                                      {"id":"W2","x":20,"y":0,"type":"LOADING","capacity":1},
                                       {"id":"J1","x":10,"y":10,"type":"JUNCTION","capacity":1},
                                       {"id":"J2","x":20,"y":10,"type":"JUNCTION","capacity":1},
                                       {"id":"J3","x":30,"y":10,"type":"JUNCTION","capacity":1}

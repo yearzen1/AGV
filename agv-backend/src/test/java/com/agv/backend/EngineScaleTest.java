@@ -26,7 +26,8 @@ class EngineScaleTest {
         RoadNet net = RoadNet.of(
                 payload.nodes().stream()
                         .map(n -> new com.agv.algorithm.model.NetNode(n.id(), n.x(), n.y(),
-                                com.agv.algorithm.model.NodeType.valueOf(n.type()), n.capacity()))
+                                com.agv.algorithm.model.NodeType.valueOf(n.type()), n.capacity(),
+                                n.serviceTicks()))
                         .toList(),
                 payload.edges().stream()
                         .map(e -> new com.agv.algorithm.model.NetEdge(e.id(), e.from(), e.to(), e.length(),
@@ -36,15 +37,14 @@ class EngineScaleTest {
                                         : com.agv.algorithm.model.LaneMode.SINGLE))
                         .toList());
 
-        String[] stations = {"W1", "W2", "W3"};
         List<Task> tasks = new ArrayList<>();
         for (int i = 0; i < 20; i++) {
-            String from = stations[i % 3];
-            String to = stations[(i + 1 + i / 3) % 3];
-            if (from.equals(to)) {
-                to = stations[(i + 2) % 3];
-            }
-            tasks.add(new Task(i + 1, from, to));
+            boolean unload = i % 4 == 3;
+            String from = unload ? "L1" : (i % 2 == 0 ? "P1" : "P2");
+            String to = unload ? (i % 2 == 0 ? "P1" : "P2") : "L1";
+            tasks.add(new Task(i + 1, from, to,
+                    unload ? com.agv.algorithm.sim.TaskOperation.UNLOAD
+                            : com.agv.algorithm.sim.TaskOperation.LOAD));
         }
 
         List<String> lines = new ArrayList<>();

@@ -22,6 +22,10 @@ class SimulationEngineTest {
         return new NetNode(id, x, y, type);
     }
 
+    private static NetNode node(String id, NodeType type, double x, double y, int serviceTicks) {
+        return new NetNode(id, x, y, type, 1, serviceTicks);
+    }
+
     private static NetEdge edge(String id, String from, String to, double length) {
         return new NetEdge(id, from, to, length, EdgeDirection.TWO_WAY, 1.0, 1);
     }
@@ -30,8 +34,8 @@ class SimulationEngineTest {
     private RoadNet corridor() {
         return RoadNet.of(
                 List.of(node("CH1", NodeType.CHARGER, 0, 0),
-                        node("W1", NodeType.WORKSTATION, 10, 0),
-                        node("W2", NodeType.WORKSTATION, 20, 0),
+                        node("W1", NodeType.PICKING, 10, 0),
+                        node("W2", NodeType.PICKING, 20, 0),
                         node("CH2", NodeType.CHARGER, 30, 0)),
                 List.of(edge("E1", "CH1", "W1", 10),
                         edge("E2", "W1", "W2", 10),
@@ -47,8 +51,8 @@ class SimulationEngineTest {
                 node("J2", NodeType.JUNCTION, 20, 10),
                 node("J3", NodeType.JUNCTION, 0, 20),
                 node("J4", NodeType.JUNCTION, 20, 20),
-                node("W1", NodeType.WORKSTATION, 0, 30),
-                node("W2", NodeType.WORKSTATION, 20, 30),
+                node("W1", NodeType.PICKING, 0, 30),
+                node("W2", NodeType.PICKING, 20, 30),
                 node("B1", NodeType.BUFFER, 10, 10),
                 node("B2", NodeType.BUFFER, 10, 20)
         ));
@@ -66,6 +70,49 @@ class SimulationEngineTest {
                 edge("E11", "B1", "B2", 10)
         );
         return RoadNet.of(nodes, edges);
+    }
+
+    @Test
+    @DisplayName("节点服务时间分别作用于装货和卸货阶段")
+    void nodeServiceTicksApplyToLoadAndUnload() {
+        RoadNet net = RoadNet.of(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("P1", NodeType.PICKING, 10, 0, 3),
+                        node("L1", NodeType.LOADING, 20, 0, 2),
+                        node("CH2", NodeType.CHARGER, 30, 0)),
+                List.of(edge("E1", "CH1", "P1", 10),
+                        edge("E2", "P1", "L1", 10),
+                        edge("E3", "L1", "CH2", 10)));
+
+        SimulationResult result = new SimulationEngine(net,
+                List.of(new Task(1, "P1", "L1")),
+                SimConfig.defaults(1, 42L, "nearest")).runToCompletion();
+
+        assertTrue(result.finished());
+        assertEquals(1, result.completedTasks());
+        // 空驶 10 m + 装货 3 tick + 运输 10 m + 卸货 2 tick，1 m/s、100ms/tick
+        assertTrue(result.makespan() >= 205,
+                "装卸阶段应计入 makespan，实际 " + result.makespan());
+    }
+
+    @Test
+    @DisplayName("空闲时优先回停放位，而不是充电位")
+    void idleAgvPrefersParking() {
+        RoadNet net = RoadNet.of(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("P1", NodeType.PICKING, 10, 0),
+                        node("L1", NodeType.LOADING, 20, 0),
+                        node("PK1", NodeType.PARKING, 30, 0)),
+                List.of(edge("E1", "CH1", "P1", 10),
+                        edge("E2", "P1", "L1", 10),
+                        edge("E3", "L1", "PK1", 10)));
+
+        SimulationEngine engine = new SimulationEngine(net,
+                List.of(new Task(1, "P1", "L1")),
+                SimConfig.defaults(1, 42L, "nearest"));
+        engine.runToCompletion();
+
+        assertEquals(AgvStatus.PARKED, engine.snapshots().get(0).status());
     }
 
     @Test
@@ -157,8 +204,8 @@ class SimulationEngineTest {
     void unreachableTaskRejected() {
         RoadNet broken = RoadNet.of(
                 List.of(node("CH1", NodeType.CHARGER, 0, 0),
-                        node("W1", NodeType.WORKSTATION, 10, 0),
-                        node("W9", NodeType.WORKSTATION, 99, 99)),
+                        node("W1", NodeType.PICKING, 10, 0),
+                        node("W9", NodeType.PICKING, 99, 99)),
                 List.of(edge("E1", "CH1", "W1", 10)));
 
         assertThrows(IllegalArgumentException.class,
@@ -170,8 +217,8 @@ class SimulationEngineTest {
     @DisplayName("没有充电位：构造期直接拒绝")
     void missingChargerRejected() {
         RoadNet noCharger = RoadNet.of(
-                List.of(node("W1", NodeType.WORKSTATION, 0, 0),
-                        node("W2", NodeType.WORKSTATION, 10, 0)),
+                List.of(node("W1", NodeType.PICKING, 0, 0),
+                        node("W2", NodeType.PICKING, 10, 0)),
                 List.of(edge("E1", "W1", "W2", 10)));
 
         assertThrows(IllegalArgumentException.class,

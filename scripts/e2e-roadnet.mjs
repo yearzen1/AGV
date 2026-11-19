@@ -213,7 +213,7 @@ async function main() {
 
     console.log('新建节点并撤销')
     const beforeNodes = await page.locator('circle.node-dot').count()
-    await page.locator('.toolbar').getByText('工位', { exact: true }).click()
+    await page.locator('.toolbar').getByText('拣货位', { exact: true }).click()
     const spot = await emptyMapPoint(page)
     await page.mouse.click(spot.x, spot.y)
     await page.waitForTimeout(600)
@@ -276,7 +276,7 @@ async function main() {
     }))
     assert(flows.paths === 6, `20 条任务聚合成 ${flows.paths} 条流向`)
     assert(flows.counts.reduce((sum, value) => sum + value, 0) === 20, '流向数量合计为 20')
-    assert(flows.badges === 3, '工位角标数量为 3')
+    assert(flows.badges === 3, '服务节点角标数量为 3')
     await page.screenshot({ path: path.join(OUT, 'roadnet-tasks-1440x900.png') })
     await page.getByText('在地图上显示任务流向').click()
 

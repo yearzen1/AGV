@@ -144,7 +144,7 @@ async function main() {
         contentType: 'application/json',
         body: JSON.stringify({
           code: 4000,
-          message: '任务 1：起点 W9 不在该路网中；任务 2：W1 → W9 不可达'
+          message: '任务 1：起点 W9 不在该路网中；任务 2：P1 → L9 不可达'
         })
       })
     })
