@@ -156,7 +156,7 @@ def main() -> int:
     if roadnet_anchor in chapters:
         chapters = chapters.replace(
             roadnet_anchor,
-            "![图 6-1　标准车间路网](figures/fig-6-1-roadnet.png)\n\n" + roadnet_anchor,
+            "![图 6-1　仓储车间路网](figures/fig-6-1-roadnet.png)\n\n" + roadnet_anchor,
             1,
         )
     else:

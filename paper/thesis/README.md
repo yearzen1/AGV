@@ -28,7 +28,7 @@ python scripts/capture-figures.mjs    # 需要先启动前后端与无头 Edge�
 | 图 5-3 | `figures/fig-5-3-simulation.png` | 仿真运行界面 |
 | 图 5-4 | `figures/fig-5-4-experiment.png` | 算法对比报表 |
 | 图 5-5 | `figures/fig-5-5-users.png`、`fig-5-5-dict.png` | 用户管理 / 数字字典 |
-| 图 6-1 | `figures/fig-6-1-roadnet.png` | 标准车间路网（三维） |
+| 图 6-1 | `figures/fig-6-1-roadnet.png` | 仓储车间路网（二维布局，含区域与货架） |
 | 图 6-2 | `figures/fig-6-2-line.png` | 完成时间随车队规模变化 |
 | 图 6-3 | `figures/fig-6-3-bars.png` | 四项指标对比 |
 

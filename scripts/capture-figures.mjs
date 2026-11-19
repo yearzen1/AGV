@@ -177,13 +177,13 @@ async function main() {
 
   // 图 6-2 完成时间折线图（自绘 SVG）
   const data = [
-    { n: 2, nearest: 3970, greedy: 3351 },
-    { n: 3, nearest: 3326, greedy: 3347 },
-    { n: 5, nearest: 3304, greedy: 3421 },
-    { n: 8, nearest: 3026, greedy: 3354 }
+    { n: 2, nearest: 7330, greedy: 7797 },
+    { n: 3, nearest: 6282, greedy: 5792 },
+    { n: 5, nearest: 5719, greedy: 5469 },
+    { n: 8, nearest: 4878, greedy: 6005 }
   ]
   const W = 1680, H = 1050, L = 160, R = 120, T = 150, B = 150
-  const maxY = 4000
+  const maxY = 8000
   const x = (i) => L + (i * (W - L - R)) / (data.length - 1)
   const y = (v) => H - B - (v / maxY) * (H - T - B)
   const poly = (key) => data.map((d, i) => `${x(i)},${y(d[key])}`).join(' ')
@@ -191,7 +191,7 @@ async function main() {
     data.map((d, i) => `<circle cx="${x(i)}" cy="${y(d[key])}" r="7" fill="${color}"/>`).join('')
   const labels = (key, color, dy) =>
     data.map((d, i) => `<text x="${x(i)}" y="${y(d[key]) + dy}" font-size="20" fill="${color}" text-anchor="middle">${d[key]}</text>`).join('')
-  const yTicks = Array.from({ length: 9 }, (_, i) => i * 500)
+  const yTicks = Array.from({ length: 9 }, (_, i) => i * 1000)
     .map((v) => `<line x1="${L}" y1="${y(v)}" x2="${W - R}" y2="${y(v)}" stroke="#ebeef5" stroke-width="1"/>
       <text x="${L - 16}" y="${y(v) + 7}" font-size="18" fill="#909399" text-anchor="end">${v}</text>`).join('')
   const xTicks = data.map((d, i) => `<text x="${x(i)}" y="${H - B + 40}" font-size="20" fill="#606266" text-anchor="middle">${d.n} 台</text>`).join('')
@@ -201,7 +201,7 @@ async function main() {
 <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
   <rect width="${W}" height="${H}" fill="#ffffff"/>
   <text x="80" y="70" font-size="30" font-weight="bold" fill="#1f3b73">图 6-2　完成时间随车队规模变化</text>
-  <text x="80" y="110" font-size="18" fill="#909399">20 单任务集，seed = 20261107，单位：tick（1 tick = 100 ms）</text>
+  <text x="80" y="110" font-size="18" fill="#909399">仓储车间 20 单任务集，seed = 20261107，单位：tick（1 tick = 100 ms）</text>
   ${yTicks}
   <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" stroke="#c0c4cc" stroke-width="2"/>
   <line x1="${L}" y1="${T}" x2="${L}" y2="${H - B}" stroke="#c0c4cc" stroke-width="2"/>
