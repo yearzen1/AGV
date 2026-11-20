@@ -195,6 +195,23 @@ class SimulationEngineTest {
                         edge("E2", "W1", "W2", 10)));
     }
 
+    /** 单车道走廊：用于触发真实的倒车让行。 */
+    private RoadNet singleLaneCorridor() {
+        return RoadNet.of(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("W1", NodeType.WORKSTATION, 10, 0),
+                        node("W2", NodeType.WORKSTATION, 20, 0),
+                        node("CH2", NodeType.CHARGER, 30, 0)),
+                List.of(singleEdge("E1", "CH1", "W1", 10),
+                        singleEdge("E2", "W1", "W2", 10),
+                        singleEdge("E3", "W2", "CH2", 10)));
+    }
+
+    private static NetEdge singleEdge(String id, String from, String to, double length) {
+        return new NetEdge(id, from, to, length, EdgeDirection.TWO_WAY, 1.0, 1,
+                com.agv.algorithm.model.LaneMode.SINGLE);
+    }
+
     @Test
     @DisplayName("冲突等待结束后发出 WAIT_RESOLVED，并更新最长等待")
     void conflictWaitIsClosedByResolvedEvent() {
@@ -336,6 +353,32 @@ class SimulationEngineTest {
                         .flatMap(frame -> frame.events().stream())
                         .anyMatch(event -> event.type() == SimEvent.Type.DEADLOCK),
                 "死锁应产生 DEADLOCK 事件");
+        SimEvent deadlock = frames.stream()
+                .flatMap(frame -> frame.events().stream())
+                .filter(event -> event.type() == SimEvent.Type.DEADLOCK)
+                .findFirst().orElseThrow();
+        assertTrue(deadlock.detail().contains("等待环"), deadlock.detail());
+        assertTrue(deadlock.detail().contains("AGV-1"), deadlock.detail());
+        assertTrue(deadlock.detail().contains("AGV-2"), deadlock.detail());
+        assertTrue(engine.deadlockDetail().contains("等待环"));
+    }
+
+    @Test
+    @DisplayName("倒车抵达起点后进入 30 tick 冷却")
+    void retreatStartsCooldown() {
+        SimulationEngine engine = new SimulationEngine(singleLaneCorridor(),
+                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1")),
+                SimConfig.defaults(2, 7L, "nearest"));
+
+        boolean cooling = false;
+        while (!engine.finished() && !engine.deadlocked() && engine.tick() < 1_000) {
+            engine.step();
+            if (engine.yieldCooldown("AGV-1") > 0 || engine.yieldCooldown("AGV-2") > 0) {
+                cooling = true;
+                break;
+            }
+        }
+        assertTrue(cooling, "倒车让行后应进入冷却，避免立刻重新抢同一资源");
     }
 
     @Test

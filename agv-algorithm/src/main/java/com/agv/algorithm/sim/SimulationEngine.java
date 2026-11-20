@@ -48,6 +48,9 @@ public final class SimulationEngine {
     /** 还有任务未完成，但连续这么久没有任何任务完成，判定为活锁或死锁。 */
     private static final long DEADLOCK_NO_PROGRESS_TICKS = 10_000;
 
+    /** 倒车/退回起点成功后，保持等待的冷却 tick，避免立刻再次抢同一资源。 */
+    private static final int YIELD_COOLDOWN_TICKS = 30;
+
     private final RoadNet net;
     private final List<Task> allTasks;
     private final SimConfig config;
@@ -74,6 +77,7 @@ public final class SimulationEngine {
     private int unparkedAtFinish;
     private boolean finished;
     private boolean deadlocked;
+    private String deadlockDetail;
     private long allWaitingTicks;
     private long lastCycleEventTick = -DEADLOCK_WAIT_TICKS;
     private long lastCompletionTick;
@@ -138,6 +142,12 @@ public final class SimulationEngine {
             if (finished) {
                 break;
             }
+            if (agv.yieldCooldownTicks > 0) {
+                agv.yieldCooldownTicks--;
+                if (agv.status == AgvStatus.WAITING || agv.status == AgvStatus.IDLE) {
+                    continue;
+                }
+            }
             if (agv.status == AgvStatus.LOADING) {
                 if (--agv.serviceTicksLeft <= 0) {
                     startDelivery(agv, events);
@@ -195,6 +205,17 @@ public final class SimulationEngine {
     /** 是否因无法解开的等待环而停止。 */
     public boolean deadlocked() {
         return deadlocked;
+    }
+
+    /** 死锁时的等待环/等待车说明；未死锁时为空。 */
+    public String deadlockDetail() {
+        return deadlockDetail == null ? "" : deadlockDetail;
+    }
+
+    /** 便于测试：指定 AGV 剩余的让行冷却 tick。 */
+    int yieldCooldown(String agvId) {
+        Agv agv = agvs.get(agvId);
+        return agv == null ? 0 : agv.yieldCooldownTicks;
     }
 
     public long tick() {
@@ -262,6 +283,7 @@ public final class SimulationEngine {
         agv.retreating = false;
         agv.lastArc = null;
         agv.status = AgvStatus.MOVING;
+        agv.yieldCooldownTicks = YIELD_COOLDOWN_TICKS;
         afterNodeArrival(agv, events);
     }
 
@@ -272,6 +294,10 @@ public final class SimulationEngine {
     private void tryCrossNode(Agv agv, List<SimEvent> events) {
         Arc current = agv.currentArc;
         if (current == null) {
+            return;
+        }
+        if (agv.yieldCooldownTicks > 0) {
+            agv.status = AgvStatus.WAITING;
             return;
         }
         String nodeId = current.to();
@@ -296,6 +322,9 @@ public final class SimulationEngine {
             agv.s = 0;
             agv.lastArc = current;
             clearWait(agv, events, current.id(), wasWaiting);
+            if (agv.retreatGoal != null) {
+                agv.yieldCooldownTicks = YIELD_COOLDOWN_TICKS;
+            }
             afterNodeArrival(agv, events);
             return;
         }
@@ -531,6 +560,10 @@ public final class SimulationEngine {
     // ---------------------------------------------------------------- 预约
 
     private boolean tryEnterNext(Agv agv, List<SimEvent> events) {
+        if (agv.yieldCooldownTicks > 0) {
+            agv.status = AgvStatus.WAITING;
+            return false;
+        }
         if (agv.path.isEmpty()) {
             afterNodeArrival(agv, events);
             return true;
@@ -639,7 +672,7 @@ public final class SimulationEngine {
      * 等待环检测：把"我在等谁"建成有向图，有环就让环上编号最小的车禁掉争议路段并重规划。
      * 这是兜底手段，正常情况下优先级让行已经避免了环。
      */
-    private void detectWaitCycle(List<SimEvent> events) {
+    private Map<String, Set<String>> waitGraph() {
         Map<String, Set<String>> waitFor = new LinkedHashMap<>();
         for (Agv agv : agvs.values()) {
             if (agv.status != AgvStatus.WAITING || agv.path.isEmpty()) {
@@ -661,6 +694,62 @@ public final class SimulationEngine {
             blockers.remove(agv.id);
             waitFor.put(agv.id, blockers);
         }
+        return waitFor;
+    }
+
+    private String describeDeadlock() {
+        Map<String, Set<String>> graph = waitGraph();
+        for (String start : graph.keySet()) {
+            List<String> cycle = findCycle(start, graph);
+            if (cycle.isEmpty()) {
+                continue;
+            }
+            StringBuilder detail = new StringBuilder("等待环：");
+            for (String id : cycle) {
+                detail.append(labelOf(id)).append(" → ");
+            }
+            detail.append(labelOf(cycle.get(0)));
+            return detail.toString();
+        }
+        List<Agv> waiting = agvs.values().stream()
+                .filter(agv -> agv.status == AgvStatus.WAITING)
+                .sorted(Comparator.comparingInt((Agv agv) -> agv.blockedTicks).reversed())
+                .limit(3)
+                .toList();
+        StringBuilder detail = new StringBuilder("无进展，等待车：");
+        for (int i = 0; i < waiting.size(); i++) {
+            if (i > 0) {
+                detail.append("；");
+            }
+            detail.append(labelOf(waiting.get(i).id));
+        }
+        return detail.toString();
+    }
+
+    private String labelOf(String agvId) {
+        Agv agv = agvs.get(agvId);
+        if (agv == null) {
+            return agvId;
+        }
+        String resource = waitingResource(agv);
+        return resource == null ? agv.id : agv.id + "@" + resource;
+    }
+
+    private String waitingResource(Agv agv) {
+        if (agv.wantedNodeId != null) {
+            return agv.wantedNodeId;
+        }
+        if (agv.wantedEdgeId != null) {
+            return agv.wantedEdgeId;
+        }
+        if (!agv.path.isEmpty()) {
+            return agv.path.peek().id();
+        }
+        return agv.currentArc == null ? agv.currentNode : agv.currentArc.id();
+    }
+
+    private void detectWaitCycle(List<SimEvent> events) {
+        Map<String, Set<String>> waitFor = waitGraph();
         if (waitFor.isEmpty()) {
             return;
         }
@@ -830,8 +919,9 @@ public final class SimulationEngine {
         }
         if (tick - lastCompletionTick > DEADLOCK_NO_PROGRESS_TICKS) {
             deadlocked = true;
+            deadlockDetail = describeDeadlock();
             events.add(new SimEvent(tick, "-", SimEvent.Type.DEADLOCK, "-",
-                    "连续 " + DEADLOCK_NO_PROGRESS_TICKS + " tick 没有任务完成，判定为死锁"));
+                    "连续 " + DEADLOCK_NO_PROGRESS_TICKS + " tick 没有任务完成，判定为死锁；" + deadlockDetail));
             return;
         }
         boolean allWaiting = !agvs.isEmpty()
@@ -843,8 +933,9 @@ public final class SimulationEngine {
         allWaitingTicks++;
         if (allWaitingTicks > DEADLOCK_WAIT_TICKS) {
             deadlocked = true;
+            deadlockDetail = describeDeadlock();
             events.add(new SimEvent(tick, "-", SimEvent.Type.DEADLOCK, "-",
-                    "全部车辆连续等待 " + DEADLOCK_WAIT_TICKS + " tick，判定为死锁"));
+                    "全部车辆连续等待 " + DEADLOCK_WAIT_TICKS + " tick，判定为死锁；" + deadlockDetail));
         }
     }
 
@@ -965,6 +1056,7 @@ public final class SimulationEngine {
         String retreatGoal;
         boolean returning;
         boolean retreating;
+        int yieldCooldownTicks;
         double totalDistance;
         final Set<String> bannedEdges = new HashSet<>();
 
