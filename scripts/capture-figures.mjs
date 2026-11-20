@@ -177,21 +177,26 @@ async function main() {
 
   // 图 6-2 完成时间折线图（自绘 SVG）
   const data = [
-    { n: 2, nearest: 4025, greedy: 3401 },
-    { n: 3, nearest: 3274, greedy: 3392 },
-    { n: 5, nearest: 2682, greedy: 3118 },
-    { n: 8, nearest: 3115, greedy: 2975 }
+    { n: 2, nearest: 3303, greedy: 3141 },
+    { n: 3, nearest: 2608, greedy: 2327 },
+    { n: 5, nearest: 2045, greedy: 2032 },
+    { n: 8, nearest: 1832, greedy: 2063 }
   ]
   const W = 1680, H = 1050, L = 160, R = 120, T = 150, B = 150
-  const maxY = 4500
+  const maxY = 3500
   const x = (i) => L + (i * (W - L - R)) / (data.length - 1)
   const y = (v) => H - B - (v / maxY) * (H - T - B)
   const poly = (key) => data.map((d, i) => `${x(i)},${y(d[key])}`).join(' ')
   const dots = (key, color) =>
     data.map((d, i) => `<circle cx="${x(i)}" cy="${y(d[key])}" r="7" fill="${color}"/>`).join('')
   const labels = (key, color, dy) =>
-    data.map((d, i) => `<text x="${x(i)}" y="${y(d[key]) + dy}" font-size="20" fill="${color}" text-anchor="middle">${d[key]}</text>`).join('')
-  const yTicks = Array.from({ length: 10 }, (_, i) => i * 500)
+    data.map((d, i) => {
+      const last = i === data.length - 1
+      const xPos = last ? x(i) - 10 : x(i) + 10
+      const anchor = last ? 'end' : 'start'
+      return `<text x="${xPos}" y="${y(d[key]) + dy}" font-size="18" fill="${color}" text-anchor="${anchor}">${d[key]}</text>`
+    }).join('')
+  const yTicks = Array.from({ length: 8 }, (_, i) => i * 500)
     .map((v) => `<line x1="${L}" y1="${y(v)}" x2="${W - R}" y2="${y(v)}" stroke="#ebeef5" stroke-width="1"/>
       <text x="${L - 16}" y="${y(v) + 7}" font-size="18" fill="#909399" text-anchor="end">${v}</text>`).join('')
   const xTicks = data.map((d, i) => `<text x="${x(i)}" y="${H - B + 40}" font-size="20" fill="#606266" text-anchor="middle">${d.n} 台</text>`).join('')
@@ -208,10 +213,10 @@ async function main() {
   ${xTicks}
   <polyline points="${poly('nearest')}" fill="none" stroke="#1f3b73" stroke-width="4"/>
   ${dots('nearest', '#1f3b73')}
-  ${labels('nearest', '#1f3b73', -18)}
+  ${labels('nearest', '#1f3b73', -14)}
   <polyline points="${poly('greedy')}" fill="none" stroke="#e6a23c" stroke-width="4" stroke-dasharray="10 6"/>
   ${dots('greedy', '#e6a23c')}
-  ${labels('greedy', '#e6a23c', 34)}
+  ${labels('greedy', '#e6a23c', 26)}
   <rect x="${W - R - 300}" y="${T + 10}" width="20" height="6" fill="#1f3b73"/>
   <text x="${W - R - 270}" y="${T + 20}" font-size="20" fill="#606266">就近分配</text>
   <rect x="${W - R - 300}" y="${T + 50}" width="20" height="6" fill="#e6a23c"/>
