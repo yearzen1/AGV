@@ -56,6 +56,7 @@ public class DataInitializer implements CommandLineRunner {
         seedDicts();
         seedTemplates();
         seedTaskSet();
+        seedDualLaneTaskSet();
         bindOrphanTaskSets();
     }
 
@@ -158,6 +159,25 @@ public class DataInitializer implements CommandLineRunner {
                 .orElse(null);
     }
 
+    private Long dualLaneWorkshopId() {
+        for (RoadNetEntity map : mapRepository.findAllByOrderByIdAsc()) {
+            if ("双车道车间（会车演示）".equals(map.getName()) && Boolean.TRUE.equals(map.getIsTemplate())) {
+                return map.getId();
+            }
+        }
+        return null;
+    }
+
+    /** 会车任务集：W1 与 W3 之间交替往返，强迫对向车流在主环路上相遇。 */
+    static java.util.List<TaskDto> dualLaneDemoTasks() {
+        java.util.List<TaskDto> tasks = new java.util.ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            boolean outbound = i % 2 == 0;
+            tasks.add(new TaskDto(i + 1, outbound ? "W1" : "W3", outbound ? "W3" : "W1"));
+        }
+        return tasks;
+    }
+
     /** 演示任务集：20 单在三个工位之间循环，覆盖空驶、会车与等待冲突。 */
     private void seedTaskSet() {
         if (taskSetRepository.count() > 0) {
@@ -184,6 +204,32 @@ public class DataInitializer implements CommandLineRunner {
             log.info("初始化演示任务集：20 单");
         } catch (JsonProcessingException ex) {
             log.warn("演示任务集初始化失败", ex);
+        }
+    }
+
+    /** 双车道会车任务集：按名称幂等，已有库也会补上。 */
+    private void seedDualLaneTaskSet() {
+        String name = "会车任务集（12 单）";
+        boolean exists = taskSetRepository.findAllByOrderByIdDesc().stream()
+                .anyMatch(set -> name.equals(set.getName()));
+        if (exists) {
+            return;
+        }
+        Long roadnetId = dualLaneWorkshopId();
+        if (roadnetId == null) {
+            log.warn("没有可用的双车道路网，跳过会车任务集初始化");
+            return;
+        }
+        try {
+            TaskSet set = new TaskSet();
+            set.setName(name);
+            set.setRoadnetId(roadnetId);
+            set.setTasksJson(objectMapper.writeValueAsString(new TaskSetPayload(dualLaneDemoTasks())));
+            set.setCreateUser(null);
+            taskSetRepository.save(set);
+            log.info("初始化会车任务集：12 单");
+        } catch (JsonProcessingException ex) {
+            log.warn("会车任务集初始化失败", ex);
         }
     }
 }
