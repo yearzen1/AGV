@@ -45,6 +45,7 @@ public class SimulationService {
     private final ExperimentMetricRepository metricRepository;
     private final CurrentUser currentUser;
     private final AuditService auditService;
+    private final SimulationEventService eventService;
     private final int maxConcurrent;
 
     private final Object lock = new Object();
@@ -54,7 +55,7 @@ public class SimulationService {
                              TaskSetValidator taskSetValidator, SimSocketHandler socketHandler,
                              ExperimentRepository experimentRepository,
                              ExperimentMetricRepository metricRepository, CurrentUser currentUser,
-                             AuditService auditService,
+                             AuditService auditService, SimulationEventService eventService,
                              @Value("${agv.sim.max-concurrent:5}") int maxConcurrent) {
         this.roadNetService = roadNetService;
         this.taskSetService = taskSetService;
@@ -64,6 +65,7 @@ public class SimulationService {
         this.metricRepository = metricRepository;
         this.currentUser = currentUser;
         this.auditService = auditService;
+        this.eventService = eventService;
         this.maxConcurrent = Math.max(1, maxConcurrent);
     }
 
@@ -111,7 +113,7 @@ public class SimulationService {
 
             SimulationRunner runner = new SimulationRunner(userId, engine, experiment.getId(),
                     request.roadnetId(), request.taskSetId(), request.algorithm(), count, actualSeed,
-                    socketHandler, experimentRepository, metricRepository);
+                    socketHandler, experimentRepository, metricRepository, eventService);
             runners.put(userId, runner);
             runner.start();
             log.info("仿真启动 experimentId={} user={} roadnet={} taskSet={} algorithm={} agv={} seed={} tasks={}",

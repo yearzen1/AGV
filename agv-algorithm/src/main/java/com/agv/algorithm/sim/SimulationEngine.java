@@ -184,9 +184,18 @@ public final class SimulationEngine {
 
     /** 离线跑完一轮，返回指标。 */
     public SimulationResult runToCompletion() {
+        return runToCompletion(events -> {
+        });
+    }
+
+    /** 离线跑完一轮，并把每个 tick 的事件交给 sink，用于落库。 */
+    public SimulationResult runToCompletion(java.util.function.Consumer<List<SimEvent>> eventSink) {
         long guard = 0;
         while (!finished && !deadlocked && guard++ < config.maxTicks()) {
-            step();
+            SimFrame frame = step();
+            if (eventSink != null) {
+                eventSink.accept(frame.events());
+            }
         }
         // 路径长由逐 tick 累加得到，避免把浮点尾差带进报表
         double roundedLength = Math.round(totalPathLen * 10.0) / 10.0;

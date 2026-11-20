@@ -18,13 +18,13 @@ class PrimaryKeySchemaTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("7 张表的主键都是 BIGINT 且不使用自增")
+    @DisplayName("8 张表的主键都是 BIGINT 且不使用自增")
     void primaryKeysAreApplicationAssigned() {
         Integer idColumns = jdbcTemplate.queryForObject("""
                 select count(*) from information_schema.columns
                 where table_schema = 'public' and column_name = 'id'
                 """, Integer.class);
-        assertEquals(7, idColumns, "应存在 7 个 id 主键列");
+        assertEquals(8, idColumns, "应存在 8 个 id 主键列");
 
         Integer identityColumns = jdbcTemplate.queryForObject("""
                 select count(*) from information_schema.columns
@@ -36,6 +36,6 @@ class PrimaryKeySchemaTest {
                 select count(*) from information_schema.columns
                 where table_schema = 'public' and column_name = 'id' and upper(data_type) = 'BIGINT'
                 """, Integer.class);
-        assertEquals(7, bigintColumns, "主键必须是 BIGINT 数字类型");
+        assertEquals(8, bigintColumns, "主键必须是 BIGINT 数字类型");
     }
 }

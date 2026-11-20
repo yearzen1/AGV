@@ -65,8 +65,9 @@ class SimulationRunnerTest {
         SimulationEngine engine = new SimulationEngine(corridor(),
                 List.of(new Task(1, "W1", "W2")),
                 SimConfig.defaults(1, 1L, "nearest"));
+        SimulationEventService eventService = mock(SimulationEventService.class);
         SimulationRunner runner = new SimulationRunner(1L, engine, 1L, 1L, 1L, "nearest", 1, 1L,
-                handler, experimentRepository, metricRepository);
+                handler, experimentRepository, metricRepository, eventService);
         try {
             runner.start();
             runner.setSpeed(8.0);
@@ -81,6 +82,8 @@ class SimulationRunnerTest {
             assertTrue(payload.containsKey("maxBlocked"), "结束状态应带最长阻塞段");
             assertEquals(false, payload.get("grace"));
             assertEquals(0, payload.get("unparked"));
+            org.mockito.Mockito.verify(eventService, org.mockito.Mockito.timeout(5_000))
+                    .record(org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.anyList());
         } finally {
             runner.shutdown();
         }

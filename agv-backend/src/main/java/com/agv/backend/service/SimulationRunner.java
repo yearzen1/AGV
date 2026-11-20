@@ -2,6 +2,7 @@ package com.agv.backend.service;
 
 import com.agv.algorithm.sim.SimConfig;
 import com.agv.algorithm.sim.SimDiagnostics;
+import com.agv.algorithm.sim.SimEvent;
 import com.agv.algorithm.sim.SimFrame;
 import com.agv.algorithm.sim.SimulationEngine;
 import com.agv.backend.entity.Experiment;
@@ -15,10 +16,13 @@ import org.slf4j.LoggerFactory;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 一个用户的一份仿真运行态：引擎、调度线程、暂停/倍速、实验 ID。
@@ -39,6 +43,9 @@ final class SimulationRunner {
     private final SimSocketHandler socketHandler;
     private final ExperimentRepository experimentRepository;
     private final ExperimentMetricRepository metricRepository;
+    private final SimulationEventService eventService;
+    private final List<SimEvent> collectedEvents = Collections.synchronizedList(new ArrayList<>());
+    private final AtomicBoolean eventsFlushed = new AtomicBoolean();
 
     private SimulationEngine engine;
     private ScheduledExecutorService scheduler;
@@ -55,7 +62,7 @@ final class SimulationRunner {
     SimulationRunner(long userId, SimulationEngine engine, Long experimentId,
                      Long roadnetId, Long taskSetId, String algorithm, Integer agvCount, Long seed,
                      SimSocketHandler socketHandler, ExperimentRepository experimentRepository,
-                     ExperimentMetricRepository metricRepository) {
+                     ExperimentMetricRepository metricRepository, SimulationEventService eventService) {
         this.userId = userId;
         this.engine = engine;
         this.experimentId = experimentId;
@@ -67,6 +74,7 @@ final class SimulationRunner {
         this.socketHandler = socketHandler;
         this.experimentRepository = experimentRepository;
         this.metricRepository = metricRepository;
+        this.eventService = eventService;
     }
 
     void start() {
@@ -112,6 +120,7 @@ final class SimulationRunner {
     /** 中止当前仿真并释放引擎；用于被新仿真替换或手动重置。 */
     void stopAndAbort(String state, String reason) {
         log.info("仿真中止 experimentId={} state={} reason={}", experimentId, state, reason);
+        flushEvents();
         stopScheduler();
         abortExperiment(state);
         status = "IDLE";
@@ -182,6 +191,7 @@ final class SimulationRunner {
             frame = current.step();
         } catch (RuntimeException ex) {
             log.error("用户 {} 的仿真推进失败", userId, ex);
+            flushEvents();
             status = "FAILED";
             lastMetrics = current.metrics();
             tick = current.tick();
@@ -194,6 +204,7 @@ final class SimulationRunner {
         }
 
         tick = frame.tick();
+        collectedEvents.addAll(frame.events());
         // 推送失败属于传输层问题，不能影响仿真本身
         try {
             Map<String, Object> message = new LinkedHashMap<>();
@@ -249,7 +260,24 @@ final class SimulationRunner {
                 diagnostics.graceFinished(), diagnostics.unparkedAtFinish(),
                 diagnostics.maxBlockedTicks(), deadlocked);
         broadcastStatus(deadlocked ? "deadlocked" : "finished");
+        flushEvents();
         stopScheduler();
+    }
+
+    private void flushEvents() {
+        if (experimentId == null || !eventsFlushed.compareAndSet(false, true)) {
+            return;
+        }
+        List<SimEvent> snapshot;
+        synchronized (collectedEvents) {
+            snapshot = new ArrayList<>(collectedEvents);
+            collectedEvents.clear();
+        }
+        try {
+            eventService.record(experimentId, snapshot);
+        } catch (RuntimeException ex) {
+            log.warn("实验事件落库失败 experimentId={}：{}", experimentId, ex.getMessage());
+        }
     }
 
     /**

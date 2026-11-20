@@ -55,6 +55,10 @@ public class Experiment extends BaseEntity {
     @Column(name = "engine_version", length = 16)
     private String engineVersion;
 
+    /** 事件超过单实验上限时为 true。 */
+    @Column(name = "event_truncated")
+    private Boolean eventTruncated = false;
+
     public Long getRoadnetId() {
         return roadnetId;
     }
@@ -141,5 +145,13 @@ public class Experiment extends BaseEntity {
 
     public void setEngineVersion(String engineVersion) {
         this.engineVersion = engineVersion;
+    }
+
+    public Boolean getEventTruncated() {
+        return eventTruncated;
+    }
+
+    public void setEventTruncated(Boolean eventTruncated) {
+        this.eventTruncated = eventTruncated;
     }
 }

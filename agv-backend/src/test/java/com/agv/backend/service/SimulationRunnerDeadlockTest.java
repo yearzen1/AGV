@@ -71,7 +71,7 @@ class SimulationRunnerDeadlockTest {
         ExperimentMetricRepository metricRepository = mock(ExperimentMetricRepository.class);
 
         SimulationRunner runner = new SimulationRunner(1L, engine, 1L, 1L, 1L, "nearest", 2, 1L,
-                handler, experimentRepository, metricRepository);
+                handler, experimentRepository, metricRepository, mock(SimulationEventService.class));
         try {
             runner.start();
             long deadline = System.currentTimeMillis() + 10_000;

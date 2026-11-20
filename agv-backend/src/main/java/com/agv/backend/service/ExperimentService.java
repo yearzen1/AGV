@@ -2,6 +2,7 @@ package com.agv.backend.service;
 
 import com.agv.algorithm.model.RoadNet;
 import com.agv.algorithm.sim.SimConfig;
+import com.agv.algorithm.sim.SimEvent;
 import com.agv.algorithm.sim.SimulationEngine;
 import com.agv.algorithm.sim.SimulationResult;
 import com.agv.algorithm.sim.Task;
@@ -9,6 +10,7 @@ import com.agv.backend.common.BusinessException;
 import com.agv.backend.dto.ExperimentReplayResult;
 import com.agv.backend.dto.ExperimentReport;
 import com.agv.backend.dto.ExperimentRequest;
+import com.agv.backend.dto.ExperimentEventLog;
 import com.agv.backend.dto.PageResponse;
 import com.agv.backend.dto.RoadNetPayload;
 import com.agv.backend.dto.TaskSetPayload;
@@ -59,11 +61,13 @@ public class ExperimentService {
     private final CurrentUser currentUser;
     private final ObjectMapper objectMapper;
     private final AuditService auditService;
+    private final SimulationEventService eventService;
 
     public ExperimentService(RoadNetService roadNetService, TaskSetService taskSetService,
                              TaskSetValidator taskSetValidator, ExperimentRepository experimentRepository,
                              ExperimentMetricRepository metricRepository, CurrentUser currentUser,
-                             ObjectMapper objectMapper, AuditService auditService) {
+                             ObjectMapper objectMapper, AuditService auditService,
+                             SimulationEventService eventService) {
         this.roadNetService = roadNetService;
         this.taskSetService = taskSetService;
         this.taskSetValidator = taskSetValidator;
@@ -72,6 +76,7 @@ public class ExperimentService {
         this.currentUser = currentUser;
         this.objectMapper = objectMapper;
         this.auditService = auditService;
+        this.eventService = eventService;
     }
 
     /** 跑一组实验；algorithm 为空时对全部算法各跑一次，用于对比报表。 */
@@ -109,10 +114,11 @@ public class ExperimentService {
                                     int agvCount, long seed, ExperimentRequest request,
                                     String roadnetJson, String tasksetJson) {
         SimulationResult result;
+        List<SimEvent> events = new ArrayList<>();
         try {
             SimulationEngine engine = new SimulationEngine(net, tasks,
                     SimConfig.defaults(agvCount, seed, algorithm));
-            result = engine.runToCompletion();
+            result = engine.runToCompletion(events::addAll);
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(4004, "实验无法运行：" + ex.getMessage());
         }
@@ -132,6 +138,7 @@ public class ExperimentService {
         Experiment saved = experimentRepository.save(experiment);
 
         ExperimentMetric metric = result.deadlocked() ? null : saveMetric(saved.getId(), result);
+        eventService.record(saved.getId(), events);
         log.info("离线实验完成 experimentId={} algorithm={} agv={} seed={} finished={} deadlocked={} "
                         + "makespan={} pathLen={} waitTick={} conflicts={}",
                 saved.getId(), algorithm, agvCount, seed, result.finished(), result.deadlocked(),
@@ -160,10 +167,11 @@ public class ExperimentService {
         List<Task> tasks = toTasks(taskSet);
 
         SimulationResult result;
+        List<SimEvent> events = new ArrayList<>();
         try {
             SimulationEngine engine = new SimulationEngine(net, tasks,
                     SimConfig.defaults(original.getAgvCount(), original.getSeed(), original.getAlgorithm()));
-            result = engine.runToCompletion();
+            result = engine.runToCompletion(events::addAll);
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(4004, "回放失败：" + ex.getMessage());
         }
@@ -183,6 +191,7 @@ public class ExperimentService {
         Experiment savedReplay = experimentRepository.save(replay);
 
         ExperimentMetric replayMetric = result.deadlocked() ? null : saveMetric(savedReplay.getId(), result);
+        eventService.record(savedReplay.getId(), events);
         auditService.success("EXPERIMENT_REPLAY", "EXPERIMENT", savedReplay.getId());
         String originalVersion = original.getEngineVersion();
         boolean versionMatched = originalVersion == null
@@ -200,6 +209,18 @@ public class ExperimentService {
                 versionMatched, note,
                 toReport(original, Optional.of(originalMetric)),
                 toReport(savedReplay, Optional.ofNullable(replayMetric)));
+    }
+
+    @Transactional(readOnly = true)
+    public ExperimentEventLog events(Long id) {
+        Experiment experiment = experimentRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(4040, "实验不存在：" + id));
+        SysUser user = currentUser.get();
+        boolean owner = Objects.equals(user.getId(), experiment.getCreateUser());
+        if (!owner && !SysUser.ROLE_ADMIN.equals(user.getRole())) {
+            throw new BusinessException(4030, "只能查看自己创建实验的事件");
+        }
+        return eventService.list(experiment);
     }
 
     private void requireReplayable(Experiment experiment) {

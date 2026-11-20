@@ -4,6 +4,7 @@ import com.agv.backend.common.ApiResponse;
 import com.agv.backend.dto.ExperimentReplayResult;
 import com.agv.backend.dto.ExperimentReport;
 import com.agv.backend.dto.ExperimentRequest;
+import com.agv.backend.dto.ExperimentEventLog;
 import com.agv.backend.dto.PageResponse;
 import com.agv.backend.service.ExperimentService;
 import jakarta.validation.Valid;
@@ -48,6 +49,12 @@ public class ExperimentController {
     @GetMapping("/by-map")
     public ApiResponse<List<ExperimentReport>> byMap(@RequestParam Long roadnetId, @RequestParam Long taskSetId) {
         return ApiResponse.ok(experimentService.byMapAndTaskSet(roadnetId, taskSetId));
+    }
+
+    /** 查询实验的任务级过程事件，单实验上限 5000 条。 */
+    @GetMapping("/{id}/events")
+    public ApiResponse<ExperimentEventLog> events(@PathVariable Long id) {
+        return ApiResponse.ok(experimentService.events(id));
     }
 
     /** 用实验输入快照重跑一次并比对指标，不读取当前路网。 */
