@@ -78,7 +78,7 @@ mvn spring-boot:run -Dspring-boot.run.profiles=mysql
 
 建表由 Flyway 迁移脚本管理（`agv-backend/src/main/resources/db/migration/`），共 7 张表：
 `sys_user`、`sys_dict`、`roadnet`、`task_set`、`experiment`、`experiment_metric`、`sys_audit_log`。
-（`sim_event` 为可选降级项，默认不建，事件只走 WebSocket。）
+（`simulation_event` 表按实验保存任务级事件，单实验上限 5000 条；逐帧位置仍不落库。）
 
 所有表的主键 `id` 都是 `BIGINT NOT NULL PRIMARY KEY`，由应用侧雪花算法生成，**数据库不使用自增**。
 雪花 ID 为 53 位（41 位毫秒 + 2 位 worker + 10 位序列），前端可直接当 `number` 使用；
@@ -214,7 +214,7 @@ WS     /ws/sim?token=<jwt>       仿真帧通道（按用户隔离，推送帧�
 - 仿真运行期间，每个 tick 只向**仿真发起人**推送 `{"type":"frame","frame":{...},"speed":1.0,"paused":false}`；控制类操作推送 `{"type":"status",...}`。
 - 每个会话的发送由 Spring 的 `ConcurrentWebSocketSessionDecorator` 串行化，避免同一连接上并发写导致 `TEXT_PARTIAL_WRITING`。
 - 单个会话发送失败只移除该会话并记一条警告，**不会中断仿真**，也不会把仿真状态置为失败。
-- 事件不落库，只在帧里推送，前端最多保留最近 500 条；后端在仿真启动与结束时各打一行 INFO 摘要，带 `experimentId`、四项指标与诊断计数。事件类型与现实性判读见 [仿真事件与日志](docs/reference/仿真事件与日志.md)。
+- 事件在运行期间通过帧推送；实验结束或重置时按单实验 5000 条上限写入 `simulation_event`，历史实验可查看并导出 CSV。逐帧位置仍不落库。事件类型与现实性判读见 [仿真事件与日志](docs/reference/仿真事件与日志.md)。
 - 页面刷新或重新进入「仿真运行」时，前端调用 `GET /api/sim/status` 恢复**当前用户**的运行状态；`status` 为 `RUNNING` / `FINISHED` / `FAILED` 时同步启动参数、速度、暂停状态、tick 与指标。`RUNNING`（含暂停）时 `status` 还带当前帧的 `agvs` 快照，刷新后 3D 场景与「车辆状态」不会丢车；结束后返回空数组。
 - 仿真自然结束时会收到 `status = FINISHED` 的状态消息，随后连接保持可用；离开页面会主动断开，意外断开时自动重试 5 次（2/4/8/16/30 秒退避），仍失败则停止重试，可点「重试」手动恢复。
 - 历史实验列表用 `RUNNING` / `FINISHED` / `FAILED` / `ABORTED` 标记状态；被新仿真替换或手动重置的旧实验记为 `ABORTED`（已中断），未完成实验的汇总指标显示为 `-`。后端重启时，遗留的 `RUNNING` 实验也会在启动时标记为 `ABORTED`。列表时间统一格式化为 `YYYY-MM-DD HH:mm:ss`。
