@@ -146,9 +146,9 @@ class SimulationEngineTest {
         SimulationResult result = new SimulationEngine(twoLaneWorkshop(), tasks,
                 SimConfig.defaults(3, 99L, "greedy-eta")).runToCompletion();
 
-        assertEquals(1320L, result.makespan());
+        assertEquals(1335L, result.makespan());
         assertEquals(350.0, result.totalPathLen(), 1e-9);
-        assertEquals(747L, result.totalWaitTick());
+        assertEquals(1552L, result.totalWaitTick());
         assertEquals(9, result.conflictCount());
     }
 
