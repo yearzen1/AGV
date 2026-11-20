@@ -374,6 +374,7 @@ function statusText(value: string) {
       WAITING: '等待',
       LOADING: '装货',
       UNLOADING: '卸货',
+      REVERSING: '倒车',
       CHARGING: '充电',
       DONE: '完成'
     }[value] || value
@@ -387,6 +388,7 @@ function statusTagType(value: string) {
       WAITING: 'danger',
       LOADING: 'warning',
       UNLOADING: 'warning',
+      REVERSING: 'warning',
       CHARGING: 'success',
       IDLE: 'info',
       DONE: 'info'

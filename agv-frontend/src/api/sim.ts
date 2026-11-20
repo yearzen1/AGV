@@ -11,7 +11,7 @@ export interface SimMetrics {
 
 export interface AgvSnapshot {
   id: string
-  status: 'IDLE' | 'MOVING' | 'WAITING' | 'LOADING' | 'UNLOADING' | 'CHARGING' | 'DONE'
+  status: 'IDLE' | 'MOVING' | 'WAITING' | 'LOADING' | 'UNLOADING' | 'REVERSING' | 'CHARGING' | 'DONE'
   arcId: string | null
   s: number
   x: number

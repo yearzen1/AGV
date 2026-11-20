@@ -23,6 +23,7 @@ export const STATUS_COLORS: Record<string, number> = {
   WAITING: 0xf56c6c,
   LOADING: 0xe6a23c,
   UNLOADING: 0xf2b04a,
+  REVERSING: 0xb07cff,
   IDLE: 0x8fa3bd,
   CHARGING: 0x67c23a,
   DONE: 0x5c6b80
