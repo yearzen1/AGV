@@ -62,6 +62,13 @@ public final class SimulationEngine {
     private double totalPathLen;
     private long totalWaitTicks;
     private int conflictCount;
+    private int replanCount;
+    private int deadlockBreakCount;
+    private int retreatSuccessCount;
+    private int logicalYieldCount;
+    private int maxWaitTicks;
+    private boolean graceFinished;
+    private int unparkedAtFinish;
     private boolean finished;
 
     public SimulationEngine(RoadNet net, List<Task> tasks, SimConfig config) {
@@ -180,7 +187,8 @@ public final class SimulationEngine {
 
     /** 诊断计数：只用于日志，不参与指标口径。 */
     public SimDiagnostics diagnostics() {
-        return new SimDiagnostics(0, 0, 0, 0, 0, false, 0);
+        return new SimDiagnostics(replanCount, deadlockBreakCount, retreatSuccessCount,
+                logicalYieldCount, maxWaitTicks, graceFinished, unparkedAtFinish);
     }
 
     // ---------------------------------------------------------------- 运动
@@ -246,7 +254,7 @@ public final class SimulationEngine {
                         agv.returning = false;
                         agv.status = AgvStatus.CHARGING;
                         events.add(new SimEvent(tick, agv.id, SimEvent.Type.CHARGING,
-                                agv.currentNode, "回充完成"));
+                                agv.currentNode, "停靠充电位（无电量模型，充电时长未建模）"));
                     } else {
                         String charger = nearestFreeCharger(agv.currentNode);
                         if (charger == null) {
@@ -280,6 +288,8 @@ public final class SimulationEngine {
         if (completedTasks >= allTasks.size()) {
             tasksDoneTick = tick;
         }
+        events.add(new SimEvent(tick, agv.id, SimEvent.Type.UNLOADED,
+                agv.currentNode, "卸货完成（耗时 0 tick，当前未建模）"));
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.TASK_DONE,
                 agv.currentNode, "任务 " + agv.task.id() + " 完成"));
         agv.task = null;
@@ -356,6 +366,7 @@ public final class SimulationEngine {
             afterNodeArrival(agv, events);
             return true;
         }
+        boolean wasWaiting = agv.status == AgvStatus.WAITING;
         Arc next = agv.path.peek();
         long travel = travelTicks(next);
         long enter = tick;
@@ -404,6 +415,11 @@ public final class SimulationEngine {
         agv.currentArc = next;
         agv.s = 0;
         agv.status = AgvStatus.MOVING;
+        if (wasWaiting) {
+            maxWaitTicks = Math.max(maxWaitTicks, agv.waitTicks);
+            events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_RESOLVED, next.id(),
+                    "等待 " + agv.waitTicks + " tick 后结束"));
+        }
         agv.waitTicks = 0;
         agv.wantedEdgeId = null;
         agv.wantedNodeId = null;
@@ -433,12 +449,15 @@ public final class SimulationEngine {
         blocked.add(wanted.edgeId());
         PathResult result = planner.plan(net, agv.currentNode, goal, blocked);
         if (result.found() && !result.arcs().isEmpty()) {
+            int waited = agv.waitTicks;
             agv.path.clear();
             agv.path.addAll(result.arcs());
             agv.bannedEdges.add(wanted.edgeId());
             agv.waitTicks = 0;
+            replanCount++;
+            maxWaitTicks = Math.max(maxWaitTicks, waited);
             events.add(new SimEvent(tick, agv.id, SimEvent.Type.REPLAN,
-                    wanted.id(), "等待超时，绕行重规划"));
+                    wanted.id(), "等待 " + waited + " tick 后绕行重规划，禁行 " + wanted.edgeId()));
         } else {
             agv.waitTicks = 0;
             if (!agv.bannedEdges.isEmpty()) {
@@ -500,6 +519,7 @@ public final class SimulationEngine {
             Arc wanted = first.path.peek();
             first.bannedEdges.add(wanted.edgeId());
             first.waitTicks = 0;
+            deadlockBreakCount++;
             events.add(new SimEvent(tick, first.id, SimEvent.Type.DEADLOCK_BREAK,
                     wanted.id(), "检测到等待环，尝试倒车让行"));
             if (!tryRetreat(first, events)) {
@@ -507,6 +527,9 @@ public final class SimulationEngine {
                 if (isJunction(first.currentNode)) {
                     reservations.release(first.currentNode, first.id);
                 }
+                logicalYieldCount++;
+                events.add(new SimEvent(tick, first.id, SimEvent.Type.LOGICAL_YIELD,
+                        wanted.id(), "倒车不可行，逻辑让出路口并重规划"));
                 replanWithDetour(first, events);
             }
             return;
@@ -557,6 +580,7 @@ public final class SimulationEngine {
         agv.lastArc = null;
         agv.retreatGoal = goal;
         agv.waitTicks = 0;
+        retreatSuccessCount++;
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.DEADLOCK_BREAK,
                 reverse.id(), "倒车让行至 " + reverse.to()));
         return true;
@@ -602,8 +626,15 @@ public final class SimulationEngine {
         boolean graceExpired = tasksDoneTick >= 0 && tick - tasksDoneTick > PARK_GRACE_TICKS;
         if (allParked || graceExpired) {
             finished = true;
-            events.add(new SimEvent(tick, "-", SimEvent.Type.FINISHED, "-",
-                    "全部任务完成，用时 " + makespan + " tick"));
+            graceFinished = graceExpired && !allParked;
+            unparkedAtFinish = (int) agvs.values().stream()
+                    .filter(a -> a.status != AgvStatus.CHARGING && a.status != AgvStatus.DONE)
+                    .count();
+            String detail = graceFinished
+                    ? "全部任务完成，用时 " + makespan + " tick；宽限结束，" + unparkedAtFinish + " 台未归位"
+                    : "全部任务完成，用时 " + makespan + " tick；归位 "
+                    + (agvs.size() - unparkedAtFinish) + "/" + agvs.size() + " 台";
+            events.add(new SimEvent(tick, "-", SimEvent.Type.FINISHED, "-", detail));
         }
     }
 
