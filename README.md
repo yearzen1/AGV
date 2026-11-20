@@ -21,6 +21,8 @@ specs/           实施计划、时间安排、参考文献
 - 为什么这样建模、持久化模型与领域模型的偏差：[docs/explanation/领域模型说明.md](docs/explanation/领域模型说明.md)
 - `WarehouseMap` / `mapId` 等历史命名的分阶段迁移计划：[docs/how-to/统一领域命名.md](docs/how-to/统一领域命名.md)
 - 三维场景的坐标、插值、画质档位与取舍：[docs/explanation/三维场景渲染.md](docs/explanation/三维场景渲染.md)
+- 地图编辑器的模块拆分：[docs/explanation/地图编辑器模块拆分.md](docs/explanation/地图编辑器模块拆分.md)
+- 路网 JSON 可选 `zones` 区域注释（充电区/进货区/卸货区/货架区/停车区），仅用于显示和导出，不参与校验与仿真：[如何编辑车间地图](docs/how-to/编辑车间地图.md#7-区域注释)
 
 代码、接口、页面、论文出现术语歧义时，以 reference 文档为准。
 
@@ -303,13 +305,14 @@ cd agv-frontend
 npm run e2e:scene
 ```
 
-首次运行需安装浏览器：`npx playwright install chromium`。四个脚本都会把截图写到 `.playwright-mcp/e2e/`。`e2e:roadnet` 验证布局、编辑、连边、搜索、页签、任务聚合、3D 与全屏；`e2e:taskset` 新建并清理一条临时任务集，验证行号连续、加行不重复、批量填充与清空确认、保存失败时列出全部错误并标红多行；`e2e:sim` 验证参数标签、`1366×768` 下页面不出现纵向滚动条、运行时参数锁定、暂停冻结、暂停后刷新恢复车辆位置、继续与重置，最后完整跑完 20 单（约 2 分钟）确认结束态与实时通道；`e2e:scene` 通过接口创建一张临时双车道路网，打开 3D 预览，核对路面、分隔线和箭头数量，结束后删除临时路网。前端不在 5173 时用 `AGV_WEB=http://localhost:5188` 指定地址；`e2e:scene` 依赖开发模式的场景统计，生产构建不暴露。
+首次运行需安装浏览器：`npx playwright install chromium`。四个脚本都会把截图写到 `.playwright-mcp/e2e/`。`e2e:roadnet` 验证布局、编辑、连边、区域注释（创建/改名/移动/缩放/删除/撤销）、搜索、页签、任务聚合、3D 与全屏；`e2e:taskset` 新建并清理一条临时任务集，验证行号连续、加行不重复、批量填充与清空确认、保存失败时列出全部错误并标红多行；`e2e:sim` 验证参数标签、`1366×768` 下页面不出现纵向滚动条、运行时参数锁定、暂停冻结、暂停后刷新恢复车辆位置、继续与重置，最后完整跑完 20 单（约 2 分钟）确认结束态与实时通道；`e2e:scene` 通过接口创建一张临时双车道路网，打开 3D 预览，核对路面、分隔线和箭头数量，结束后删除临时路网。前端不在 5173 时用 `AGV_WEB=http://localhost:5188` 指定地址；`e2e:scene` 依赖开发模式的场景统计，生产构建不暴露。
 
 
 - `AStarPlannerTest`：直线路网、不可达、封锁绕行、转弯惩罚、与状态空间 Bellman-Ford 对拍
 - `LaneModeTest`：单车道双向串行、双车道双向并行、路口临界区
 - `RoadNetValidatorTest`：8 条校验规则
 - `ApiSmokeTest`：登录、401/403、路网校验拦截、模板校验、错误码映射、实验快照回放、审计查询
+- `RoadNetPayloadZoneTest`：旧路网 JSON 无 `zones` 仍可解析、区域字段往返序列化
 - `ExperimentReplayTest`：同 seed 回放指标一致、缺快照与缺指标的回放拒绝
 - `AuditLogTest`：动作记录、登录失败记录、管理员分页查询与权限拦截
 - `TaskSetValidationTest`：任务集绑定路网、工位校验、跨图启动拦截、删除保护
