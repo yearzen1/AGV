@@ -684,21 +684,28 @@ public final class SimulationEngine {
     private Map<String, Set<String>> waitGraph() {
         Map<String, Set<String>> waitFor = new LinkedHashMap<>();
         for (Agv agv : agvs.values()) {
-            if (agv.status != AgvStatus.WAITING || agv.path.isEmpty()) {
+            if (agv.status != AgvStatus.WAITING) {
                 continue;
             }
-            Arc next = agv.path.peek();
             Set<String> blockers = new HashSet<>();
-            if (!isDualLane(next)) {
-                String owner = edgeOwner.get(next.edgeId());
-                if (owner != null) {
-                    blockers.add(owner);
+            if (agv.path.isEmpty()) {
+                if (agv.currentArc != null) {
+                    String target = agv.retreating ? agv.currentArc.from() : agv.currentArc.to();
+                    blockers.addAll(reservations.holdersAt(target, tick));
                 }
-            }
-            blockers.addAll(reservations.holdersAt(next.id(), tick));
-            blockers.addAll(reservations.holdersAt(next.to(), tick));
-            if (agv.currentArc != null) {
-                blockers.addAll(reservations.holdersAt(agv.currentArc.to(), tick));
+            } else {
+                Arc next = agv.path.peek();
+                if (!isDualLane(next)) {
+                    String owner = edgeOwner.get(next.edgeId());
+                    if (owner != null) {
+                        blockers.add(owner);
+                    }
+                }
+                blockers.addAll(reservations.holdersAt(next.id(), tick));
+                blockers.addAll(reservations.holdersAt(next.to(), tick));
+                if (agv.currentArc != null) {
+                    blockers.addAll(reservations.holdersAt(agv.currentArc.to(), tick));
+                }
             }
             blockers.remove(agv.id);
             waitFor.put(agv.id, blockers);
@@ -745,6 +752,9 @@ public final class SimulationEngine {
     }
 
     private String waitingResource(Agv agv) {
+        if (agv.retreating && agv.currentArc != null) {
+            return agv.currentArc.from();
+        }
         if (agv.wantedNodeId != null) {
             return agv.wantedNodeId;
         }
