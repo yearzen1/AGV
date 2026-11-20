@@ -39,13 +39,4 @@
 
 ## 提交
 
-遵循 Conventional Commits：
-
-```text
-<type>(<scope>): <subject>
-
-中文正文说明为什么改，而不是改了什么
-```
-
-- `subject` 用英文祈使句、小写开头、不加句号、不超过 72 字符。
-- 一个提交只表达一个意图，能单独 revert。
+遵循 Conventional Commits
