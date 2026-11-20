@@ -22,6 +22,8 @@ import com.agv.backend.security.CurrentUser;
 import com.agv.backend.support.TaskSetValidator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,8 @@ import java.util.stream.Collectors;
  */
 @Service
 public class ExperimentService {
+
+    private static final Logger log = LoggerFactory.getLogger(ExperimentService.class);
 
     private static final Map<String, String> ALGORITHM_NAMES = Map.of(
             "nearest", "就近分配",
@@ -124,6 +128,11 @@ public class ExperimentService {
         Experiment saved = experimentRepository.save(experiment);
 
         ExperimentMetric metric = saveMetric(saved.getId(), result);
+        log.info("离线实验完成 experimentId={} algorithm={} agv={} seed={} finished={} "
+                        + "makespan={} pathLen={} waitTick={} conflicts={}",
+                saved.getId(), algorithm, agvCount, seed, result.finished(),
+                metric.getMakespan(), metric.getTotalPathLen(),
+                metric.getTotalWaitTick(), metric.getConflictCount());
         auditService.success("EXPERIMENT_RUN", "EXPERIMENT", saved.getId());
         return toReport(saved, Optional.of(metric));
     }

@@ -1,6 +1,7 @@
 package com.agv.backend.service;
 
 import com.agv.algorithm.sim.SimConfig;
+import com.agv.algorithm.sim.SimDiagnostics;
 import com.agv.algorithm.sim.SimFrame;
 import com.agv.algorithm.sim.SimulationEngine;
 import com.agv.backend.entity.Experiment;
@@ -108,6 +109,7 @@ final class SimulationRunner {
 
     /** 中止当前仿真并释放引擎；用于被新仿真替换或手动重置。 */
     void stopAndAbort(String state, String reason) {
+        log.info("仿真中止 experimentId={} state={} reason={}", experimentId, state, reason);
         stopScheduler();
         abortExperiment(state);
         status = "IDLE";
@@ -206,6 +208,7 @@ final class SimulationRunner {
         status = "FINISHED";
         tick = finishedEngine.tick();
         lastMetrics = finishedEngine.metrics();
+        SimDiagnostics diagnostics = finishedEngine.diagnostics();
         engine = null;
         try {
             Experiment experiment = experimentRepository.findById(experimentId).orElse(null);
@@ -225,6 +228,13 @@ final class SimulationRunner {
             log.warn("实验指标落库失败", ex);
         }
         // 必须先推送结束状态再停线程：shutdownNow 会中断当前调度线程，先停会让结束消息推送失败并移除会话
+        log.info("仿真完成 experimentId={} tick={} makespan={} pathLen={} waitTick={} conflicts={} "
+                        + "replan={} deadlock={} retreat={} logicalYield={} grace={} unparked={}",
+                experimentId, tick, lastMetrics.makespan(), lastMetrics.totalPathLen(),
+                lastMetrics.totalWaitTick(), lastMetrics.conflictCount(),
+                diagnostics.replanCount(), diagnostics.deadlockBreakCount(),
+                diagnostics.retreatSuccessCount(), diagnostics.logicalYieldCount(),
+                diagnostics.graceFinished(), diagnostics.unparkedAtFinish());
         broadcastStatus("finished");
         stopScheduler();
     }

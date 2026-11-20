@@ -112,6 +112,9 @@ public class SimulationService {
                     socketHandler, experimentRepository, metricRepository);
             runners.put(userId, runner);
             runner.start();
+            log.info("仿真启动 experimentId={} user={} roadnet={} taskSet={} algorithm={} agv={} seed={} tasks={}",
+                    experiment.getId(), userId, request.roadnetId(), request.taskSetId(),
+                    request.algorithm(), count, actualSeed, tasks.size());
             return runner.statusPayload();
         }
     }
