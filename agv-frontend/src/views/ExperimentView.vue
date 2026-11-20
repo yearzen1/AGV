@@ -48,6 +48,8 @@ const eventTypeLabel: Record<string, string> = {
   REPLAN: '重规划',
   DEADLOCK_BREAK: '打破僵局',
   DEADLOCK: '死锁',
+  CO_LOCATION: '位置重合',
+  CO_LOCATION_END: '重合结束',
   CHARGING: '充电',
   FINISHED: '结束'
 }
