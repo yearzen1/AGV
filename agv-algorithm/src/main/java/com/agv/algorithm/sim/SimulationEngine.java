@@ -18,7 +18,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Random;
 import java.util.Set;
 
 /**
@@ -53,7 +52,6 @@ public final class SimulationEngine {
     private final List<Task> pending = new ArrayList<>();
     private final Map<String, String> edgeOwner = new HashMap<>();
     private final List<String> chargers;
-    private final Random random;
 
     private long tick;
     private int completedTasks;
@@ -80,7 +78,6 @@ public final class SimulationEngine {
         }
         this.net = net;
         this.config = config;
-        this.random = new Random(config.seed());
         this.allTasks = new ArrayList<>(tasks == null ? List.of() : tasks);
         this.allTasks.sort(Comparator.comparingInt(Task::id));
         this.assigner = TaskAssigners.of(config.algorithm(), net, planner);
