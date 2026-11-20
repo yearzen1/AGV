@@ -19,9 +19,23 @@ export interface NetEdge {
   laneMode?: 'SINGLE' | 'DUAL'
 }
 
+export type ZoneType = 'CHARGING' | 'RECEIVING' | 'UNLOADING' | 'RACK' | 'PARKING' | 'OTHER'
+
+/** 地图区域注释：只用于显示和导出，不参与校验、寻路和仿真。 */
+export interface NetZone {
+  id: string
+  name: string
+  type: ZoneType | string
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
 export interface RoadNetPayload {
   nodes: NetNode[]
   edges: NetEdge[]
+  zones?: NetZone[]
   width?: number
   height?: number
 }

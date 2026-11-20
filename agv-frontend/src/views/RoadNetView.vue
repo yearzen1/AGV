@@ -89,7 +89,14 @@ function clearDraft(id: number | null) {
 }
 
 function samePayload(left: RoadNetPayload, right: RoadNetPayload) {
-  return JSON.stringify(left) === JSON.stringify(right)
+  const normalize = (payload: RoadNetPayload) => ({
+    nodes: payload.nodes ?? [],
+    edges: payload.edges ?? [],
+    zones: payload.zones ?? [],
+    width: payload.width ?? 50,
+    height: payload.height ?? 34
+  })
+  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right))
 }
 
 async function loadList() {

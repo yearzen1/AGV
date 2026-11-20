@@ -2,6 +2,7 @@
 // 前置：后端 http://localhost:8080 与前端 http://localhost:5173 已启动。
 // 首次运行需安装浏览器：cd agv-frontend && npx playwright install chromium
 // 用法：cd agv-frontend && npm run e2e:roadnet
+// 覆盖：布局与工具栏、节点/路段编辑、区域创建/改名/移动/缩放/删除/撤销、搜索、任务流向、3D 与全屏。
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -226,6 +227,92 @@ async function main() {
     await page.waitForTimeout(400)
     assert((await page.locator('circle.node-dot').count()) === beforeNodes, '撤销后节点数恢复')
     assert((await page.locator('.dirty').count()) === 0, '撤销回原始状态后不再显示未保存')
+    await page.locator('.toolbar').getByText('选择', { exact: true }).click()
+
+    console.log('区域注释')
+    await page.locator('.toolbar').getByText('区域', { exact: true }).click()
+    await page.waitForTimeout(200)
+    const zoneSpot = await emptyMapPoint(page)
+    await page.mouse.move(zoneSpot.x, zoneSpot.y)
+    await page.mouse.down()
+    await page.mouse.move(zoneSpot.x + 100, zoneSpot.y + 70, { steps: 6 })
+    await page.mouse.up()
+    await page.waitForTimeout(500)
+    assert((await page.locator('.zone-fill').count()) === 1, '画布上创建一个区域')
+    assert(
+      (await page.locator('.side-pane').filter({ hasText: '选中区域' }).count()) === 1,
+      '创建区域后自动切到「区域」页签'
+    )
+    assert((await page.locator('.zone-row').count()) === 1, '区域列表出现一行')
+    await page
+      .locator('.side-pane .el-form-item')
+      .filter({ hasText: '名称' })
+      .locator('input')
+      .first()
+      .fill('测试区域')
+    await page.keyboard.press('Tab')
+    await page.waitForTimeout(300)
+    assert(
+      (await page.locator('.zone-row').first().innerText()).includes('测试区域'),
+      '区域名称同步到列表'
+    )
+    await page.getByTitle('撤销 (Ctrl+Z)').click()
+    await page.waitForTimeout(400)
+    assert((await page.locator('.zone-fill').count()) === 1, '第一次撤销只回退区域名称')
+    await page.getByTitle('撤销 (Ctrl+Z)').click()
+    await page.waitForTimeout(400)
+    assert((await page.locator('.zone-fill').count()) === 0, '再次撤销后区域消失')
+    await page.locator('.toolbar').getByText('区域', { exact: true }).click()
+    await page.mouse.click(zoneSpot.x, zoneSpot.y)
+    await page.waitForTimeout(300)
+    await page.locator('.toolbar').getByText('选择', { exact: true }).click()
+    await page.mouse.click(zoneSpot.x + 20, zoneSpot.y + 20)
+    await page.waitForTimeout(200)
+    await page.keyboard.press('Delete')
+    await page.waitForTimeout(300)
+    assert((await page.locator('.zone-fill').count()) === 0, 'Delete 删除选中区域')
+
+    console.log('区域移动与缩放')
+    await page.locator('.toolbar').getByText('区域', { exact: true }).click()
+    await page.mouse.click(zoneSpot.x, zoneSpot.y)
+    await page.waitForTimeout(300)
+    await page.locator('.toolbar').getByText('选择', { exact: true }).click()
+    await page.mouse.click(zoneSpot.x, zoneSpot.y)
+    await page.waitForTimeout(200)
+    const zoneBefore = await page.locator('.zone-fill').first().evaluate((element) => ({
+      x: Number(element.getAttribute('x')),
+      width: Number(element.getAttribute('width'))
+    }))
+    await page.mouse.move(zoneSpot.x, zoneSpot.y)
+    await page.mouse.down()
+    await page.mouse.move(zoneSpot.x + 30, zoneSpot.y + 20, { steps: 5 })
+    await page.mouse.up()
+    await page.waitForTimeout(300)
+    const zoneMoved = await page.locator('.zone-fill').first().evaluate((element) => ({
+      x: Number(element.getAttribute('x')),
+      width: Number(element.getAttribute('width'))
+    }))
+    assert(zoneMoved.x > zoneBefore.x, '区域可以拖动')
+    const handles = await page.locator('.zone-handle').evaluateAll((list) =>
+      list.map((element) => {
+        const rect = element.getBoundingClientRect()
+        return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }
+      })
+    )
+    assert(handles.length === 8, '选中区域显示 8 个缩放手柄')
+    const southeast = handles[4]
+    await page.mouse.move(southeast.x, southeast.y)
+    await page.mouse.down()
+    await page.mouse.move(southeast.x + 30, southeast.y + 20, { steps: 5 })
+    await page.mouse.up()
+    await page.waitForTimeout(300)
+    const zoneResized = await page.locator('.zone-fill').first().evaluate((element) => ({
+      width: Number(element.getAttribute('width'))
+    }))
+    assert(zoneResized.width > zoneMoved.width, '拖动右下角手柄可以放大区域')
+    await page.keyboard.press('Delete')
+    await page.waitForTimeout(300)
+    assert((await page.locator('.zone-fill').count()) === 0, '清理移动/缩放测试区域')
     await page.locator('.toolbar').getByText('选择', { exact: true }).click()
 
     console.log('重复连边提示')
