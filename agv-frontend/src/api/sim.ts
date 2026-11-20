@@ -55,6 +55,8 @@ export interface SimStatus {
   grace?: boolean
   /** 结束时未归位车辆数 */
   unparked?: number
+  /** DEADLOCK 时的等待环/等待车说明 */
+  deadlockDetail?: string | null
   metrics: SimMetrics | null
   /** RUNNING（含暂停）时返回当前帧车辆快照；其他状态为空数组 */
   agvs?: AgvSnapshot[]
@@ -144,6 +146,7 @@ export interface ExperimentReport {
   totalPathLen: number
   totalWaitTick: number
   conflictCount: number
+  engineVersion: string | null
   createTime: string
 }
 
@@ -158,6 +161,8 @@ export interface ExperimentReplayResult {
   experimentId: number
   replayId: number
   consistent: boolean
+  versionMatched: boolean
+  note: string | null
   original: ExperimentReport
   replay: ExperimentReport
 }

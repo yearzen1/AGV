@@ -64,6 +64,8 @@ async function onReplay(row: ExperimentReport) {
     const result = await replayExperiment(row.id)
     if (result.consistent) {
       ElMessage.success(`回放完成，四项指标与实验 #${row.id} 一致`)
+    } else if (!result.versionMatched) {
+      ElMessage.warning(result.note || `回放完成，但实验 #${row.id} 的规则版本不同，指标不可直接比较`)
     } else {
       ElMessage.warning(`回放完成，但指标与实验 #${row.id} 不一致，请检查输入快照`)
     }
@@ -134,7 +136,10 @@ function renderChart() {
         name: item.name,
         type: 'bar',
         barMaxWidth: 42,
-        data: results.value.map((r) => Number(Number(r[item.key] ?? 0).toFixed(1))),
+        data: results.value.map((r) => {
+          const value = r[item.key]
+          return value == null ? null : Number(Number(value).toFixed(1))
+        }),
         itemStyle: { color: ['#1f3b73', '#409eff', '#e6a23c', '#f56c6c'][index] },
         label: { show: true, position: 'top', fontSize: 11 }
       }))
@@ -209,6 +214,7 @@ onBeforeUnmount(() => {
     <div v-if="results.length > 0" class="panel" style="margin-top: 16px">
       <h3 style="margin-top: 0">指标对比</h3>
       <div ref="chartRef" style="width: 100%; height: 360px"></div>
+      <div style="font-size: 12px; color: #909399; margin-top: 4px">DEADLOCK / FAILED 实验没有完整指标，不参与柱状图绘制；表格中显示为 -。</div>
       <el-table :data="results" style="margin-top: 12px">
         <el-table-column prop="algorithmName" label="调度算法" width="140" />
         <el-table-column prop="agvCount" label="AGV" width="80" />
@@ -226,6 +232,9 @@ onBeforeUnmount(() => {
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="engineVersion" label="规则" width="70">
+          <template #default="{ row }">{{ row.engineVersion || '-' }}</template>
+        </el-table-column>
       </el-table>
     </div>
 
@@ -242,6 +251,9 @@ onBeforeUnmount(() => {
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
+        </el-table-column>
+        <el-table-column prop="engineVersion" label="规则" width="70">
+          <template #default="{ row }">{{ row.engineVersion || '-' }}</template>
         </el-table-column>
         <el-table-column prop="makespan" label="完成时间" width="110"
           :formatter="(row: ExperimentReport) => formatMetric(row.makespan)" />

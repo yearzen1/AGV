@@ -37,6 +37,12 @@ const mapTaskSets = computed(() =>
 )
 
 const roadnet = ref<RoadNetPayload | null>(null)
+const maxAgvCount = computed(() => {
+  const total = (roadnet.value?.nodes ?? [])
+    .filter((node) => node.type === 'CHARGER')
+    .reduce((sum, node) => sum + Math.max(1, node.capacity ?? 1), 0)
+  return total > 0 ? total : 1
+})
 const agvs = ref<AgvSnapshot[]>([])
 const events = ref<SimEvent[]>([])
 const metrics = ref<SimMetrics | null>(null)
@@ -161,6 +167,9 @@ function selectDefaultTaskSet() {
 async function loadRoadNet(id: number) {
   try {
     roadnet.value = await getRoadNet(id)
+    if (agvCount.value > maxAgvCount.value) {
+      agvCount.value = maxAgvCount.value
+    }
   } catch (error: any) {
     ElMessage.error(error.message || '加载路网失败')
   }
@@ -496,7 +505,8 @@ onBeforeUnmount(() => {
         <el-option v-for="item in algorithms" :key="item.dictCode" :label="item.dictValue" :value="item.dictCode" />
       </el-select>
       <span class="field-label">AGV 数量</span>
-      <el-input-number v-model="agvCount" :min="1" :max="12" style="width: 120px" :disabled="running" />
+      <el-input-number v-model="agvCount" :min="1" :max="maxAgvCount" style="width: 120px" :disabled="running" />
+      <span class="field-hint">最多 {{ maxAgvCount }} 台</span>
       <span class="field-label">随机种子</span>
       <el-input-number v-model="seed" :min="0" :controls="false" style="width: 140px" :disabled="running" />
       <el-button type="primary" :disabled="running || !selectedTaskSetId" @click="start">开始</el-button>
@@ -523,6 +533,11 @@ onBeforeUnmount(() => {
       <el-checkbox v-model="showLabels" size="small">标签</el-checkbox>
       <el-button size="small" :type="topView ? 'primary' : ''" @click="toggleTopView">俯视</el-button>
       <el-tag v-if="simState" :type="simState.type" size="small">{{ simState.label }}</el-tag>
+      <span
+        v-if="status?.status === 'DEADLOCK' && status.deadlockDetail"
+        style="font-size: 12px; color: #f56c6c; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
+        :title="status.deadlockDetail"
+      >{{ status.deadlockDetail }}</span>
       <el-tag
         :type="socketState === 'open' ? 'success' : socketState === 'failed' ? 'danger' : 'info'"
         size="small"
@@ -651,6 +666,12 @@ onBeforeUnmount(() => {
 .field-label {
   font-size: 13px;
   color: #606266;
+  white-space: nowrap;
+}
+
+.field-hint {
+  font-size: 12px;
+  color: #909399;
   white-space: nowrap;
 }
 
