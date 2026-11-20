@@ -142,10 +142,10 @@ export interface ExperimentReport {
   agvCount: number
   seed: number
   status: string
-  makespan: number
-  totalPathLen: number
-  totalWaitTick: number
-  conflictCount: number
+  makespan: number | null
+  totalPathLen: number | null
+  totalWaitTick: number | null
+  conflictCount: number | null
   engineVersion: string | null
   createTime: string
 }
