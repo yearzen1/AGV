@@ -64,7 +64,7 @@ public final class SimulationEngine {
     private int deadlockBreakCount;
     private int retreatSuccessCount;
     private int logicalYieldCount;
-    private int maxWaitTicks;
+    private int maxBlockedTicks;
     private boolean graceFinished;
     private int unparkedAtFinish;
     private boolean finished;
@@ -185,7 +185,7 @@ public final class SimulationEngine {
     /** 诊断计数：只用于日志，不参与指标口径。 */
     public SimDiagnostics diagnostics() {
         return new SimDiagnostics(replanCount, deadlockBreakCount, retreatSuccessCount,
-                logicalYieldCount, maxWaitTicks, graceFinished, unparkedAtFinish);
+                logicalYieldCount, maxBlockedTicks, graceFinished, unparkedAtFinish);
     }
 
     // ---------------------------------------------------------------- 运动
@@ -269,7 +269,7 @@ public final class SimulationEngine {
 
     private void startLoading(Agv agv, List<SimEvent> events) {
         agv.status = AgvStatus.LOADING;
-        agv.serviceTicksLeft = Math.max(1, config.serviceTicks());
+        agv.serviceTicksLeft = Math.max(1, config.loadTicks());
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.LOADING,
                 agv.currentNode, "开始装货，任务 " + agv.task.id()));
     }
@@ -413,7 +413,7 @@ public final class SimulationEngine {
         agv.s = 0;
         agv.status = AgvStatus.MOVING;
         if (wasWaiting) {
-            maxWaitTicks = Math.max(maxWaitTicks, agv.waitTicks);
+            maxBlockedTicks = Math.max(maxBlockedTicks, agv.waitTicks);
             events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_RESOLVED, next.id(),
                     "等待 " + agv.waitTicks + " tick 后结束"));
         }
@@ -452,7 +452,7 @@ public final class SimulationEngine {
             agv.bannedEdges.add(wanted.edgeId());
             agv.waitTicks = 0;
             replanCount++;
-            maxWaitTicks = Math.max(maxWaitTicks, waited);
+            maxBlockedTicks = Math.max(maxBlockedTicks, waited);
             events.add(new SimEvent(tick, agv.id, SimEvent.Type.REPLAN,
                     wanted.id(), "等待 " + waited + " tick 后绕行重规划，禁行 " + wanted.edgeId()));
         } else {

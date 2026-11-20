@@ -16,7 +16,9 @@ public record SimEvent(long tick, String agvId, Type type, String place, String 
         TASK_ASSIGNED,
         /** 到达取货点开始装货 */
         LOADING,
-        /** 到达卸货点，卸货瞬时完成 */
+        /** 到达卸货点开始卸货 */
+        UNLOADING,
+        /** 卸货完成，任务计入完成 */
         UNLOADED,
         /** 任务完成 */
         TASK_DONE,

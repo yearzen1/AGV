@@ -196,7 +196,7 @@ class SimulationEngineTest {
         assertFalse(resolved.isEmpty(), "等待结束后应发出 WAIT_RESOLVED");
         assertTrue(resolved.stream().allMatch(e -> e.detail().startsWith("等待 ")),
                 "WAIT_RESOLVED 的 detail 应写明等待 tick");
-        assertTrue(engine.diagnostics().maxWaitTicks() > 0, "最长等待应被记录");
+        assertTrue(engine.diagnostics().maxBlockedTicks() > 0, "最长阻塞段应被记录");
     }
 
     @Test
@@ -289,6 +289,45 @@ class SimulationEngineTest {
         assertEquals(diagnostics.deadlockBreakCount(),
                 diagnostics.retreatSuccessCount() + diagnostics.logicalYieldCount(),
                 "检测到等待环后必须落到倒车成功或逻辑让行");
+    }
+
+    @Test
+    @DisplayName("卸货占用 unloadTicks，UNLOADED 与 TASK_DONE 同 tick")
+    void unloadTakesConfiguredTicks() {
+        SimulationEngine engine = new SimulationEngine(corridor(),
+                List.of(new Task(1, "W1", "W2")),
+                new SimConfig(1, 1L, "nearest", 5, 7, 30, 200_000));
+
+        List<SimEvent> events = runToEnd(engine);
+        SimEvent unloading = events.stream()
+                .filter(event -> event.type() == SimEvent.Type.UNLOADING)
+                .findFirst().orElse(null);
+        SimEvent unloaded = events.stream()
+                .filter(event -> event.type() == SimEvent.Type.UNLOADED)
+                .findFirst().orElse(null);
+        SimEvent done = events.stream()
+                .filter(event -> event.type() == SimEvent.Type.TASK_DONE)
+                .findFirst().orElse(null);
+
+        assertFalse(unloading == null, "到达卸货点应发出 UNLOADING");
+        assertFalse(unloaded == null, "卸货结束应发出 UNLOADED");
+        assertFalse(done == null, "卸货结束应完成对应任务");
+        assertEquals(7L, unloaded.tick() - unloading.tick(), "卸货应占用 unloadTicks");
+        assertEquals(unloaded.tick(), done.tick(), "UNLOADED 与 TASK_DONE 应同 tick");
+        assertTrue(done.tick() > unloading.tick(), "任务不应在开始卸货时立即完成");
+    }
+
+    @Test
+    @DisplayName("最长阻塞段跨重规划累计，不会被 30 tick 清零")
+    void maxBlockedTicksSurvivesReplans() {
+        SimulationEngine engine = new SimulationEngine(singleChargerLine(),
+                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1")),
+                SimConfig.defaults(2, 5L, "nearest"));
+
+        runToEnd(engine);
+
+        assertTrue(engine.diagnostics().maxBlockedTicks() > 300,
+                "停不进充电位的等待应累计为完整阻塞段，而不是被重规划清零");
     }
 
     @Test
