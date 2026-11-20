@@ -51,6 +51,10 @@ const socketState = ref<'closed' | 'open' | 'failed'>('closed')
 /** 自动重连上限与退避间隔；耗尽后停止，等待用户手动重试。 */
 const MAX_RECONNECT_ATTEMPTS = 5
 const RECONNECT_DELAYS = [2000, 4000, 8000, 16000, 30000]
+/** 事件日志只保留最近若干条，避免长时间仿真把内存和 DOM 撑爆。 */
+const MAX_EVENTS = 500
+const receivedEvents = ref(0)
+const eventsTruncated = computed(() => receivedEvents.value > MAX_EVENTS)
 
 const quality = ref<SceneQuality>(loadQuality())
 const showLabels = ref(true)
@@ -106,12 +110,22 @@ const progress = computed(() => {
 const eventTypeLabel: Record<string, string> = {
   TASK_ASSIGNED: '分配任务',
   LOADING: '装货',
+  UNLOADED: '卸货',
   TASK_DONE: '任务完成',
   WAIT_CONFLICT: '冲突等待',
+  WAIT_RESOLVED: '等待结束',
   REPLAN: '重规划',
   DEADLOCK_BREAK: '打破僵局',
-  CHARGING: '回充',
+  LOGICAL_YIELD: '逻辑让行',
+  CHARGING: '充电',
   FINISHED: '结束'
+}
+
+function eventTagType(type: string) {
+  if (type === 'WAIT_CONFLICT') return 'danger'
+  if (type === 'WAIT_RESOLVED') return 'success'
+  if (type === 'LOGICAL_YIELD') return 'warning'
+  return 'info'
 }
 
 async function loadOptions() {
@@ -178,7 +192,8 @@ function connectSocket() {
         metrics.value = frame.metrics
         tick.value = frame.tick
         if (frame.events?.length) {
-          events.value = [...frame.events, ...events.value].slice(0, 200)
+          receivedEvents.value += frame.events.length
+          events.value = [...frame.events, ...events.value].slice(0, MAX_EVENTS)
         }
         if (frame.finished) {
           running.value = false
@@ -275,6 +290,7 @@ async function start() {
     })
     status.value = result
     events.value = []
+    receivedEvents.value = 0
     agvs.value = []
     metrics.value = result.metrics ?? null
     tick.value = result.tick ?? 0
@@ -316,6 +332,7 @@ async function reset() {
     paused.value = false
     agvs.value = []
     events.value = []
+    receivedEvents.value = 0
     metrics.value = null
     tick.value = 0
     speed.value = 1
@@ -348,7 +365,7 @@ function statusText(value: string) {
       IDLE: '空闲',
       MOVING: '行驶',
       WAITING: '等待',
-      LOADING: '装卸',
+      LOADING: '装货',
       CHARGING: '充电',
       DONE: '完成'
     }[value] || value
@@ -582,13 +599,16 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="panel log-panel">
-          <div class="panel-title">事件日志</div>
+          <div class="panel-title">
+            事件日志
+            <span v-if="eventsTruncated" class="log-hint">仅显示最近 {{ MAX_EVENTS }} 条</span>
+          </div>
           <div v-if="events.length === 0" class="muted">
-            {{ finished ? '仿真已结束；事件只在运行期间推送，刷新后不保留' : '等待冲突、任务分配等事件会显示在这里' }}
+            {{ finished ? '仿真已结束；事件只在运行期间推送，刷新后不保留' : '等待任务分配、冲突等待、卸货等事件会显示在这里' }}
           </div>
           <div v-for="(event, index) in events" :key="index" class="log-row">
             <span class="log-tick">{{ event.tick }}</span>
-            <el-tag size="small" :type="event.type === 'WAIT_CONFLICT' ? 'danger' : 'info'">
+            <el-tag size="small" :type="eventTagType(event.type)">
               {{ eventTypeLabel[event.type] || event.type }}
             </el-tag>
             <span class="log-detail">{{ event.agvId }} {{ event.detail }}</span>
@@ -672,6 +692,13 @@ onBeforeUnmount(() => {
   font-size: 14px;
   font-weight: 600;
   margin-bottom: 10px;
+}
+
+.log-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #e6a23c;
 }
 
 .agv-panel {
