@@ -49,6 +49,7 @@ final class SimulationRunner {
     private volatile String status = "RUNNING";
     private volatile long tick;
     private volatile SimFrame.Metrics lastMetrics;
+    private volatile SimDiagnostics lastDiagnostics;
 
     SimulationRunner(long userId, SimulationEngine engine, Long experimentId,
                      Long roadnetId, Long taskSetId, String algorithm, Integer agvCount, Long seed,
@@ -136,6 +137,10 @@ final class SimulationRunner {
         payload.put("agvCount", agvCount);
         payload.put("seed", seed);
         SimulationEngine current = engine;
+        SimDiagnostics diagnostics = current == null ? lastDiagnostics : current.diagnostics();
+        payload.put("maxBlocked", diagnostics == null ? 0 : diagnostics.maxBlockedTicks());
+        payload.put("grace", diagnostics != null && diagnostics.graceFinished());
+        payload.put("unparked", diagnostics == null ? 0 : diagnostics.unparkedAtFinish());
         if (current == null) {
             payload.put("tick", tick);
             payload.put("metrics", lastMetrics);
@@ -209,6 +214,7 @@ final class SimulationRunner {
         tick = finishedEngine.tick();
         lastMetrics = finishedEngine.metrics();
         SimDiagnostics diagnostics = finishedEngine.diagnostics();
+        lastDiagnostics = diagnostics;
         engine = null;
         try {
             Experiment experiment = experimentRepository.findById(experimentId).orElse(null);
@@ -229,12 +235,13 @@ final class SimulationRunner {
         }
         // 必须先推送结束状态再停线程：shutdownNow 会中断当前调度线程，先停会让结束消息推送失败并移除会话
         log.info("仿真完成 experimentId={} tick={} makespan={} pathLen={} waitTick={} conflicts={} "
-                        + "replan={} deadlock={} retreat={} logicalYield={} grace={} unparked={}",
+                        + "replan={} deadlock={} retreat={} logicalYield={} grace={} unparked={} maxBlocked={}",
                 experimentId, tick, lastMetrics.makespan(), lastMetrics.totalPathLen(),
                 lastMetrics.totalWaitTick(), lastMetrics.conflictCount(),
                 diagnostics.replanCount(), diagnostics.deadlockBreakCount(),
                 diagnostics.retreatSuccessCount(), diagnostics.logicalYieldCount(),
-                diagnostics.graceFinished(), diagnostics.unparkedAtFinish());
+                diagnostics.graceFinished(), diagnostics.unparkedAtFinish(),
+                diagnostics.maxBlockedTicks());
         broadcastStatus("finished");
         stopScheduler();
     }
@@ -294,6 +301,9 @@ final class SimulationRunner {
         message.put("agvCount", null);
         message.put("seed", null);
         message.put("tick", 0);
+        message.put("maxBlocked", 0);
+        message.put("grace", false);
+        message.put("unparked", 0);
         message.put("metrics", null);
         message.put("agvs", List.of());
         socketHandler.sendToUser(userId, message);

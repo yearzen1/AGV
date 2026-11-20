@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -75,6 +76,11 @@ class SimulationRunnerTest {
             }
             assertTrue(handler.sawStatus("FINISHED"),
                     "结束状态没有推送成功，会话会在调度线程被中断后掉线");
+            Map<String, Object> payload = runner.statusPayload();
+            assertEquals("FINISHED", payload.get("status"));
+            assertTrue(payload.containsKey("maxBlocked"), "结束状态应带最长阻塞段");
+            assertEquals(false, payload.get("grace"));
+            assertEquals(0, payload.get("unparked"));
         } finally {
             runner.shutdown();
         }

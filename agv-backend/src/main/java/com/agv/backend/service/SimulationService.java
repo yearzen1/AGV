@@ -197,6 +197,9 @@ public class SimulationService {
         payload.put("agvCount", null);
         payload.put("seed", null);
         payload.put("tick", 0);
+        payload.put("maxBlocked", 0);
+        payload.put("grace", false);
+        payload.put("unparked", 0);
         payload.put("metrics", null);
         payload.put("agvs", List.of());
         return payload;
