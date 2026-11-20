@@ -11,7 +11,7 @@ export interface SimMetrics {
 
 export interface AgvSnapshot {
   id: string
-  status: 'IDLE' | 'MOVING' | 'WAITING' | 'LOADING' | 'CHARGING' | 'DONE'
+  status: 'IDLE' | 'MOVING' | 'WAITING' | 'LOADING' | 'UNLOADING' | 'CHARGING' | 'DONE'
   arcId: string | null
   s: number
   x: number
@@ -49,6 +49,12 @@ export interface SimStatus {
   agvCount: number | null
   seed: number | null
   tick: number
+  /** 最长完整阻塞段（tick），运行中为当前值，结束后为最终值 */
+  maxBlocked?: number
+  /** 是否因回充宽限期到期而结束 */
+  grace?: boolean
+  /** 结束时未归位车辆数 */
+  unparked?: number
   metrics: SimMetrics | null
   /** RUNNING（含暂停）时返回当前帧车辆快照；其他状态为空数组 */
   agvs?: AgvSnapshot[]

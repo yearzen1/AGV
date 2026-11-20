@@ -175,7 +175,7 @@ export class AgvFleet {
       if (entry.status !== pose.status) {
         entry.status = pose.status
         entry.body.material = this.bodyMaterials.get(pose.status) ?? this.defaultBodyMaterial()
-        entry.cargo.visible = pose.status === 'LOADING'
+        entry.cargo.visible = pose.status === 'LOADING' || pose.status === 'UNLOADING'
       }
 
       const color = STATUS_COLORS[pose.status] ?? DEFAULT_STATUS_COLOR

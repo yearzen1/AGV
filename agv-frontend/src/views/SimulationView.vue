@@ -83,8 +83,12 @@ const simState = computed(() => {
       : { label: '运行中', type: 'success' as const }
   }
   if (finished.value) {
-    return status.value?.status === 'FAILED'
-      ? { label: '仿真失败', type: 'danger' as const }
+    if (status.value?.status === 'FAILED') {
+      return { label: '仿真失败', type: 'danger' as const }
+    }
+    const unparked = status.value?.unparked ?? 0
+    return unparked > 0
+      ? { label: `已完成（${unparked} 台未归位）`, type: 'warning' as const }
       : { label: '已完成', type: 'info' as const }
   }
   return null
@@ -110,7 +114,8 @@ const progress = computed(() => {
 const eventTypeLabel: Record<string, string> = {
   TASK_ASSIGNED: '分配任务',
   LOADING: '装货',
-  UNLOADED: '卸货',
+  UNLOADING: '卸货',
+  UNLOADED: '卸货完成',
   TASK_DONE: '任务完成',
   WAIT_CONFLICT: '冲突等待',
   WAIT_RESOLVED: '等待结束',
@@ -366,6 +371,7 @@ function statusText(value: string) {
       MOVING: '行驶',
       WAITING: '等待',
       LOADING: '装货',
+      UNLOADING: '卸货',
       CHARGING: '充电',
       DONE: '完成'
     }[value] || value
@@ -378,6 +384,7 @@ function statusTagType(value: string) {
       MOVING: 'primary',
       WAITING: 'danger',
       LOADING: 'warning',
+      UNLOADING: 'warning',
       CHARGING: 'success',
       IDLE: 'info',
       DONE: 'info'
