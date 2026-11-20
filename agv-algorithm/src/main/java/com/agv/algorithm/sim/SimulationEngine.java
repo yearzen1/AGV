@@ -60,6 +60,9 @@ public final class SimulationEngine {
     private final Map<String, Agv> agvs = new LinkedHashMap<>();
     private final List<Task> pending = new ArrayList<>();
     private final Map<String, String> edgeOwner = new HashMap<>();
+    private final Map<String, Set<String>> coLocations = new LinkedHashMap<>();
+    private final Map<String, Long> coLocationStart = new LinkedHashMap<>();
+    private final List<SimEvent> pendingEvents = new ArrayList<>();
     private final List<String> chargers;
 
     private long tick;
@@ -78,6 +81,7 @@ public final class SimulationEngine {
     private boolean finished;
     private boolean deadlocked;
     private String deadlockDetail;
+    private int coLocationEvents;
     private long allWaitingTicks;
     private long lastCycleEventTick = -DEADLOCK_WAIT_TICKS;
     private long lastCompletionTick;
@@ -116,6 +120,7 @@ public final class SimulationEngine {
                 reservations.reserve(agv.id, charger, 0, Interval.FOREVER);
             }
         }
+        detectCoLocation(pendingEvents);
     }
 
     private void validateTask(Task task) {
@@ -132,7 +137,8 @@ public final class SimulationEngine {
 
     /** 推进一个时间步，返回该帧数据。 */
     public SimFrame step() {
-        List<SimEvent> events = new ArrayList<>();
+        List<SimEvent> events = new ArrayList<>(pendingEvents);
+        pendingEvents.clear();
         if (finished || deadlocked) {
             return frame(events);
         }
@@ -174,6 +180,7 @@ public final class SimulationEngine {
         }
 
         totalWaitTicks += agvs.values().stream().filter(a -> a.status == AgvStatus.WAITING).count();
+        detectCoLocation(events);
         updateFinished(events);
         checkDeadlock(events);
         if (tick % 100 == 0) {
@@ -239,7 +246,7 @@ public final class SimulationEngine {
     /** 诊断计数：只用于日志，不参与指标口径。 */
     public SimDiagnostics diagnostics() {
         return new SimDiagnostics(replanCount, deadlockBreakCount, retreatSuccessCount,
-                maxBlockedTicks, graceFinished, unparkedAtFinish);
+                maxBlockedTicks, graceFinished, unparkedAtFinish, coLocationEvents);
     }
 
     // ---------------------------------------------------------------- 运动
@@ -278,7 +285,7 @@ public final class SimulationEngine {
             if (agv.status != AgvStatus.WAITING) {
                 conflictCount++;
                 events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_CONFLICT, arc.id(),
-                        "节点 " + from + " 被占用（倒车等待）"));
+                        nodeBlockedReason(from, agv.id, "倒车等待")));
             }
             agv.status = AgvStatus.WAITING;
             agv.wantedNodeId = from;
@@ -316,7 +323,7 @@ public final class SimulationEngine {
             String reason = null;
             if (!reservations.canReserve(nodeId, tick, Interval.FOREVER,
                     nodeCapacity(nodeId), agv.id)) {
-                reason = "节点 " + nodeId + " 被占用（节点冲突）";
+                reason = nodeBlockedReason(nodeId, agv.id, "节点冲突");
             }
             if (reason != null) {
                 blockAtStopLine(agv, current, current.id(), nodeId, reason, events);
@@ -344,11 +351,11 @@ public final class SimulationEngine {
         String reason = arcBlockedReason(agv, next);
         if (reason == null && !reservations.canReserve(nodeId, tick,
                 tick + NODE_CLEARANCE_TICKS, nodeCapacity(nodeId), agv.id)) {
-            reason = "节点 " + nodeId + " 被占用（节点冲突）";
+            reason = nodeBlockedReason(nodeId, agv.id, "节点冲突");
         }
         if (reason == null && nextIsGoal && !reservations.canReserve(nextNode, tick,
                 Interval.FOREVER, nodeCapacity(nextNode), agv.id)) {
-            reason = "节点 " + nextNode + " 被占用（节点冲突）";
+            reason = nodeBlockedReason(nextNode, agv.id, "节点冲突");
         }
         if (reason != null) {
             blockAtStopLine(agv, current, next.id(), nextNode, reason, events);
@@ -414,9 +421,21 @@ public final class SimulationEngine {
         }
         if (!reservations.canReserve(arc.id(), tick, Interval.FOREVER,
                 capacityOf(arc), agv.id)) {
-            return "弧 " + arc.id() + " 容量已满（追尾冲突）";
+            Set<String> holders = reservations.holdersOverlapping(arc.id(), tick, Interval.FOREVER);
+            holders.remove(agv.id);
+            String suffix = holders.isEmpty() ? "" : "，占用者 " + String.join("、", holders);
+            return "弧 " + arc.id() + " 容量已满" + suffix + "（追尾冲突）";
         }
         return null;
+    }
+
+    private String nodeBlockedReason(String nodeId, String selfId, String suffix) {
+        Set<String> holders = new HashSet<>(reservations.holdersAt(nodeId, tick));
+        holders.remove(selfId);
+        if (holders.isEmpty()) {
+            return "节点 " + nodeId + " 被占用（" + suffix + "）";
+        }
+        return "节点 " + nodeId + " 被 " + String.join("、", holders) + " 占用（" + suffix + "）";
     }
 
     private void afterNodeArrival(Agv agv, List<SimEvent> events) {
@@ -585,7 +604,7 @@ public final class SimulationEngine {
         if (reason == null && nextIsGoal
                 && !reservations.canReserve(nextNode, tick, Interval.FOREVER,
                 nodeCapacity(nextNode), agv.id)) {
-            reason = "节点 " + nextNode + " 被占用（节点冲突）";
+            reason = nodeBlockedReason(nextNode, agv.id, "节点冲突");
         }
         if (reason != null) {
             if (agv.status != AgvStatus.WAITING) {
@@ -905,6 +924,67 @@ public final class SimulationEngine {
 
     // ---------------------------------------------------------------- 收尾
 
+    /**
+     * 同点重合检测：只统计真正停在节点上的车（{@code arcId == null}），同节点 ≥2 台时记录。
+     * 连续重合只记开始、集合变化和结束，避免每 tick 刷屏。
+     */
+    private void detectCoLocation(List<SimEvent> events) {
+        Map<String, List<String>> perNode = new LinkedHashMap<>();
+        for (Agv agv : agvs.values()) {
+            if (agv.currentArc == null && agv.currentNode != null) {
+                perNode.computeIfAbsent(agv.currentNode, key -> new ArrayList<>()).add(agv.id);
+            }
+        }
+        java.util.Set<String> nodes = new java.util.LinkedHashSet<>(coLocations.keySet());
+        nodes.addAll(perNode.keySet());
+        for (String node : nodes) {
+            List<String> ids = perNode.getOrDefault(node, List.of()).stream().sorted().toList();
+            java.util.Set<String> current = new java.util.LinkedHashSet<>(ids);
+            if (ids.size() >= 2) {
+                java.util.Set<String> previous = coLocations.get(node);
+                if (previous == null) {
+                    coLocations.put(node, current);
+                    coLocationStart.put(node, tick);
+                    coLocationEvents++;
+                    events.add(new SimEvent(tick, "-", SimEvent.Type.CO_LOCATION,
+                            node, coLocationDetail(node, current)));
+                } else if (!previous.equals(current)) {
+                    coLocations.put(node, current);
+                    coLocationEvents++;
+                    events.add(new SimEvent(tick, "-", SimEvent.Type.CO_LOCATION,
+                            node, "重合变化：" + coLocationDetail(node, current)));
+                }
+            } else if (coLocations.containsKey(node)) {
+                closeCoLocation(node, events);
+            }
+        }
+    }
+
+    private void closeAllCoLocations(List<SimEvent> events) {
+        for (String node : new ArrayList<>(coLocations.keySet())) {
+            closeCoLocation(node, events);
+        }
+    }
+
+    private void closeCoLocation(String node, List<SimEvent> events) {
+        java.util.Set<String> previous = coLocations.remove(node);
+        Long start = coLocationStart.remove(node);
+        if (previous == null) {
+            return;
+        }
+        long duration = Math.max(0, tick - (start == null ? tick : start));
+        coLocationEvents++;
+        events.add(new SimEvent(tick, "-", SimEvent.Type.CO_LOCATION_END, node,
+                "节点 " + node + " 重合结束，持续 " + duration + " tick"));
+    }
+
+    private String coLocationDetail(String node, java.util.Set<String> ids) {
+        NetNode netNode = net.node(node);
+        int capacity = netNode == null ? 1 : Math.max(1, netNode.capacity());
+        return "节点 " + node + "（容量 " + capacity + "）："
+                + String.join("、", ids) + " 同时停靠（" + ids.size() + " 台）";
+    }
+
     private void updateFinished(List<SimEvent> events) {
         if (completedTasks < allTasks.size()) {
             return;
@@ -914,6 +994,7 @@ public final class SimulationEngine {
         // 充电位数量可能少于车辆数，允许一段回充宽限期后收尾，避免因停不进去而永不结束
         boolean graceExpired = tasksDoneTick >= 0 && tick - tasksDoneTick > PARK_GRACE_TICKS;
         if (allParked || graceExpired) {
+            closeAllCoLocations(events);
             finished = true;
             graceFinished = graceExpired && !allParked;
             unparkedAtFinish = (int) agvs.values().stream()
@@ -937,6 +1018,7 @@ public final class SimulationEngine {
             return;
         }
         if (tick - lastCompletionTick > DEADLOCK_NO_PROGRESS_TICKS) {
+            closeAllCoLocations(events);
             deadlocked = true;
             deadlockDetail = describeDeadlock();
             events.add(new SimEvent(tick, "-", SimEvent.Type.DEADLOCK, "-",
@@ -951,6 +1033,7 @@ public final class SimulationEngine {
         }
         allWaitingTicks++;
         if (allWaitingTicks > DEADLOCK_WAIT_TICKS) {
+            closeAllCoLocations(events);
             deadlocked = true;
             deadlockDetail = describeDeadlock();
             events.add(new SimEvent(tick, "-", SimEvent.Type.DEADLOCK, "-",

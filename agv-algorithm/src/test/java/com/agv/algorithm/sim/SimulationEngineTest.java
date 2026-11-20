@@ -212,6 +212,28 @@ class SimulationEngineTest {
                 com.agv.algorithm.model.LaneMode.SINGLE);
     }
 
+    /** 一个容量 4 的充电位，3 台车初始同点。 */
+    private RoadNet coLocationLine() {
+        return RoadNet.of(
+                List.of(new NetNode("CH1", 0, 0, NodeType.CHARGER, 4),
+                        node("W1", NodeType.WORKSTATION, 10, 0),
+                        node("W2", NodeType.WORKSTATION, 20, 0)),
+                List.of(edge("E1", "CH1", "W1", 10),
+                        edge("E2", "W1", "W2", 10)));
+    }
+
+    /** 两个入口汇到同一个单容量工位，用于触发节点冲突。 */
+    private RoadNet sharedGoalNet() {
+        return RoadNet.of(
+                List.of(charger("CH1", 0, 0),
+                        charger("CH2", 0, 20),
+                        node("J1", NodeType.JUNCTION, 10, 10),
+                        node("W1", NodeType.WORKSTATION, 20, 10)),
+                List.of(edge("E1", "CH1", "J1", 10),
+                        edge("E2", "CH2", "J1", 10),
+                        edge("E3", "J1", "W1", 10)));
+    }
+
     @Test
     @DisplayName("冲突等待结束后发出 WAIT_RESOLVED，并更新最长等待")
     void conflictWaitIsClosedByResolvedEvent() {
@@ -379,6 +401,50 @@ class SimulationEngineTest {
             }
         }
         assertTrue(cooling, "倒车让行后应进入冷却，避免立刻重新抢同一资源");
+    }
+
+    @Test
+    @DisplayName("同节点多车记录开始、变化和结束，不逐 tick 刷屏")
+    void coLocationIsAggregated() {
+        SimulationEngine engine = new SimulationEngine(coLocationLine(),
+                List.of(new Task(1, "W1", "W2"), new Task(2, "W1", "W2"), new Task(3, "W1", "W2")),
+                SimConfig.defaults(3, 1L, "nearest"));
+
+        List<SimEvent> events = new ArrayList<>(engine.step().events());
+        List<SimEvent> starts = events.stream()
+                .filter(event -> event.type() == SimEvent.Type.CO_LOCATION)
+                .filter(event -> event.detail().contains("AGV-1") && event.detail().contains("AGV-2")
+                        && event.detail().contains("AGV-3"))
+                .toList();
+        assertFalse(starts.isEmpty(), "初始 3 台车都在 CH1，应记录一条位置重合");
+        assertTrue(starts.get(0).detail().contains("CH1"), starts.get(0).detail());
+
+        while (!engine.finished() && !engine.deadlocked() && engine.tick() < 1_000
+                && events.stream().noneMatch(event -> event.type() == SimEvent.Type.CO_LOCATION_END)) {
+            events.addAll(engine.step().events());
+        }
+        SimEvent end = events.stream()
+                .filter(event -> event.type() == SimEvent.Type.CO_LOCATION_END)
+                .findFirst().orElse(null);
+        assertFalse(end == null, "车辆离开后应记录重合结束");
+        assertTrue(end.detail().contains("持续"), end.detail());
+        assertTrue(engine.diagnostics().coLocationEvents() >= 2, "至少一条开始和一条结束");
+    }
+
+    @Test
+    @DisplayName("等待事件的容量冲突写出占用者")
+    void waitConflictNamesHolder() {
+        SimulationEngine engine = new SimulationEngine(sharedGoalNet(),
+                List.of(new Task(1, "CH1", "W1"), new Task(2, "CH2", "W1")),
+                SimConfig.defaults(2, 1L, "nearest"));
+
+        List<SimEvent> events = runToEnd(engine);
+        SimEvent conflict = events.stream()
+                .filter(event -> event.type() == SimEvent.Type.WAIT_CONFLICT)
+                .filter(event -> event.detail().contains("占用者 AGV-"))
+                .findFirst().orElse(null);
+        assertFalse(conflict == null, "容量冲突应写出占用者");
+        assertTrue(conflict.detail().contains("追尾冲突"), conflict.detail());
     }
 
     @Test

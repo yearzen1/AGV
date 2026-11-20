@@ -9,8 +9,9 @@ package com.agv.algorithm.sim;
  * @param maxBlockedTicks    单次完整阻塞段的最长 tick（跨重规划累计）
  * @param graceFinished       是否因回充宽限期到期而结束
  * @param unparkedAtFinish    结束时未处于 CHARGING / DONE 的车辆数
+ * @param coLocationEvents    同点重合开始/变化/结束事件数
  */
 public record SimDiagnostics(int replanCount, int deadlockBreakCount, int retreatSuccessCount,
                              int maxBlockedTicks,
-                             boolean graceFinished, int unparkedAtFinish) {
+                             boolean graceFinished, int unparkedAtFinish, int coLocationEvents) {
 }

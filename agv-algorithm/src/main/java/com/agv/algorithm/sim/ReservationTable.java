@@ -72,6 +72,18 @@ public final class ReservationTable {
         return result;
     }
 
+    /** 与给定区间重叠的占用车，用于说明未来预约被谁挡住。 */
+    public Set<String> holdersOverlapping(String resourceId, long start, long end) {
+        Set<String> result = new LinkedHashSet<>();
+        Interval window = new Interval(start, end);
+        for (Hold hold : holds.getOrDefault(resourceId, List.of())) {
+            if (hold.interval().overlaps(window)) {
+                result.add(hold.agvId());
+            }
+        }
+        return result;
+    }
+
     /** 清空所有占用，用于 reset。 */
     public void clear() {
         holds.clear();

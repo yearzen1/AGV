@@ -32,6 +32,10 @@ public record SimEvent(long tick, String agvId, Type type, String place, String 
         DEADLOCK_BREAK,
         /** 无法解开的等待环，仿真判定死锁并停止 */
         DEADLOCK,
+        /** 同一节点同时驻留 ≥2 台车 */
+        CO_LOCATION,
+        /** 同点重合结束 */
+        CO_LOCATION_END,
         /** 回充完成 */
         CHARGING,
         /** 全部任务完成 */
