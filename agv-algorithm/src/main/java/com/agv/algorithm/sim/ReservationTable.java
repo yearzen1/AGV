@@ -77,6 +77,14 @@ public final class ReservationTable {
         holds.clear();
     }
 
+    /** 丢弃已经结束的有限区间占用，避免长时间仿真累积。 */
+    public void prune(long tick) {
+        holds.entrySet().removeIf(entry -> {
+            entry.getValue().removeIf(hold -> hold.interval().end() <= tick);
+            return entry.getValue().isEmpty();
+        });
+    }
+
     public boolean isFree(String resourceId) {
         return holds.getOrDefault(resourceId, List.of()).isEmpty();
     }

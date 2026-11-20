@@ -42,6 +42,12 @@ public final class SimulationEngine {
     /** 任务全部完成后，回充宽限期（tick）。超时即收尾，保证仿真一定能结束。 */
     private static final long PARK_GRACE_TICKS = 1200;
 
+    /** 全部车辆连续等待超过该 tick，判定为无法解开的死锁。 */
+    private static final long DEADLOCK_WAIT_TICKS = 2000;
+
+    /** 还有任务未完成，但连续这么久没有任何任务完成，判定为活锁或死锁。 */
+    private static final long DEADLOCK_NO_PROGRESS_TICKS = 10_000;
+
     private final RoadNet net;
     private final List<Task> allTasks;
     private final SimConfig config;
@@ -68,6 +74,9 @@ public final class SimulationEngine {
     private int unparkedAtFinish;
     private boolean finished;
     private boolean deadlocked;
+    private long allWaitingTicks;
+    private long lastCycleEventTick = -DEADLOCK_WAIT_TICKS;
+    private long lastCompletionTick;
 
     public SimulationEngine(RoadNet net, List<Task> tasks, SimConfig config) {
         if (net == null || net.isEmpty()) {
@@ -120,7 +129,7 @@ public final class SimulationEngine {
     /** 推进一个时间步，返回该帧数据。 */
     public SimFrame step() {
         List<SimEvent> events = new ArrayList<>();
-        if (finished) {
+        if (finished || deadlocked) {
             return frame(events);
         }
         tick++;
@@ -142,7 +151,7 @@ public final class SimulationEngine {
                 continue;
             }
             switch (agv.status) {
-                case MOVING -> advance(agv, events);
+                case MOVING, REVERSING -> advance(agv, events);
                 case IDLE -> onIdleAtNode(agv, events);
                 case WAITING -> onWaiting(agv, events);
                 default -> {
@@ -156,6 +165,10 @@ public final class SimulationEngine {
 
         totalWaitTicks += agvs.values().stream().filter(a -> a.status == AgvStatus.WAITING).count();
         updateFinished(events);
+        checkDeadlock(events);
+        if (tick % 100 == 0) {
+            reservations.prune(tick);
+        }
         return frame(events);
     }
 
@@ -204,27 +217,168 @@ public final class SimulationEngine {
     private void advance(Agv agv, List<SimEvent> events) {
         Arc arc = agv.currentArc;
         double delta = arc.speed() * config.deltaSeconds();
+        if (agv.retreating) {
+            double step = Math.min(delta, agv.s);
+            agv.s -= step;
+            agv.totalDistance += step;
+            totalPathLen += step;
+            if (agv.s <= EPS) {
+                agv.s = 0;
+                tryFinishRetreat(agv, events);
+            }
+            return;
+        }
         double remaining = arc.length() - agv.s;
         double step = Math.min(delta, remaining);
         agv.s += step;
         agv.totalDistance += step;
         totalPathLen += step;
         if (agv.s + EPS >= arc.length()) {
-            arrive(agv, events);
+            agv.s = arc.length();
+            tryCrossNode(agv, events);
         }
     }
 
-    private void arrive(Agv agv, List<SimEvent> events) {
+    /** 倒车到当前弧起点后，尝试进入起点节点；进不去就保持占用并等待。 */
+    private void tryFinishRetreat(Agv agv, List<SimEvent> events) {
         Arc arc = agv.currentArc;
+        String from = arc.from();
+        if (!reservations.canReserve(from, tick, Interval.FOREVER,
+                nodeCapacity(from), agv.id)) {
+            if (agv.status != AgvStatus.WAITING) {
+                conflictCount++;
+                events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_CONFLICT, arc.id(),
+                        "节点 " + from + " 被占用（倒车等待）"));
+            }
+            agv.status = AgvStatus.WAITING;
+            agv.wantedNodeId = from;
+            return;
+        }
+        reservations.reserve(agv.id, from, tick, Interval.FOREVER);
+        releaseArc(agv, arc);
+        agv.currentArc = null;
+        agv.currentNode = from;
+        agv.s = 0;
+        agv.retreating = false;
+        agv.lastArc = null;
+        agv.status = AgvStatus.MOVING;
+        afterNodeArrival(agv, events);
+    }
+
+    /**
+     * 到达当前弧末端。只有在能同时预约目标节点（以及路口的下一段弧）时才真正进入节点，
+     * 否则停在停线上等待，避免把车停进路口或工位。
+     */
+    private void tryCrossNode(Agv agv, List<SimEvent> events) {
+        Arc current = agv.currentArc;
+        if (current == null) {
+            return;
+        }
+        String nodeId = current.to();
+        boolean wasWaiting = agv.status == AgvStatus.WAITING;
+
+        if (agv.path.isEmpty()) {
+            String reason = null;
+            if (!reservations.canReserve(nodeId, tick, Interval.FOREVER,
+                    nodeCapacity(nodeId), agv.id)) {
+                reason = "节点 " + nodeId + " 被占用（节点冲突）";
+            }
+            if (reason != null) {
+                blockAtStopLine(agv, current, current.id(), nodeId, reason, events);
+                return;
+            }
+            if (!reservations.holdersAt(nodeId, tick).contains(agv.id)) {
+                reservations.reserve(agv.id, nodeId, tick, Interval.FOREVER);
+            }
+            releaseArc(agv, current);
+            agv.currentNode = nodeId;
+            agv.currentArc = null;
+            agv.s = 0;
+            agv.lastArc = current;
+            clearWait(agv, events, current.id(), wasWaiting);
+            afterNodeArrival(agv, events);
+            return;
+        }
+
+        Arc next = agv.path.peek();
+        String nextNode = next.to();
+        boolean nextIsGoal = agv.path.size() == 1;
+        String reason = arcBlockedReason(agv, next);
+        if (reason == null && !reservations.canReserve(nodeId, tick,
+                tick + NODE_CLEARANCE_TICKS, nodeCapacity(nodeId), agv.id)) {
+            reason = "节点 " + nodeId + " 被占用（节点冲突）";
+        }
+        if (reason == null && nextIsGoal && !reservations.canReserve(nextNode, tick,
+                Interval.FOREVER, nodeCapacity(nextNode), agv.id)) {
+            reason = "节点 " + nextNode + " 被占用（节点冲突）";
+        }
+        if (reason != null) {
+            blockAtStopLine(agv, current, next.id(), nextNode, reason, events);
+            return;
+        }
+
+        // 原子地通过路口：短暂占用节点、持有下一段弧；若下一节点是终点则一并预约。
+        releaseArc(agv, current);
+        reservations.reserve(agv.id, nodeId, tick, tick + NODE_CLEARANCE_TICKS);
+        reservations.reserve(agv.id, next.id(), tick, Interval.FOREVER);
+        if (nextIsGoal) {
+            reservations.reserve(agv.id, nextNode, tick, Interval.FOREVER);
+        }
+        if (!isDualLane(next)) {
+            edgeOwner.put(next.edgeId(), agv.id);
+        }
+        agv.path.poll();
+        agv.currentNode = nodeId;
+        agv.currentArc = next;
+        agv.s = 0;
+        agv.status = AgvStatus.MOVING;
+        agv.lastArc = current;
+        clearWait(agv, events, next.id(), wasWaiting);
+    }
+
+    private void blockAtStopLine(Agv agv, Arc current, String place, String nextNode,
+                                 String reason, List<SimEvent> events) {
+        if (agv.status != AgvStatus.WAITING) {
+            conflictCount++;
+            events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_CONFLICT, place, reason));
+        }
+        agv.status = AgvStatus.WAITING;
+        agv.wantedEdgeId = agv.path.isEmpty() ? null : agv.path.peek().edgeId();
+        agv.wantedNodeId = nextNode;
+    }
+
+    private void clearWait(Agv agv, List<SimEvent> events, String place, boolean wasWaiting) {
+        if (wasWaiting && agv.waitTicks > 0) {
+            events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_RESOLVED, place,
+                    "等待 " + agv.waitTicks + " tick 后结束"));
+        }
+        agv.waitTicks = 0;
+        agv.blockedTicks = 0;
+    }
+
+    private void releaseArc(Agv agv, Arc arc) {
         reservations.release(arc.id(), agv.id);
         if (agv.id.equals(edgeOwner.get(arc.edgeId()))) {
             edgeOwner.remove(arc.edgeId());
         }
-        agv.lastArc = arc;
-        agv.currentArc = null;
-        agv.s = 0;
-        agv.currentNode = arc.to();
-        afterNodeArrival(agv, events);
+    }
+
+    private String locationNode(Agv agv) {
+        return agv.currentArc == null ? agv.currentNode : agv.currentArc.to();
+    }
+
+    private String arcBlockedReason(Agv agv, Arc arc) {
+        if (!isDualLane(arc)) {
+            String owner = edgeOwner.get(arc.edgeId());
+            if (owner != null && !owner.equals(agv.id)) {
+                return "路段 " + arc.edgeId() + " 已被 " + owner + " 占用（相向冲突）";
+            }
+        }
+        if (!reservations.canReserve(arc.id(), tick, Interval.FOREVER,
+                capacityOf(arc), agv.id)) {
+            return "弧 " + arc.id() + " 容量已满（追尾冲突）";
+        }
+        return null;
     }
 
     private void afterNodeArrival(Agv agv, List<SimEvent> events) {
@@ -300,6 +454,7 @@ public final class SimulationEngine {
     private void completeTask(Agv agv, List<SimEvent> events) {
         completedTasks++;
         makespan = tick;
+        lastCompletionTick = tick;
         if (completedTasks >= allTasks.size()) {
             tasksDoneTick = tick;
         }
@@ -365,7 +520,6 @@ public final class SimulationEngine {
         }
         if (!result.found()) {
             // 起终点在设计期已校验可达，这里只可能是临时封锁导致，降级为等待
-            reservations.release(agv.currentNode, agv.id);
             agv.status = AgvStatus.WAITING;
             return;
         }
@@ -383,59 +537,40 @@ public final class SimulationEngine {
         }
         boolean wasWaiting = agv.status == AgvStatus.WAITING;
         Arc next = agv.path.peek();
-        long travel = travelTicks(next);
-        long enter = tick;
-        long arrival = tick + travel;
-        long arcExit = arrival + 1;
-        String destNode = next.to();
-        boolean dualLane = isDualLane(next);
-        int capacity = capacityOf(next);
-
-        String blockedReason = null;
-        String owner = dualLane ? null : edgeOwner.get(next.edgeId());
-        if (owner != null && !owner.equals(agv.id)) {
-            blockedReason = "路段 " + next.edgeId() + " 已被 " + owner + " 占用（相向冲突）";
-        } else if (!reservations.canReserve(next.id(), enter, arcExit, capacity, agv.id)) {
-            blockedReason = "弧 " + next.id() + " 容量已满（追尾冲突）";
-        } else if (!reservations.canReserve(destNode, arrival, Interval.FOREVER,
-                nodeCapacity(destNode), agv.id)) {
-            blockedReason = "节点 " + destNode + " 被占用（节点冲突）";
+        boolean nextIsGoal = agv.path.size() == 1;
+        String nextNode = next.to();
+        String reason = arcBlockedReason(agv, next);
+        if (reason == null && nextIsGoal
+                && !reservations.canReserve(nextNode, tick, Interval.FOREVER,
+                nodeCapacity(nextNode), agv.id)) {
+            reason = "节点 " + nextNode + " 被占用（节点冲突）";
         }
-
-        if (blockedReason != null) {
+        if (reason != null) {
             if (agv.status != AgvStatus.WAITING) {
                 conflictCount++;
                 events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_CONFLICT,
-                        next.id(), blockedReason));
+                        next.id(), reason));
             }
-            // 路口是临界区：等待时保持占用，避免车还停在路口却把资源让给后车。
-            // 非路口节点仍释放，避免充电/装卸位形成资源等待环。
-            if (!isJunction(agv.currentNode)) {
-                reservations.release(agv.currentNode, agv.id);
-            }
+            // 停在节点上等待：节点由本车持有，其他车不会叠进来。
             agv.status = AgvStatus.WAITING;
             agv.wantedEdgeId = next.edgeId();
-            agv.wantedNodeId = destNode;
+            agv.wantedNodeId = nextNode;
             return false;
         }
 
+        reservations.reserve(agv.id, next.id(), tick, Interval.FOREVER);
+        if (nextIsGoal) {
+            reservations.reserve(agv.id, nextNode, tick, Interval.FOREVER);
+        }
         releaseCurrentNode(agv);
-        reservations.reserve(agv.id, next.id(), enter, arcExit);
-        reservations.reserve(agv.id, destNode, arrival, Interval.FOREVER);
-        if (!dualLane) {
+        if (!isDualLane(next)) {
             edgeOwner.put(next.edgeId(), agv.id);
         }
-
         agv.path.poll();
         agv.currentArc = next;
         agv.s = 0;
         agv.status = AgvStatus.MOVING;
-        if (wasWaiting) {
-            events.add(new SimEvent(tick, agv.id, SimEvent.Type.WAIT_RESOLVED, next.id(),
-                    "等待 " + agv.waitTicks + " tick 后结束"));
-        }
-        agv.waitTicks = 0;
-        agv.blockedTicks = 0;
+        clearWait(agv, events, next.id(), wasWaiting);
         agv.wantedEdgeId = null;
         agv.wantedNodeId = null;
         agv.bannedEdges.clear();
@@ -450,7 +585,15 @@ public final class SimulationEngine {
             replanWithDetour(agv, events);
             return;
         }
-        tryEnterNext(agv, events);
+        if (agv.currentArc != null) {
+            if (agv.retreating) {
+                tryFinishRetreat(agv, events);
+            } else {
+                tryCrossNode(agv, events);
+            }
+        } else {
+            tryEnterNext(agv, events);
+        }
     }
 
     private void replanWithDetour(Agv agv, List<SimEvent> events) {
@@ -464,7 +607,7 @@ public final class SimulationEngine {
         }
         Set<String> blocked = new HashSet<>(agv.bannedEdges);
         blocked.add(wanted.edgeId());
-        PathResult result = planner.plan(net, agv.currentNode, goal, blocked);
+        PathResult result = planner.plan(net, locationNode(agv), goal, blocked);
         if (result.found() && !result.arcs().isEmpty()) {
             int waited = agv.waitTicks;
             agv.path.clear();
@@ -487,7 +630,7 @@ public final class SimulationEngine {
             return agv.leg == Leg.PICKUP ? agv.task.from() : agv.task.to();
         }
         if (agv.returning) {
-            return nearestCharger(agv.currentNode, Set.of());
+            return nearestCharger(locationNode(agv), Set.of());
         }
         return null;
     }
@@ -512,6 +655,9 @@ public final class SimulationEngine {
             }
             blockers.addAll(reservations.holdersAt(next.id(), tick));
             blockers.addAll(reservations.holdersAt(next.to(), tick));
+            if (agv.currentArc != null) {
+                blockers.addAll(reservations.holdersAt(agv.currentArc.to(), tick));
+            }
             blockers.remove(agv.id);
             waitFor.put(agv.id, blockers);
         }
@@ -523,25 +669,34 @@ public final class SimulationEngine {
             if (cycle.isEmpty()) {
                 continue;
             }
-            // 结构性保证：边的持有者一定是行驶中的车，会有限时间内释放，因此环不会长期存在。
-            // 这里保留环检测作为诊断与论文中的兜底说明，检出后让编号最小的车带禁行约束重规划。
-            Agv first = cycle.stream()
+            List<Agv> members = cycle.stream()
                     .map(agvs::get)
-                    .min(Comparator.comparingInt(a -> a.priority))
-                    .orElse(null);
-            if (first == null || first.path.isEmpty()) {
+                    .sorted(Comparator.comparingInt(agv -> agv.priority))
+                    .toList();
+            for (Agv member : members) {
+                if (member != null && tryRetreat(member, events)) {
+                    lastCycleEventTick = tick;
+                    return;
+                }
+            }
+            for (Agv member : members) {
+                if (member != null && tryBackOff(member, events)) {
+                    lastCycleEventTick = tick;
+                    return;
+                }
+            }
+            Agv first = members.isEmpty() ? null : members.get(0);
+            if (first == null) {
                 return;
             }
-            Arc wanted = first.path.peek();
-            first.bannedEdges.add(wanted.edgeId());
-            first.waitTicks = 0;
-            deadlockBreakCount++;
-            events.add(new SimEvent(tick, first.id, SimEvent.Type.DEADLOCK_BREAK,
-                    wanted.id(), "检测到等待环，尝试倒车让行"));
-            if (!tryRetreat(first, events)) {
-                // 倒车不可行时不做非物理让行；等待环持续存在将触发 DEADLOCK。
-                replanWithDetour(first, events);
+            if (tick - lastCycleEventTick >= 100) {
+                deadlockBreakCount++;
+                lastCycleEventTick = tick;
+                Arc wanted = first.path.peek();
+                events.add(new SimEvent(tick, first.id, SimEvent.Type.DEADLOCK_BREAK,
+                        wanted == null ? "-" : wanted.id(), "检测到等待环，无法倒车让行"));
             }
+            replanWithDetour(first, events);
             return;
         }
     }
@@ -550,39 +705,54 @@ public final class SimulationEngine {
      * 倒车让行：退回到来时的那条弧，把当前节点让给对方。
      * 单车道走廊上两车互不相让时，这是唯一能打破僵局的动作。
      */
+    /**
+     * 停线倒车：沿当前弧退回起点，让出前方节点/路段。
+     * 与节点倒车不同，这里不瞬间改变位置，而是按原速度倒车，过程可在 3D 中看到。
+     */
+    private boolean tryBackOff(Agv agv, List<SimEvent> events) {
+        if (agv.currentArc == null || agv.retreating || agv.s <= 0) {
+            return false;
+        }
+        String goal = currentGoal(agv);
+        if (goal == null) {
+            return false;
+        }
+        agv.retreatGoal = goal;
+        agv.path.clear();
+        agv.retreating = true;
+        agv.status = AgvStatus.REVERSING;
+        agv.waitTicks = 0;
+        agv.blockedTicks = 0;
+        retreatSuccessCount++;
+        events.add(new SimEvent(tick, agv.id, SimEvent.Type.DEADLOCK_BREAK,
+                agv.currentArc.id(), "倒车让行至 " + agv.currentArc.from()));
+        return true;
+    }
+
     private boolean tryRetreat(Agv agv, List<SimEvent> events) {
+        if (agv.currentArc != null) {
+            // 停在弧末端的车不能在本模型里倒车，只能等待或绕行。
+            return false;
+        }
         Arc last = agv.lastArc;
         if (last == null) {
             return false;
         }
+        String goal = currentGoal(agv);
+        if (goal == null) {
+            return false;
+        }
         String reverseId = last.id().endsWith("+") ? last.edgeId() + "-" : last.edgeId() + "+";
         Arc reverse = net.arc(reverseId);
-        if (reverse == null) {
-            return false;
-        }
-        String owner = isDualLane(reverse) ? null : edgeOwner.get(reverse.edgeId());
-        if (owner != null && !owner.equals(agv.id)) {
-            return false;
-        }
-        long travel = travelTicks(reverse);
-        long arrival = tick + travel;
-        long arcExit = arrival + 1;
-        if (!reservations.canReserve(reverse.id(), tick, arcExit, capacityOf(reverse), agv.id)) {
-            return false;
-        }
-        if (!reservations.canReserve(reverse.to(), arrival, Interval.FOREVER,
-                nodeCapacity(reverse.to()), agv.id)) {
+        if (reverse == null || arcBlockedReason(agv, reverse) != null) {
             return false;
         }
 
-        String goal = currentGoal(agv);
-        releaseCurrentNode(agv);
-        reservations.reserve(agv.id, reverse.id(), tick, arcExit);
-        reservations.reserve(agv.id, reverse.to(), arrival, Interval.FOREVER);
+        reservations.release(agv.currentNode, agv.id);
+        reservations.reserve(agv.id, reverse.id(), tick, Interval.FOREVER);
         if (!isDualLane(reverse)) {
             edgeOwner.put(reverse.edgeId(), agv.id);
         }
-
         agv.path.clear();
         agv.currentArc = reverse;
         agv.s = 0;
@@ -590,6 +760,7 @@ public final class SimulationEngine {
         agv.lastArc = null;
         agv.retreatGoal = goal;
         agv.waitTicks = 0;
+        agv.blockedTicks = 0;
         retreatSuccessCount++;
         events.add(new SimEvent(tick, agv.id, SimEvent.Type.DEADLOCK_BREAK,
                 reverse.id(), "倒车让行至 " + reverse.to()));
@@ -648,6 +819,35 @@ public final class SimulationEngine {
         }
     }
 
+    /**
+     * 死锁判定：全部车辆都在等待，且连续 {@link #DEADLOCK_WAIT_TICKS} 没有推进。
+     * 任务未完成时才判定；任务完成后的回充排队交给宽限期收尾。
+     */
+    private void checkDeadlock(List<SimEvent> events) {
+        if (finished || completedTasks >= allTasks.size()) {
+            allWaitingTicks = 0;
+            return;
+        }
+        if (tick - lastCompletionTick > DEADLOCK_NO_PROGRESS_TICKS) {
+            deadlocked = true;
+            events.add(new SimEvent(tick, "-", SimEvent.Type.DEADLOCK, "-",
+                    "连续 " + DEADLOCK_NO_PROGRESS_TICKS + " tick 没有任务完成，判定为死锁"));
+            return;
+        }
+        boolean allWaiting = !agvs.isEmpty()
+                && agvs.values().stream().allMatch(agv -> agv.status == AgvStatus.WAITING);
+        if (!allWaiting) {
+            allWaitingTicks = 0;
+            return;
+        }
+        allWaitingTicks++;
+        if (allWaitingTicks > DEADLOCK_WAIT_TICKS) {
+            deadlocked = true;
+            events.add(new SimEvent(tick, "-", SimEvent.Type.DEADLOCK, "-",
+                    "全部车辆连续等待 " + DEADLOCK_WAIT_TICKS + " tick，判定为死锁"));
+        }
+    }
+
     private SimFrame frame(List<SimEvent> events) {
         return new SimFrame(tick, snapshots(), events, finished, deadlocked, metrics());
     }
@@ -663,7 +863,9 @@ public final class SimulationEngine {
             double ratio = arc.length() <= 0 ? 0 : Math.min(1.0, agv.s / arc.length());
             x = from.x() + (to.x() - from.x()) * ratio;
             y = from.y() + (to.y() - from.y()) * ratio;
-            heading = Math.toDegrees(Math.atan2(to.y() - from.y(), to.x() - from.x()));
+            heading = agv.retreating
+                    ? Math.toDegrees(Math.atan2(from.y() - to.y(), from.x() - to.x()))
+                    : Math.toDegrees(Math.atan2(to.y() - from.y(), to.x() - from.x()));
         } else {
             NetNode node = net.node(agv.currentNode);
             x = node == null ? 0 : node.x();
@@ -677,11 +879,6 @@ public final class SimulationEngine {
                 agv.currentArc == null ? null : agv.currentArc.id(),
                 agv.s, x, y, heading,
                 agv.task == null ? -1 : agv.task.id(), agv.waitTicks, agv.currentNode);
-    }
-
-    private long travelTicks(Arc arc) {
-        double seconds = arc.length() / arc.speed();
-        return Math.max(1, (long) Math.ceil(seconds / config.deltaSeconds()));
     }
 
     private int capacityOf(Arc arc) {
@@ -767,6 +964,7 @@ public final class SimulationEngine {
         String wantedNodeId;
         String retreatGoal;
         boolean returning;
+        boolean retreating;
         double totalDistance;
         final Set<String> bannedEdges = new HashSet<>();
 

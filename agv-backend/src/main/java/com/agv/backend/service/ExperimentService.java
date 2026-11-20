@@ -121,20 +121,21 @@ public class ExperimentService {
         experiment.setAlgorithm(algorithm);
         experiment.setAgvCount(agvCount);
         experiment.setSeed(seed);
-        experiment.setStatus(result.finished() ? "FINISHED" : "FAILED");
+        experiment.setStatus(result.deadlocked() ? "DEADLOCK"
+                : result.finished() ? "FINISHED" : "FAILED");
         experiment.setCreateUser(currentUser.id());
         experiment.setRoadnetSnapshot(roadnetJson);
         experiment.setTasksetSnapshot(tasksetJson);
         Experiment saved = experimentRepository.save(experiment);
 
-        ExperimentMetric metric = saveMetric(saved.getId(), result);
-        log.info("离线实验完成 experimentId={} algorithm={} agv={} seed={} finished={} "
+        ExperimentMetric metric = result.deadlocked() ? null : saveMetric(saved.getId(), result);
+        log.info("离线实验完成 experimentId={} algorithm={} agv={} seed={} finished={} deadlocked={} "
                         + "makespan={} pathLen={} waitTick={} conflicts={}",
-                saved.getId(), algorithm, agvCount, seed, result.finished(),
-                metric.getMakespan(), metric.getTotalPathLen(),
-                metric.getTotalWaitTick(), metric.getConflictCount());
+                saved.getId(), algorithm, agvCount, seed, result.finished(), result.deadlocked(),
+                result.makespan(), result.totalPathLen(),
+                result.totalWaitTick(), result.conflictCount());
         auditService.success("EXPERIMENT_RUN", "EXPERIMENT", saved.getId());
-        return toReport(saved, Optional.of(metric));
+        return toReport(saved, Optional.ofNullable(metric));
     }
 
     /**
@@ -170,21 +171,23 @@ public class ExperimentService {
         replay.setAlgorithm(original.getAlgorithm());
         replay.setAgvCount(original.getAgvCount());
         replay.setSeed(original.getSeed());
-        replay.setStatus(result.finished() ? "FINISHED" : "FAILED");
+        replay.setStatus(result.deadlocked() ? "DEADLOCK"
+                : result.finished() ? "FINISHED" : "FAILED");
         replay.setCreateUser(currentUser.id());
         replay.setRoadnetSnapshot(original.getRoadnetSnapshot());
         replay.setTasksetSnapshot(original.getTasksetSnapshot());
         Experiment savedReplay = experimentRepository.save(replay);
 
-        ExperimentMetric replayMetric = saveMetric(savedReplay.getId(), result);
+        ExperimentMetric replayMetric = result.deadlocked() ? null : saveMetric(savedReplay.getId(), result);
         auditService.success("EXPERIMENT_REPLAY", "EXPERIMENT", savedReplay.getId());
         boolean consistent = "FINISHED".equals(original.getStatus())
                 && result.finished()
+                && replayMetric != null
                 && sameMetrics(originalMetric, replayMetric);
 
         return new ExperimentReplayResult(original.getId(), savedReplay.getId(), consistent,
                 toReport(original, Optional.of(originalMetric)),
-                toReport(savedReplay, Optional.of(replayMetric)));
+                toReport(savedReplay, Optional.ofNullable(replayMetric)));
     }
 
     private void requireReplayable(Experiment experiment) {

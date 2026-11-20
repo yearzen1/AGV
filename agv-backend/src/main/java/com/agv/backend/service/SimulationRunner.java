@@ -204,13 +204,14 @@ final class SimulationRunner {
             log.warn("用户 {} 的帧推送失败，已忽略本次推送：{}", userId, ex.getMessage());
         }
 
-        if (frame.finished()) {
+        if (frame.finished() || frame.deadlocked()) {
             finish(current);
         }
     }
 
     private void finish(SimulationEngine finishedEngine) {
-        status = "FINISHED";
+        boolean deadlocked = finishedEngine.deadlocked();
+        status = deadlocked ? "DEADLOCK" : "FINISHED";
         tick = finishedEngine.tick();
         lastMetrics = finishedEngine.metrics();
         SimDiagnostics diagnostics = finishedEngine.diagnostics();
@@ -219,30 +220,32 @@ final class SimulationRunner {
         try {
             Experiment experiment = experimentRepository.findById(experimentId).orElse(null);
             if (experiment != null) {
-                experiment.setStatus("FINISHED");
+                experiment.setStatus(deadlocked ? "DEADLOCK" : "FINISHED");
                 experimentRepository.save(experiment);
-                SimFrame.Metrics metrics = lastMetrics;
-                ExperimentMetric metric = new ExperimentMetric();
-                metric.setExperimentId(experimentId);
-                metric.setMakespan(metrics.makespan());
-                metric.setTotalPathLen(metrics.totalPathLen());
-                metric.setTotalWaitTick(metrics.totalWaitTick());
-                metric.setConflictCount(metrics.conflictCount());
-                metricRepository.save(metric);
+                if (!deadlocked) {
+                    SimFrame.Metrics metrics = lastMetrics;
+                    ExperimentMetric metric = new ExperimentMetric();
+                    metric.setExperimentId(experimentId);
+                    metric.setMakespan(metrics.makespan());
+                    metric.setTotalPathLen(metrics.totalPathLen());
+                    metric.setTotalWaitTick(metrics.totalWaitTick());
+                    metric.setConflictCount(metrics.conflictCount());
+                    metricRepository.save(metric);
+                }
             }
         } catch (RuntimeException ex) {
             log.warn("实验指标落库失败", ex);
         }
         // 必须先推送结束状态再停线程：shutdownNow 会中断当前调度线程，先停会让结束消息推送失败并移除会话
         log.info("仿真完成 experimentId={} tick={} makespan={} pathLen={} waitTick={} conflicts={} "
-                        + "replan={} deadlock={} retreat={} grace={} unparked={} maxBlocked={}",
+                        + "replan={} deadlock={} retreat={} grace={} unparked={} maxBlocked={} deadlocked={}",
                 experimentId, tick, lastMetrics.makespan(), lastMetrics.totalPathLen(),
                 lastMetrics.totalWaitTick(), lastMetrics.conflictCount(),
                 diagnostics.replanCount(), diagnostics.deadlockBreakCount(),
                 diagnostics.retreatSuccessCount(),
                 diagnostics.graceFinished(), diagnostics.unparkedAtFinish(),
-                diagnostics.maxBlockedTicks());
-        broadcastStatus("finished");
+                diagnostics.maxBlockedTicks(), deadlocked);
+        broadcastStatus(deadlocked ? "deadlocked" : "finished");
         stopScheduler();
     }
 

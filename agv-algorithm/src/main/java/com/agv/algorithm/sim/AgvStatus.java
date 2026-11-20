@@ -14,6 +14,8 @@ public enum AgvStatus {
     LOADING,
     /** 卸货中 */
     UNLOADING,
+    /** 倒车让行中 */
+    REVERSING,
     /** 回充后停靠 */
     CHARGING,
     /** 全部任务完成后无任务可接且已回位 */
