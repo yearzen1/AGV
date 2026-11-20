@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DeadlockDetailTest {
@@ -33,9 +34,12 @@ class DeadlockDetailTest {
 
         assertTrue(result.deadlocked(), "单车道 8 台应进入死锁");
         String detail = engine.deadlockDetail();
-        assertTrue(detail.contains("等待环"), detail);
-        assertTrue(detail.contains("AGV-"), detail);
-        assertTrue(detail.contains("→"), detail);
+        assertTrue(detail.contains("台车互等"), detail);
+        assertTrue(detail.contains("想进"), detail);
+        assertTrue(detail.contains("被 AGV-"), detail);
+        assertTrue(detail.contains("挡住"), detail);
+        assertFalse(detail.contains("@"), detail);
+        assertFalse(detail.contains("→"), detail);
     }
 
     private static List<Task> tasks() {

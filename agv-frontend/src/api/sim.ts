@@ -55,7 +55,7 @@ export interface SimStatus {
   grace?: boolean
   /** 结束时未归位车辆数 */
   unparked?: number
-  /** DEADLOCK 时的等待环/等待车说明 */
+  /** DEADLOCK 时的互等说明，按 `；` 分隔，前端逐条展示 */
   deadlockDetail?: string | null
   metrics: SimMetrics | null
   /** RUNNING（含暂停）时返回当前帧车辆快照；其他状态为空数组 */

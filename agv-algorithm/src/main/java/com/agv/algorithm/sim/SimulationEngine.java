@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * 离散时间步仿真引擎：每 tick 推进 100 ms，逐段滚动预约消解冲突。
@@ -706,7 +707,7 @@ public final class SimulationEngine {
             if (agv.status != AgvStatus.WAITING) {
                 continue;
             }
-            Set<String> blockers = new HashSet<>();
+            Set<String> blockers = new TreeSet<>();
             if (agv.path.isEmpty()) {
                 if (agv.currentArc != null) {
                     String target = agv.retreating ? agv.currentArc.from() : agv.currentArc.to();
@@ -739,11 +740,17 @@ public final class SimulationEngine {
             if (cycle.isEmpty()) {
                 continue;
             }
-            StringBuilder detail = new StringBuilder("等待环：");
-            for (String id : cycle) {
-                detail.append(labelOf(id)).append(" → ");
+            StringBuilder detail = new StringBuilder().append(cycle.size()).append(" 台车互等：");
+            for (int i = 0; i < cycle.size(); i++) {
+                if (i > 0) {
+                    detail.append("；");
+                }
+                String id = cycle.get(i);
+                String blocker = cycle.get((i + 1) % cycle.size());
+                detail.append(id).append(" 想进 ")
+                        .append(resourceLabel(waitingResource(agvs.get(id))))
+                        .append("，被 ").append(blocker).append(" 挡住");
             }
-            detail.append(labelOf(cycle.get(0)));
             return detail.toString();
         }
         List<Agv> waiting = agvs.values().stream()
@@ -751,23 +758,41 @@ public final class SimulationEngine {
                 .sorted(Comparator.comparingInt((Agv agv) -> agv.blockedTicks).reversed())
                 .limit(3)
                 .toList();
-        StringBuilder detail = new StringBuilder("无进展，等待车：");
+        StringBuilder detail = new StringBuilder("没有形成环：");
         for (int i = 0; i < waiting.size(); i++) {
+            Agv agv = waiting.get(i);
             if (i > 0) {
                 detail.append("；");
             }
-            detail.append(labelOf(waiting.get(i).id));
+            detail.append(agv.id).append(" 想进 ")
+                    .append(resourceLabel(waitingResource(agv)))
+                    .append("，已等 ").append(agv.blockedTicks).append(" tick");
         }
         return detail.toString();
     }
 
-    private String labelOf(String agvId) {
-        Agv agv = agvs.get(agvId);
-        if (agv == null) {
-            return agvId;
+    /** 资源说明：节点带类型，弧带「路段」，无法识别时原样返回。 */
+    private String resourceLabel(String resource) {
+        if (resource == null || resource.isBlank()) {
+            return "-";
         }
-        String resource = waitingResource(agv);
-        return resource == null ? agv.id : agv.id + "@" + resource;
+        NetNode node = net.node(resource);
+        if (node != null) {
+            return resource + "（" + nodeTypeLabel(node.type()) + "）";
+        }
+        if (net.arc(resource) != null || net.edge(resource) != null) {
+            return resource + "（路段）";
+        }
+        return resource;
+    }
+
+    private String nodeTypeLabel(NodeType type) {
+        return switch (type) {
+            case WORKSTATION -> "工位";
+            case JUNCTION -> "路口";
+            case CHARGER -> "充电位";
+            case BUFFER -> "缓存位";
+        };
     }
 
     private String waitingResource(Agv agv) {

@@ -103,6 +103,11 @@ const simState = computed(() => {
   return null
 })
 
+const deadlockLines = computed(() => {
+  const detail = status.value?.deadlockDetail ?? ''
+  return detail.split('；').filter((line) => line.trim().length > 0)
+})
+
 const agvViews = computed<AgvView[]>(() =>
   agvs.value.map((a) => ({
     id: a.id,
@@ -268,7 +273,8 @@ function retrySocket() {
 async function syncStatus() {
   try {
     const current = await simStatus()
-    if (current.status !== 'RUNNING' && current.status !== 'FINISHED' && current.status !== 'FAILED') {
+    const restoredStatuses = ['RUNNING', 'FINISHED', 'FAILED', 'DEADLOCK']
+    if (!restoredStatuses.includes(current.status)) {
       return
     }
     status.value = current
@@ -536,11 +542,6 @@ onBeforeUnmount(() => {
       <el-checkbox v-model="showLabels" size="small">标签</el-checkbox>
       <el-button size="small" :type="topView ? 'primary' : ''" @click="toggleTopView">俯视</el-button>
       <el-tag v-if="simState" :type="simState.type" size="small">{{ simState.label }}</el-tag>
-      <span
-        v-if="status?.status === 'DEADLOCK' && status.deadlockDetail"
-        style="font-size: 12px; color: #f56c6c; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
-        :title="status.deadlockDetail"
-      >{{ status.deadlockDetail }}</span>
       <el-tag
         :type="socketState === 'open' ? 'success' : socketState === 'failed' ? 'danger' : 'info'"
         size="small"
@@ -557,6 +558,16 @@ onBeforeUnmount(() => {
         {{ socketState === 'failed' ? '重试' : '重连' }}
       </el-button>
     </div>
+
+    <el-alert
+      v-if="status?.status === 'DEADLOCK' && deadlockLines.length > 0"
+      class="deadlock-banner"
+      type="error"
+      show-icon
+      :closable="false"
+    >
+      <div v-for="(line, index) in deadlockLines" :key="index" class="deadlock-line">{{ line }}</div>
+    </el-alert>
 
     <div class="body">
       <div class="panel scene-panel">
@@ -666,6 +677,14 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 
+.deadlock-banner {
+  flex-shrink: 0;
+}
+
+.deadlock-line {
+  line-height: 1.6;
+}
+
 .field-label {
   font-size: 13px;
   color: #606266;
@@ -769,25 +788,34 @@ onBeforeUnmount(() => {
 
 .log-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 4px 0;
   font-size: 12px;
   border-bottom: 1px dashed #f0f2f5;
 }
 
+.log-row :deep(.el-tag) {
+  flex-shrink: 0;
+}
+
 .log-tick {
   color: #909399;
   width: 44px;
+  flex-shrink: 0;
+  line-height: 20px;
   text-align: right;
   font-family: Consolas, monospace;
 }
 
 .log-detail {
+  flex: 1;
+  min-width: 0;
   color: #606266;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.6;
 }
 
 @media (max-width: 1100px) {

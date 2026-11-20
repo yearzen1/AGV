@@ -360,7 +360,11 @@ onBeforeUnmount(() => {
         </el-table-column>
         <el-table-column prop="agvId" label="车辆" width="90" />
         <el-table-column prop="place" label="位置" width="90" />
-        <el-table-column prop="detail" label="说明" min-width="300" show-overflow-tooltip />
+        <el-table-column prop="detail" label="说明" min-width="360">
+          <template #default="{ row }">
+            <span class="event-detail">{{ row.detail }}</span>
+          </template>
+        </el-table-column>
       </el-table>
       <template #footer>
         <el-button @click="eventDialogVisible = false">关闭</el-button>
@@ -369,3 +373,12 @@ onBeforeUnmount(() => {
     </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.event-detail {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+</style>

@@ -379,10 +379,22 @@ class SimulationEngineTest {
                 .flatMap(frame -> frame.events().stream())
                 .filter(event -> event.type() == SimEvent.Type.DEADLOCK)
                 .findFirst().orElseThrow();
-        assertTrue(deadlock.detail().contains("等待环"), deadlock.detail());
-        assertTrue(deadlock.detail().contains("AGV-1"), deadlock.detail());
-        assertTrue(deadlock.detail().contains("AGV-2"), deadlock.detail());
-        assertTrue(engine.deadlockDetail().contains("等待环"));
+        assertTrue(deadlock.detail().contains("2 台车互等"), deadlock.detail());
+        assertTrue(deadlock.detail().contains("想进"), deadlock.detail());
+        assertTrue(deadlock.detail().contains("被 AGV-2 挡住"), deadlock.detail());
+        assertTrue(deadlock.detail().contains("被 AGV-1 挡住"), deadlock.detail());
+        assertTrue(deadlock.detail().contains("（充电位）"), deadlock.detail());
+        assertFalse(deadlock.detail().contains("@"), deadlock.detail());
+        assertFalse(deadlock.detail().contains("→"), deadlock.detail());
+        assertTrue(deadlock.detail().endsWith(engine.deadlockDetail()), deadlock.detail());
+        assertEquals("2 台车互等：AGV-1 想进 CH2（充电位），被 AGV-2 挡住；AGV-2 想进 CH1（充电位），被 AGV-1 挡住",
+                engine.deadlockDetail());
+
+        SimulationEngine rerun = new SimulationEngine(line,
+                List.of(new Task(1, "CH1", "CH2"), new Task(2, "CH2", "CH1")),
+                SimConfig.defaults(2, 7L, "nearest"));
+        rerun.runToCompletion();
+        assertEquals(engine.deadlockDetail(), rerun.deadlockDetail(), "同种子两次运行应给出逐字一致的死锁文案");
     }
 
     @Test
