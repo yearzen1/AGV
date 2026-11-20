@@ -20,6 +20,7 @@ import com.agv.backend.repository.ExperimentMetricRepository;
 import com.agv.backend.repository.ExperimentRepository;
 import com.agv.backend.security.CurrentUser;
 import com.agv.backend.support.TaskSetValidator;
+import com.agv.backend.support.SimulationRules;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -95,6 +96,7 @@ public class ExperimentService {
         String tasksetJson = taskSetService.rawJson(request.taskSetId());
         int agvCount = request.agvCount() == null ? 3 : request.agvCount();
         long seed = request.seed() == null ? 20261107L : request.seed();
+        SimulationRules.requireAgvCapacity(net, agvCount);
 
         List<ExperimentReport> reports = new ArrayList<>();
         for (String algorithm : algorithms) {
@@ -124,6 +126,7 @@ public class ExperimentService {
         experiment.setStatus(result.deadlocked() ? "DEADLOCK"
                 : result.finished() ? "FINISHED" : "FAILED");
         experiment.setCreateUser(currentUser.id());
+        experiment.setEngineVersion(SimulationRules.ENGINE_VERSION);
         experiment.setRoadnetSnapshot(roadnetJson);
         experiment.setTasksetSnapshot(tasksetJson);
         Experiment saved = experimentRepository.save(experiment);
@@ -174,18 +177,27 @@ public class ExperimentService {
         replay.setStatus(result.deadlocked() ? "DEADLOCK"
                 : result.finished() ? "FINISHED" : "FAILED");
         replay.setCreateUser(currentUser.id());
+        replay.setEngineVersion(SimulationRules.ENGINE_VERSION);
         replay.setRoadnetSnapshot(original.getRoadnetSnapshot());
         replay.setTasksetSnapshot(original.getTasksetSnapshot());
         Experiment savedReplay = experimentRepository.save(replay);
 
         ExperimentMetric replayMetric = result.deadlocked() ? null : saveMetric(savedReplay.getId(), result);
         auditService.success("EXPERIMENT_REPLAY", "EXPERIMENT", savedReplay.getId());
-        boolean consistent = "FINISHED".equals(original.getStatus())
+        String originalVersion = original.getEngineVersion();
+        boolean versionMatched = originalVersion == null
+                || originalVersion.equals(SimulationRules.ENGINE_VERSION);
+        String note = versionMatched ? null
+                : "规则版本不同（原 " + originalVersion + "，当前 "
+                + SimulationRules.ENGINE_VERSION + "），指标不可直接比较";
+        boolean consistent = versionMatched
+                && "FINISHED".equals(original.getStatus())
                 && result.finished()
                 && replayMetric != null
                 && sameMetrics(originalMetric, replayMetric);
 
         return new ExperimentReplayResult(original.getId(), savedReplay.getId(), consistent,
+                versionMatched, note,
                 toReport(original, Optional.of(originalMetric)),
                 toReport(savedReplay, Optional.ofNullable(replayMetric)));
     }
@@ -290,6 +302,7 @@ public class ExperimentService {
                 m == null ? null : m.getTotalPathLen(),
                 m == null ? null : m.getTotalWaitTick(),
                 m == null ? null : m.getConflictCount(),
+                experiment.getEngineVersion(),
                 experiment.getCreateTime());
     }
 }

@@ -50,6 +50,7 @@ final class SimulationRunner {
     private volatile long tick;
     private volatile SimFrame.Metrics lastMetrics;
     private volatile SimDiagnostics lastDiagnostics;
+    private volatile String lastDeadlockDetail;
 
     SimulationRunner(long userId, SimulationEngine engine, Long experimentId,
                      Long roadnetId, Long taskSetId, String algorithm, Integer agvCount, Long seed,
@@ -141,6 +142,7 @@ final class SimulationRunner {
         payload.put("maxBlocked", diagnostics == null ? 0 : diagnostics.maxBlockedTicks());
         payload.put("grace", diagnostics != null && diagnostics.graceFinished());
         payload.put("unparked", diagnostics == null ? 0 : diagnostics.unparkedAtFinish());
+        payload.put("deadlockDetail", lastDeadlockDetail);
         if (current == null) {
             payload.put("tick", tick);
             payload.put("metrics", lastMetrics);
@@ -216,6 +218,7 @@ final class SimulationRunner {
         lastMetrics = finishedEngine.metrics();
         SimDiagnostics diagnostics = finishedEngine.diagnostics();
         lastDiagnostics = diagnostics;
+        lastDeadlockDetail = finishedEngine.deadlocked() ? finishedEngine.deadlockDetail() : null;
         engine = null;
         try {
             Experiment experiment = experimentRepository.findById(experimentId).orElse(null);
@@ -307,6 +310,7 @@ final class SimulationRunner {
         message.put("maxBlocked", 0);
         message.put("grace", false);
         message.put("unparked", 0);
+        message.put("deadlockDetail", null);
         message.put("metrics", null);
         message.put("agvs", List.of());
         socketHandler.sendToUser(userId, message);

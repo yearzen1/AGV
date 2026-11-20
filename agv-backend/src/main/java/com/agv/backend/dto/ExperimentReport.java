@@ -8,6 +8,6 @@ import java.time.LocalDateTime;
 public record ExperimentReport(Long id, Long roadnetId, Long taskSetId, String algorithm,
                                String algorithmName, Integer agvCount, Long seed,
                                String status, Long makespan, Double totalPathLen,
-                               Long totalWaitTick, Integer conflictCount,
+                               Long totalWaitTick, Integer conflictCount, String engineVersion,
                                LocalDateTime createTime) {
 }

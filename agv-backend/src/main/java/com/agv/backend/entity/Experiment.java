@@ -51,6 +51,10 @@ public class Experiment extends BaseEntity {
     @Column(name = "taskset_snapshot")
     private String tasksetSnapshot;
 
+    /** 创建实验时的引擎规则版本；旧实验为空。 */
+    @Column(name = "engine_version", length = 16)
+    private String engineVersion;
+
     public Long getRoadnetId() {
         return roadnetId;
     }
@@ -129,5 +133,13 @@ public class Experiment extends BaseEntity {
 
     public void setTasksetSnapshot(String tasksetSnapshot) {
         this.tasksetSnapshot = tasksetSnapshot;
+    }
+
+    public String getEngineVersion() {
+        return engineVersion;
+    }
+
+    public void setEngineVersion(String engineVersion) {
+        this.engineVersion = engineVersion;
     }
 }

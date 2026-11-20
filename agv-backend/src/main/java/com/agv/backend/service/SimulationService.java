@@ -13,6 +13,7 @@ import com.agv.backend.repository.ExperimentMetricRepository;
 import com.agv.backend.repository.ExperimentRepository;
 import com.agv.backend.security.CurrentUser;
 import com.agv.backend.support.TaskSetValidator;
+import com.agv.backend.support.SimulationRules;
 import com.agv.backend.ws.SimSocketHandler;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -77,6 +78,7 @@ public class SimulationService {
         List<Task> tasks = toTasks(payload);
         long actualSeed = request.seed() == null ? System.currentTimeMillis() : request.seed();
         int count = request.agvCount() == null ? 3 : request.agvCount();
+        SimulationRules.requireAgvCapacity(net, count);
 
         SimulationEngine engine;
         try {
@@ -180,6 +182,7 @@ public class SimulationService {
         experiment.setSeed(actualSeed);
         experiment.setStatus(state);
         experiment.setCreateUser(userId);
+        experiment.setEngineVersion(SimulationRules.ENGINE_VERSION);
         experiment.setRoadnetSnapshot(roadnetJson);
         experiment.setTasksetSnapshot(tasksetJson);
         return experimentRepository.save(experiment);
@@ -200,6 +203,7 @@ public class SimulationService {
         payload.put("maxBlocked", 0);
         payload.put("grace", false);
         payload.put("unparked", 0);
+        payload.put("deadlockDetail", null);
         payload.put("metrics", null);
         payload.put("agvs", List.of());
         return payload;
