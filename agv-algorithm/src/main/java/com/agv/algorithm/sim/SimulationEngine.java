@@ -178,6 +178,11 @@ public final class SimulationEngine {
                 conflictCount, completedTasks, allTasks.size());
     }
 
+    /** 诊断计数：只用于日志，不参与指标口径。 */
+    public SimDiagnostics diagnostics() {
+        return new SimDiagnostics(0, 0, 0, 0, 0, false, 0);
+    }
+
     // ---------------------------------------------------------------- 运动
 
     private void advance(Agv agv, List<SimEvent> events) {

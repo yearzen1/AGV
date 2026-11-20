@@ -16,14 +16,20 @@ public record SimEvent(long tick, String agvId, Type type, String place, String 
         TASK_ASSIGNED,
         /** 到达取货点开始装货 */
         LOADING,
+        /** 到达卸货点，卸货瞬时完成 */
+        UNLOADED,
         /** 任务完成 */
         TASK_DONE,
         /** 预约失败开始等待（一次连续等待只记一次） */
         WAIT_CONFLICT,
+        /** 等待结束，成功进入下一段 */
+        WAIT_RESOLVED,
         /** 超时重规划 */
         REPLAN,
         /** 检测到等待环并强制打破 */
         DEADLOCK_BREAK,
+        /** 倒车不可行，逻辑让出路口 */
+        LOGICAL_YIELD,
         /** 回充完成 */
         CHARGING,
         /** 全部任务完成 */

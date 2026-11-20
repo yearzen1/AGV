@@ -136,6 +136,162 @@ class SimulationEngineTest {
     }
 
     @Test
+    @DisplayName("标准场景四项指标稳定：补事件与诊断不得改变仿真行为")
+    void standardScenarioMetricsStayStable() {
+        List<Task> tasks = List.of(
+                new Task(1, "W1", "W2"), new Task(2, "W2", "W1"),
+                new Task(3, "W1", "W2"), new Task(4, "W2", "W1"),
+                new Task(5, "W1", "W1"), new Task(6, "W2", "W2"));
+
+        SimulationResult result = new SimulationEngine(twoLaneWorkshop(), tasks,
+                SimConfig.defaults(3, 99L, "greedy-eta")).runToCompletion();
+
+        assertEquals(1320L, result.makespan());
+        assertEquals(350.0, result.totalPathLen(), 1e-9);
+        assertEquals(747L, result.totalWaitTick());
+        assertEquals(9, result.conflictCount());
+    }
+
+    private static List<SimEvent> runToEnd(SimulationEngine engine) {
+        List<SimEvent> events = new ArrayList<>();
+        while (!engine.finished() && engine.tick() < 20_000) {
+            events.addAll(engine.step().events());
+        }
+        return events;
+    }
+
+    private static SimEvent lastEvent(List<SimEvent> events, SimEvent.Type type) {
+        for (int i = events.size() - 1; i >= 0; i--) {
+            if (events.get(i).type() == type) {
+                return events.get(i);
+            }
+        }
+        return null;
+    }
+
+    /** CH1 — W1 — W2：只有一个充电位，用于触发回充宽限期。 */
+    private RoadNet singleChargerLine() {
+        return RoadNet.of(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("W1", NodeType.WORKSTATION, 10, 0),
+                        node("W2", NodeType.WORKSTATION, 20, 0)),
+                List.of(edge("E1", "CH1", "W1", 10),
+                        edge("E2", "W1", "W2", 10)));
+    }
+
+    @Test
+    @DisplayName("冲突等待结束后发出 WAIT_RESOLVED，并更新最长等待")
+    void conflictWaitIsClosedByResolvedEvent() {
+        SimulationEngine engine = new SimulationEngine(corridor(),
+                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1")),
+                SimConfig.defaults(2, 7L, "nearest"));
+
+        List<SimEvent> events = runToEnd(engine);
+
+        assertTrue(events.stream().anyMatch(e -> e.type() == SimEvent.Type.WAIT_CONFLICT),
+                "相向冲突应至少等待一次");
+        List<SimEvent> resolved = events.stream()
+                .filter(e -> e.type() == SimEvent.Type.WAIT_RESOLVED)
+                .toList();
+        assertFalse(resolved.isEmpty(), "等待结束后应发出 WAIT_RESOLVED");
+        assertTrue(resolved.stream().allMatch(e -> e.detail().startsWith("等待 ")),
+                "WAIT_RESOLVED 的 detail 应写明等待 tick");
+        assertTrue(engine.diagnostics().maxWaitTicks() > 0, "最长等待应被记录");
+    }
+
+    @Test
+    @DisplayName("卸货瞬时完成：UNLOADED 与 TASK_DONE 同 tick 且在前")
+    void unloadedEventPrecedesTaskDone() {
+        SimulationEngine engine = new SimulationEngine(corridor(),
+                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1")),
+                SimConfig.defaults(1, 1L, "nearest"));
+
+        List<SimEvent> events = runToEnd(engine);
+        List<Integer> unloadedIndexes = new ArrayList<>();
+        for (int i = 0; i < events.size(); i++) {
+            if (events.get(i).type() == SimEvent.Type.UNLOADED) {
+                unloadedIndexes.add(i);
+            }
+        }
+
+        List<SimEvent> done = events.stream()
+                .filter(e -> e.type() == SimEvent.Type.TASK_DONE)
+                .toList();
+        assertEquals(2, done.size());
+        for (SimEvent taskDone : done) {
+            boolean paired = unloadedIndexes.stream()
+                    .map(events::get)
+                    .anyMatch(u -> u.tick() == taskDone.tick() && u.agvId().equals(taskDone.agvId()));
+            assertTrue(paired, "每个 TASK_DONE 都应有同 tick 的 UNLOADED：" + taskDone);
+        }
+        SimEvent firstDone = done.get(0);
+        int doneIndex = events.indexOf(firstDone);
+        int unloadedIndex = events.indexOf(events.stream()
+                .filter(e -> e.type() == SimEvent.Type.UNLOADED)
+                .filter(e -> e.tick() == firstDone.tick() && e.agvId().equals(firstDone.agvId()))
+                .findFirst().orElseThrow());
+        assertTrue(unloadedIndex < doneIndex, "UNLOADED 应先于 TASK_DONE");
+    }
+
+    @Test
+    @DisplayName("结束事件写明归位台数")
+    void finishEventReportsParkedCount() {
+        SimulationEngine engine = new SimulationEngine(corridor(),
+                List.of(new Task(1, "W1", "W2")),
+                SimConfig.defaults(1, 1L, "nearest"));
+
+        List<SimEvent> events = runToEnd(engine);
+        SimEvent finished = lastEvent(events, SimEvent.Type.FINISHED);
+
+        assertTrue(engine.finished());
+        assertFalse(finished == null);
+        assertTrue(finished.detail().contains("归位 1/1 台"), finished.detail());
+        assertFalse(engine.diagnostics().graceFinished());
+        assertEquals(0, engine.diagnostics().unparkedAtFinish());
+    }
+
+    @Test
+    @DisplayName("停不进充电位时按宽限期结束，并记录未归位车辆数")
+    void graceFinishReportsUnparkedAgvs() {
+        SimulationEngine engine = new SimulationEngine(singleChargerLine(),
+                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1")),
+                SimConfig.defaults(2, 5L, "nearest"));
+
+        List<SimEvent> events = runToEnd(engine);
+        SimDiagnostics diagnostics = engine.diagnostics();
+        SimEvent finished = lastEvent(events, SimEvent.Type.FINISHED);
+
+        assertTrue(engine.finished(), "回充宽限期必须保证仿真结束");
+        assertTrue(diagnostics.graceFinished(), "只有一个充电位时第二台车应停不进去");
+        assertEquals(1, diagnostics.unparkedAtFinish());
+        assertTrue(finished.detail().contains("未归位"), finished.detail());
+    }
+
+    @Test
+    @DisplayName("每次检测到等待环都落到倒车成功或逻辑让行")
+    void deadlockBreakAlwaysEndsInRetreatOrLogicalYield() {
+        SimulationEngine corridorRun = new SimulationEngine(corridor(),
+                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1"),
+                        new Task(3, "W1", "W2")),
+                SimConfig.defaults(3, 7L, "nearest"));
+        corridorRun.runToCompletion();
+        assertDeadlockAccounting(corridorRun.diagnostics());
+
+        SimulationEngine workshopRun = new SimulationEngine(twoLaneWorkshop(),
+                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1"),
+                        new Task(3, "W1", "W2"), new Task(4, "W2", "W1")),
+                SimConfig.defaults(4, 20261107L, "greedy-eta"));
+        workshopRun.runToCompletion();
+        assertDeadlockAccounting(workshopRun.diagnostics());
+    }
+
+    private static void assertDeadlockAccounting(SimDiagnostics diagnostics) {
+        assertEquals(diagnostics.deadlockBreakCount(),
+                diagnostics.retreatSuccessCount() + diagnostics.logicalYieldCount(),
+                "检测到等待环后必须落到倒车成功或逻辑让行");
+    }
+
+    @Test
     @DisplayName("帧数据包含插值坐标与状态")
     void frameContainsSnapshots() {
         SimulationEngine engine = new SimulationEngine(corridor(),

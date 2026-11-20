@@ -1,0 +1,17 @@
+package com.agv.algorithm.sim;
+
+/**
+ * 一次仿真运行的诊断计数，只用于后端摘要日志，不进入 WebSocket 帧，也不落库。
+ *
+ * @param replanCount         成功绕行重规划次数
+ * @param deadlockBreakCount  检测到等待环的次数
+ * @param retreatSuccessCount 倒车让行成功次数
+ * @param logicalYieldCount   倒车不可行时逻辑让行次数
+ * @param maxWaitTicks        单次连续等待的最长 tick
+ * @param graceFinished       是否因回充宽限期到期而结束
+ * @param unparkedAtFinish    结束时未处于 CHARGING / DONE 的车辆数
+ */
+public record SimDiagnostics(int replanCount, int deadlockBreakCount, int retreatSuccessCount,
+                             int logicalYieldCount, int maxWaitTicks,
+                             boolean graceFinished, int unparkedAtFinish) {
+}
