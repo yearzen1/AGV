@@ -193,3 +193,21 @@ export function experimentHistory(page = 0, size = 10) {
 export function replayExperiment(id: number) {
   return http.post<any, ExperimentReplayResult>(`/experiment/${id}/replay`)
 }
+
+export interface ExperimentEvent {
+  seq: number
+  tick: number
+  agvId: string | null
+  type: string
+  place: string | null
+  detail: string | null
+}
+
+export interface ExperimentEventLog {
+  events: ExperimentEvent[]
+  truncated: boolean
+}
+
+export function listExperimentEvents(id: number) {
+  return http.get<any, ExperimentEventLog>(`/experiment/${id}/events`)
+}

@@ -6,8 +6,10 @@ import { listRoadNets, type RoadNetSummary } from '@/api/roadnet'
 import {
   compareExperiment,
   experimentHistory,
+  listExperimentEvents,
   listTaskSets,
   replayExperiment,
+  type ExperimentEvent,
   type ExperimentReport,
   type TaskSetSummary
 } from '@/api/sim'
@@ -29,6 +31,26 @@ const historyTotal = ref(0)
 const historyPage = ref(0)
 const historySize = 10
 const replayingId = ref<number | null>(null)
+const eventDialogVisible = ref(false)
+const eventLoading = ref(false)
+const eventRows = ref<ExperimentEvent[]>([])
+const eventTruncated = ref(false)
+const eventExperimentId = ref<number | null>(null)
+
+const eventTypeLabel: Record<string, string> = {
+  TASK_ASSIGNED: '分配任务',
+  LOADING: '装货',
+  UNLOADING: '卸货',
+  UNLOADED: '卸货完成',
+  TASK_DONE: '任务完成',
+  WAIT_CONFLICT: '冲突等待',
+  WAIT_RESOLVED: '等待结束',
+  REPLAN: '重规划',
+  DEADLOCK_BREAK: '打破僵局',
+  DEADLOCK: '死锁',
+  CHARGING: '充电',
+  FINISHED: '结束'
+}
 const running = ref(false)
 const chartRef = ref<HTMLDivElement | null>(null)
 let chart: echarts.ECharts | null = null
@@ -75,6 +97,42 @@ async function onReplay(row: ExperimentReport) {
   } finally {
     replayingId.value = null
   }
+}
+
+async function onOpenEvents(row: ExperimentReport) {
+  eventExperimentId.value = row.id
+  eventDialogVisible.value = true
+  eventLoading.value = true
+  eventRows.value = []
+  eventTruncated.value = false
+  try {
+    const result = await listExperimentEvents(row.id)
+    eventRows.value = result.events
+    eventTruncated.value = result.truncated
+  } catch (error: any) {
+    ElMessage.error(error.message || '加载实验事件失败')
+  } finally {
+    eventLoading.value = false
+  }
+}
+
+function exportEvents() {
+  if (eventRows.value.length === 0) return
+  const header = ['seq', 'tick', 'agvId', 'type', 'place', 'detail']
+  const escape = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`
+  const lines = [
+    header.join(','),
+    ...eventRows.value.map((row) => [
+      row.seq, row.tick, row.agvId, row.type, row.place, row.detail
+    ].map(escape).join(','))
+  ]
+  const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = `experiment-${eventExperimentId.value ?? 'events'}-events.csv`
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 function selectDefaultTaskSet() {
@@ -265,7 +323,7 @@ onBeforeUnmount(() => {
           :formatter="(row: ExperimentReport) => formatMetric(row.conflictCount)" />
         <el-table-column prop="createTime" label="时间" min-width="170"
           :formatter="(row: ExperimentReport) => formatDateTime(row.createTime)" />
-        <el-table-column label="操作" width="90" fixed="right">
+        <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
             <el-button
               link
@@ -273,6 +331,7 @@ onBeforeUnmount(() => {
               :loading="replayingId === row.id"
               @click="onReplay(row)"
             >回放</el-button>
+            <el-button link type="primary" @click="onOpenEvents(row)">事件</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -286,5 +345,25 @@ onBeforeUnmount(() => {
         />
       </div>
     </div>
+
+    <el-dialog v-model="eventDialogVisible" title="实验事件" width="900px">
+      <div v-if="eventTruncated" style="margin-bottom: 8px; color: #e6a23c; font-size: 12px">
+        仅保留前 5000 条事件
+      </div>
+      <el-table v-loading="eventLoading" :data="eventRows" height="460" size="small">
+        <el-table-column prop="seq" label="#" width="60" />
+        <el-table-column prop="tick" label="tick" width="80" />
+        <el-table-column prop="type" label="类型" width="110">
+          <template #default="{ row }">{{ eventTypeLabel[row.type] || row.type }}</template>
+        </el-table-column>
+        <el-table-column prop="agvId" label="车辆" width="90" />
+        <el-table-column prop="place" label="位置" width="90" />
+        <el-table-column prop="detail" label="说明" min-width="300" show-overflow-tooltip />
+      </el-table>
+      <template #footer>
+        <el-button @click="eventDialogVisible = false">关闭</el-button>
+        <el-button type="primary" :disabled="eventRows.length === 0" @click="exportEvents">导出 CSV</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
