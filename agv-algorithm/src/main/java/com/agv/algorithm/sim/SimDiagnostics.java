@@ -6,12 +6,11 @@ package com.agv.algorithm.sim;
  * @param replanCount         成功绕行重规划次数
  * @param deadlockBreakCount  检测到等待环的次数
  * @param retreatSuccessCount 倒车让行成功次数
- * @param logicalYieldCount   倒车不可行时逻辑让行次数
  * @param maxBlockedTicks    单次完整阻塞段的最长 tick（跨重规划累计）
  * @param graceFinished       是否因回充宽限期到期而结束
  * @param unparkedAtFinish    结束时未处于 CHARGING / DONE 的车辆数
  */
 public record SimDiagnostics(int replanCount, int deadlockBreakCount, int retreatSuccessCount,
-                             int logicalYieldCount, int maxBlockedTicks,
+                             int maxBlockedTicks,
                              boolean graceFinished, int unparkedAtFinish) {
 }

@@ -147,6 +147,7 @@ const statusMeta: Record<string, { label: string; type: 'success' | 'info' | 'wa
   RUNNING: { label: '运行中', type: 'warning' },
   FINISHED: { label: '已完成', type: 'success' },
   FAILED: { label: '失败', type: 'danger' },
+  DEADLOCK: { label: '死锁', type: 'danger' },
   ABORTED: { label: '已中断', type: 'info' }
 }
 

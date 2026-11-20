@@ -9,8 +9,10 @@ package com.agv.algorithm.sim;
  * @param conflictCount  预约失败导致停车的事件次数
  * @param completedTasks 完成任务数
  * @param finished       是否全部任务完成
+ * @param deadlocked     是否因无法解开的等待环而停止
  * @param ticks          仿真总推进 tick
  */
 public record SimulationResult(long makespan, double totalPathLen, long totalWaitTick,
-                               int conflictCount, int completedTasks, boolean finished, long ticks) {
+                               int conflictCount, int completedTasks, boolean finished,
+                               boolean deadlocked, long ticks) {
 }

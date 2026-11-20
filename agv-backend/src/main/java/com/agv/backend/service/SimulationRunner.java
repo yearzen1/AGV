@@ -235,11 +235,11 @@ final class SimulationRunner {
         }
         // 必须先推送结束状态再停线程：shutdownNow 会中断当前调度线程，先停会让结束消息推送失败并移除会话
         log.info("仿真完成 experimentId={} tick={} makespan={} pathLen={} waitTick={} conflicts={} "
-                        + "replan={} deadlock={} retreat={} logicalYield={} grace={} unparked={} maxBlocked={}",
+                        + "replan={} deadlock={} retreat={} grace={} unparked={} maxBlocked={}",
                 experimentId, tick, lastMetrics.makespan(), lastMetrics.totalPathLen(),
                 lastMetrics.totalWaitTick(), lastMetrics.conflictCount(),
                 diagnostics.replanCount(), diagnostics.deadlockBreakCount(),
-                diagnostics.retreatSuccessCount(), diagnostics.logicalYieldCount(),
+                diagnostics.retreatSuccessCount(),
                 diagnostics.graceFinished(), diagnostics.unparkedAtFinish(),
                 diagnostics.maxBlockedTicks());
         broadcastStatus("finished");

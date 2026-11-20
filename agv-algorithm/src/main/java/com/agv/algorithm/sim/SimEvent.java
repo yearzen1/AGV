@@ -30,8 +30,8 @@ public record SimEvent(long tick, String agvId, Type type, String place, String 
         REPLAN,
         /** 检测到等待环并强制打破 */
         DEADLOCK_BREAK,
-        /** 倒车不可行，逻辑让出路口 */
-        LOGICAL_YIELD,
+        /** 无法解开的等待环，仿真判定死锁并停止 */
+        DEADLOCK,
         /** 回充完成 */
         CHARGING,
         /** 全部任务完成 */

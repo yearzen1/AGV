@@ -63,11 +63,11 @@ public final class SimulationEngine {
     private int replanCount;
     private int deadlockBreakCount;
     private int retreatSuccessCount;
-    private int logicalYieldCount;
     private int maxBlockedTicks;
     private boolean graceFinished;
     private int unparkedAtFinish;
     private boolean finished;
+    private boolean deadlocked;
 
     public SimulationEngine(RoadNet net, List<Task> tasks, SimConfig config) {
         if (net == null || net.isEmpty()) {
@@ -162,13 +162,13 @@ public final class SimulationEngine {
     /** 离线跑完一轮，返回指标。 */
     public SimulationResult runToCompletion() {
         long guard = 0;
-        while (!finished && guard++ < config.maxTicks()) {
+        while (!finished && !deadlocked && guard++ < config.maxTicks()) {
             step();
         }
         // 路径长由逐 tick 累加得到，避免把浮点尾差带进报表
         double roundedLength = Math.round(totalPathLen * 10.0) / 10.0;
         return new SimulationResult(makespan, roundedLength, totalWaitTicks,
-                conflictCount, completedTasks, finished, tick);
+                conflictCount, completedTasks, finished, deadlocked, tick);
     }
 
     public List<AgvSnapshot> snapshots() {
@@ -177,6 +177,11 @@ public final class SimulationEngine {
 
     public boolean finished() {
         return finished;
+    }
+
+    /** 是否因无法解开的等待环而停止。 */
+    public boolean deadlocked() {
+        return deadlocked;
     }
 
     public long tick() {
@@ -191,7 +196,7 @@ public final class SimulationEngine {
     /** 诊断计数：只用于日志，不参与指标口径。 */
     public SimDiagnostics diagnostics() {
         return new SimDiagnostics(replanCount, deadlockBreakCount, retreatSuccessCount,
-                logicalYieldCount, maxBlockedTicks, graceFinished, unparkedAtFinish);
+                maxBlockedTicks, graceFinished, unparkedAtFinish);
     }
 
     // ---------------------------------------------------------------- 运动
@@ -534,13 +539,7 @@ public final class SimulationEngine {
             events.add(new SimEvent(tick, first.id, SimEvent.Type.DEADLOCK_BREAK,
                     wanted.id(), "检测到等待环，尝试倒车让行"));
             if (!tryRetreat(first, events)) {
-                // 兜底：倒车不可行时，最低优先级车逻辑上让出路口，打破资源环。
-                if (isJunction(first.currentNode)) {
-                    reservations.release(first.currentNode, first.id);
-                }
-                logicalYieldCount++;
-                events.add(new SimEvent(tick, first.id, SimEvent.Type.LOGICAL_YIELD,
-                        wanted.id(), "倒车不可行，逻辑让出路口并重规划"));
+                // 倒车不可行时不做非物理让行；等待环持续存在将触发 DEADLOCK。
                 replanWithDetour(first, events);
             }
             return;
@@ -650,7 +649,7 @@ public final class SimulationEngine {
     }
 
     private SimFrame frame(List<SimEvent> events) {
-        return new SimFrame(tick, snapshots(), events, finished, metrics());
+        return new SimFrame(tick, snapshots(), events, finished, deadlocked, metrics());
     }
 
     private AgvSnapshot snapshot(Agv agv) {

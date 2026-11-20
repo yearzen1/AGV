@@ -86,6 +86,9 @@ const simState = computed(() => {
     if (status.value?.status === 'FAILED') {
       return { label: '仿真失败', type: 'danger' as const }
     }
+    if (status.value?.status === 'DEADLOCK') {
+      return { label: '仿真死锁', type: 'danger' as const }
+    }
     const unparked = status.value?.unparked ?? 0
     return unparked > 0
       ? { label: `已完成（${unparked} 台未归位）`, type: 'warning' as const }
@@ -121,15 +124,14 @@ const eventTypeLabel: Record<string, string> = {
   WAIT_RESOLVED: '等待结束',
   REPLAN: '重规划',
   DEADLOCK_BREAK: '打破僵局',
-  LOGICAL_YIELD: '逻辑让行',
+  DEADLOCK: '死锁',
   CHARGING: '充电',
   FINISHED: '结束'
 }
 
 function eventTagType(type: string) {
-  if (type === 'WAIT_CONFLICT') return 'danger'
+  if (type === 'WAIT_CONFLICT' || type === 'DEADLOCK') return 'danger'
   if (type === 'WAIT_RESOLVED') return 'success'
-  if (type === 'LOGICAL_YIELD') return 'warning'
   return 'info'
 }
 
@@ -208,7 +210,7 @@ function connectSocket() {
         if (payload.type === 'status') {
           status.value = payload as SimStatus
           paused.value = !!payload.paused
-          if (payload.status === 'FINISHED' || payload.status === 'FAILED') {
+          if (payload.status === 'FINISHED' || payload.status === 'FAILED' || payload.status === 'DEADLOCK') {
             running.value = false
             finished.value = true
           }

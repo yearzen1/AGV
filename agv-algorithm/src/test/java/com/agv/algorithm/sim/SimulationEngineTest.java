@@ -9,7 +9,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -154,10 +156,18 @@ class SimulationEngineTest {
 
     private static List<SimEvent> runToEnd(SimulationEngine engine) {
         List<SimEvent> events = new ArrayList<>();
-        while (!engine.finished() && engine.tick() < 20_000) {
+        while (!engine.finished() && !engine.deadlocked() && engine.tick() < 20_000) {
             events.addAll(engine.step().events());
         }
         return events;
+    }
+
+    private static List<SimFrame> runFrames(SimulationEngine engine) {
+        List<SimFrame> frames = new ArrayList<>();
+        while (!engine.finished() && !engine.deadlocked() && engine.tick() < 20_000) {
+            frames.add(engine.step());
+        }
+        return frames;
     }
 
     private static SimEvent lastEvent(List<SimEvent> events, SimEvent.Type type) {
@@ -268,27 +278,57 @@ class SimulationEngineTest {
     }
 
     @Test
-    @DisplayName("每次检测到等待环都落到倒车成功或逻辑让行")
-    void deadlockBreakAlwaysEndsInRetreatOrLogicalYield() {
-        SimulationEngine corridorRun = new SimulationEngine(corridor(),
-                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1"),
-                        new Task(3, "W1", "W2")),
-                SimConfig.defaults(3, 7L, "nearest"));
-        corridorRun.runToCompletion();
-        assertDeadlockAccounting(corridorRun.diagnostics());
+    @DisplayName("任意 tick、任意节点，占位车辆数不超过容量")
+    void nodeCapacityIsRespected() {
+        List<Task> tasks = List.of(
+                new Task(1, "W1", "W2"), new Task(2, "W2", "W1"),
+                new Task(3, "W1", "W2"), new Task(4, "W2", "W1"),
+                new Task(5, "W1", "W2"), new Task(6, "W2", "W1"));
 
-        SimulationEngine workshopRun = new SimulationEngine(twoLaneWorkshop(),
-                List.of(new Task(1, "W1", "W2"), new Task(2, "W2", "W1"),
-                        new Task(3, "W1", "W2"), new Task(4, "W2", "W1")),
-                SimConfig.defaults(4, 20261107L, "greedy-eta"));
-        workshopRun.runToCompletion();
-        assertDeadlockAccounting(workshopRun.diagnostics());
+        for (RoadNet net : List.of(corridor(), twoLaneWorkshop(), singleChargerLine())) {
+            for (int agvCount : new int[]{2, 3, 4}) {
+                for (String algorithm : List.of("nearest", "greedy-eta")) {
+                    SimulationEngine engine = new SimulationEngine(net, tasks,
+                            SimConfig.defaults(agvCount, 20261107L, algorithm));
+                    for (SimFrame frame : runFrames(engine)) {
+                        Map<String, Integer> occupied = new HashMap<>();
+                        for (AgvSnapshot snapshot : frame.agvs()) {
+                            if (snapshot.arcId() == null && snapshot.nodeId() != null) {
+                                occupied.merge(snapshot.nodeId(), 1, Integer::sum);
+                            }
+                        }
+                        for (Map.Entry<String, Integer> entry : occupied.entrySet()) {
+                            NetNode node = net.node(entry.getKey());
+                            int capacity = node == null ? 1 : Math.max(1, node.capacity());
+                            assertTrue(entry.getValue() <= capacity,
+                                    "tick " + frame.tick() + " 节点 " + entry.getKey()
+                                            + " 有 " + entry.getValue() + " 台车，容量 " + capacity);
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    private static void assertDeadlockAccounting(SimDiagnostics diagnostics) {
-        assertEquals(diagnostics.deadlockBreakCount(),
-                diagnostics.retreatSuccessCount() + diagnostics.logicalYieldCount(),
-                "检测到等待环后必须落到倒车成功或逻辑让行");
+    @Test
+    @DisplayName("无法解开的等待环标记为死锁，而不是互相穿透")
+    void deadlockIsReported() {
+        RoadNet line = RoadNet.of(
+                List.of(node("CH1", NodeType.CHARGER, 0, 0),
+                        node("CH2", NodeType.CHARGER, 10, 0)),
+                List.of(edge("E1", "CH1", "CH2", 10)));
+
+        SimulationEngine engine = new SimulationEngine(line,
+                List.of(new Task(1, "CH1", "CH2"), new Task(2, "CH2", "CH1")),
+                SimConfig.defaults(2, 7L, "nearest"));
+        List<SimFrame> frames = runFrames(engine);
+
+        assertTrue(engine.deadlocked(), "两车互相等待对方占用的终点，应判定为死锁");
+        assertFalse(engine.finished(), "死锁时不应报告全部任务完成");
+        assertTrue(frames.stream()
+                        .flatMap(frame -> frame.events().stream())
+                        .anyMatch(event -> event.type() == SimEvent.Type.DEADLOCK),
+                "死锁应产生 DEADLOCK 事件");
     }
 
     @Test
