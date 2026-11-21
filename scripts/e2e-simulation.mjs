@@ -4,7 +4,7 @@
 // 用法：cd agv-frontend && npm run e2e:sim
 //
 // 覆盖：参数标签、1366×768 布局无页面滚动条、空闲时倍速禁用、启动后参数锁定、
-// 暂停冻结、刷新恢复车辆位置、继续、重置回初始状态。仿真只跑前若干个 tick，不等自然结束。
+// 暂停冻结、刷新恢复车辆位置、继续、重置回初始状态、跑完 20 单、回放本次运行（0.25x–8x 与进度定位）。
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -128,6 +128,10 @@ async function main() {
     await page.screenshot({ path: path.join(OUT, 'sim-idle-1440x900.png') })
 
     console.log('启动仿真')
+    // 首次加载时路网还没回来，输入框会按默认上限把 3 台夹到 1 台；这里显式设回 3 台
+    const agvInput = page.locator('.toolbar .el-input-number input').first()
+    await agvInput.fill('3')
+    await agvInput.press('Enter')
     await page.getByRole('button', { name: '开始', exact: true }).click()
     const firstTick = await waitForTick(page, 'tick > 0')
     assert(firstTick > 0, `启动后 tick 开始递增（tick=${firstTick}）`)
@@ -212,6 +216,44 @@ async function main() {
     assert(finishedState.paramEnabled, '结束后参数重新可编辑')
     assert(finishedState.speedDisabled === 4, '结束后倍速禁用')
     await page.screenshot({ path: path.join(OUT, 'sim-finished-1440x900.png') })
+
+    console.log('回放本次运行')
+    const replayButton = page.getByRole('button', { name: '回放', exact: true })
+    assert(await replayButton.isVisible(), '结束后出现「回放」按钮')
+    await replayButton.click()
+    await page.waitForSelector('.replay-bar', { timeout: 5000 })
+    const replayBar = (await page.locator('.replay-bar').innerText()).replace(/\s+/g, ' ')
+    assert(replayBar.includes('0.25x') && replayBar.includes('8x'), '回放提供 0.25x–8x 倍速')
+    const replayTickText = await page.locator('.replay-tick').innerText()
+    await page.waitForTimeout(800)
+    const advanced = await page.locator('.replay-tick').innerText()
+    assert(Number(advanced.split('/')[0]) > Number(replayTickText.split('/')[0]), '回放自动前进')
+
+    await page.locator('.replay-bar').getByRole('button', { name: '暂停' }).click()
+    const pausedReplayTick = await page.locator('.replay-tick').innerText()
+    await page.waitForTimeout(500)
+    assert((await page.locator('.replay-tick').innerText()) === pausedReplayTick, '回放暂停后 tick 冻结')
+
+    const runway = await page.locator('.replay-slider .el-slider__runway').boundingBox()
+    const thumb = await page.locator('.replay-slider .el-slider__button').boundingBox()
+    if (runway && thumb) {
+      await page.mouse.move(thumb.x + thumb.width / 2, thumb.y + thumb.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(runway.x + runway.width * 0.6, runway.y + runway.height / 2, { steps: 6 })
+      await page.mouse.up()
+      await page.waitForTimeout(400)
+    }
+    assert((await page.locator('.replay-tick').innerText()) !== pausedReplayTick, '拖动进度条可定位回放')
+
+    await page.locator('.replay-bar').getByText('8x', { exact: true }).click()
+    await page.locator('.replay-bar').getByRole('button', { name: '播放' }).click()
+    await page.waitForTimeout(500)
+    await page.screenshot({ path: path.join(OUT, 'sim-replay-1440x900.png') })
+    await page.locator('.replay-bar').getByRole('button', { name: '退出回放' }).click()
+    await page.waitForTimeout(300)
+    assert((await page.locator('.replay-bar').count()) === 0, '退出回放隐藏控制条')
+    assert(await page.locator('.scene-hint').isVisible(), '退出回放恢复操作说明')
+
     await page.getByRole('button', { name: '重置', exact: true }).click()
     await page.waitForTimeout(500)
 
