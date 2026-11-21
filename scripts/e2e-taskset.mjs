@@ -33,6 +33,26 @@ async function launch() {
   }
 }
 
+/** 用页面里的 token 调接口，避免在脚本里重复登录逻辑。 */
+async function api(page, pathname, options = {}) {
+  return page.evaluate(
+    async ({ pathname: url, options: init }) => {
+      const token = localStorage.getItem('agv_token')
+      const response = await fetch(`/api${url}`, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(init.headers ?? {})
+        }
+      })
+      const body = await response.json().catch(() => null)
+      return { status: response.status, body }
+    },
+    { pathname, options }
+  )
+}
+
 async function taskRows(dialog) {
   const rows = dialog.locator('.task-row')
   const count = await rows.count()
@@ -68,6 +88,8 @@ async function main() {
   })
 
   const name = `E2E 任务集 ${Date.now()}`
+  const mapName = `E2E 区域路网 ${Date.now()}`
+  let tempMapId = null
 
   try {
     console.log('登录并打开任务集')
@@ -76,12 +98,57 @@ async function main() {
     await page.getByPlaceholder('请输入密码').fill('admin123')
     await page.getByRole('button', { name: '登录' }).click()
     await page.waitForURL('**/dashboard', { timeout: 15000 })
+
+    console.log('创建带区域注释的临时路网')
+    const mapList = await api(page, '/roadnet/list')
+    const baseMap = mapList.body?.data?.[0]
+    if (!baseMap) throw new Error('没有可复用的路网模板')
+    const baseDetail = await api(page, `/roadnet/${baseMap.id}`)
+    const base = baseDetail.body?.data
+    const createdMap = await api(page, '/roadnet', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: mapName,
+        isTemplate: false,
+        roadnet: {
+          nodes: base.nodes,
+          edges: base.edges,
+          width: base.width,
+          height: base.height,
+          zones: [
+            { id: 'Z1', name: '充电区', type: 'CHARGING', x: 0, y: 0, width: 20, height: 5 },
+            { id: 'Z2', name: '进货区', type: 'RECEIVING', x: 0, y: 11.5, width: 6, height: 7 },
+            { id: 'Z3', name: '货架区', type: 'RACK', x: 7, y: 18.5, width: 9, height: 6 }
+          ]
+        }
+      })
+    })
+    tempMapId = createdMap.body?.data?.id ?? null
+    if (!tempMapId) throw new Error('创建带区域路网失败')
+
     await page.goto(`${BASE}/tasks`, { waitUntil: 'networkidle' })
 
     console.log('新建任务集与地图选点')
     await page.getByRole('button', { name: '新建任务集' }).click()
     const dialog = page.getByRole('dialog', { name: '新建任务集' })
     await dialog.waitFor({ state: 'visible' })
+
+    await dialog.locator('.editor-form .el-select').click()
+    await page.getByRole('option', { name: mapName }).click()
+    const switchDialog = page.getByRole('dialog', { name: '切换路网' })
+    await switchDialog.waitFor({ state: 'visible' })
+    await switchDialog.getByRole('button', { name: '切换并清空' }).click()
+    await dialog.locator('.task-map .zone-rect').first().waitFor({ state: 'visible' })
+
+    assert(
+      (await dialog.locator('.task-map .zone-rect').count()) === 3,
+      '任务地图显示 3 个区域注释'
+    )
+    assert(
+      ((await dialog.locator('.task-map .zone-labels').textContent()) ?? '').includes('充电区'),
+      '任务地图显示区域名称'
+    )
+
     let rows = await taskRows(dialog)
     assert(rows.length === 1, `新任务集默认 ${rows.length} 行任务`)
     assert(rows[0].from === '选起点' && rows[0].to === '选终点', '默认行等待地图选点')
@@ -258,6 +325,9 @@ async function main() {
       `没有浏览器控制台错误${unexpectedErrors.length ? `：${unexpectedErrors[0]}` : ''}`
     )
   } finally {
+    if (tempMapId) {
+      await api(page, `/roadnet/${tempMapId}`, { method: 'DELETE' }).catch(() => null)
+    }
     await browser.close()
   }
 
