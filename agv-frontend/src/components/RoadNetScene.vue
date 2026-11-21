@@ -124,6 +124,16 @@ function applyLabels() {
   })
 }
 
+/** 回放定位时清空车辆缓冲，避免倒放被 PoseBuffer 的单调 tick 拒绝。 */
+function resetReplayFrames() {
+  fleet?.clear()
+}
+
+/** 回放期间由回放时钟直接推帧，不依赖 props.tick。 */
+function pushReplayFrame(tick: number, list: AgvView[]) {
+  fleet?.pushFrame(tick, list as AgvPose[], performance.now())
+}
+
 /** 画一条规划路径（用于单车路径演示）。 */
 function drawPath(points: Array<{ x: number; y: number }>) {
   if (!viewer) return
@@ -223,7 +233,16 @@ onBeforeUnmount(() => {
   viewer = null
 })
 
-defineExpose({ drawPath, clearPath, fitView, setTopView, focus, setQuality })
+defineExpose({
+  drawPath,
+  clearPath,
+  fitView,
+  setTopView,
+  focus,
+  setQuality,
+  resetReplayFrames,
+  pushReplayFrame
+})
 </script>
 
 <template>

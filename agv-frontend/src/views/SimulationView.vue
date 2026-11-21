@@ -15,11 +15,19 @@ import {
   startSim,
   type AgvSnapshot,
   type SimEvent,
+  type SimFrame,
   type SimMetrics,
   type SimStatus,
   type TaskSetSummary
 } from '@/api/sim'
 import { taskSetLabel } from '@/utils/format'
+import {
+  MAX_REPLAY_FRAMES,
+  REPLAY_SPEEDS,
+  ReplayRecorder,
+  findReplayIndex,
+  replayTickAfter
+} from '@/utils/simReplay'
 import { simSocketUrl } from '@/utils/ws'
 
 const maps = ref<RoadNetSummary[]>([])
@@ -68,10 +76,29 @@ const showZones = ref(true)
 const topView = ref(false)
 const selectedAgvId = ref<string | null>(null)
 
+const recorder = new ReplayRecorder()
+const replayAvailable = ref(false)
+const replayTruncated = ref(false)
+const replayLimit = MAX_REPLAY_FRAMES
+let recordingActive = false
+
+const replayMode = ref(false)
+const replayPlaying = ref(false)
+const replayPosition = ref(0)
+const replaySpeed = ref(1)
+const replayRange = ref({ from: 0, to: 0 })
+let replayIndex = -1
+let replayVirtualTick = 0
+let replayLastFrameAt = 0
+let replayRaf = 0
+let replayEvents: SimEvent[] = []
+
 interface SceneHandle {
   fitView: () => void
   setTopView: (on: boolean) => void
   focus: (id: string | null) => void
+  resetReplayFrames: () => void
+  pushReplayFrame: (tick: number, list: AgvView[]) => void
 }
 
 const sceneRef = ref<SceneHandle | null>(null)
@@ -83,7 +110,15 @@ let disposed = false
 
 const hasSim = computed(() => running.value || finished.value)
 
+/** 回放期间帧由回放时钟直接推入场景，避免和实时帧重复。 */
+const sceneTick = computed(() => (replayMode.value ? undefined : tick.value))
+
 const simState = computed(() => {
+  if (replayMode.value) {
+    return replayPlaying.value
+      ? { label: '回放中', type: 'primary' as const }
+      : { label: '回放暂停', type: 'primary' as const }
+  }
   if (running.value) {
     return paused.value
       ? { label: '已暂停', type: 'warning' as const }
@@ -210,9 +245,15 @@ function connectSocket() {
     try {
       const payload = JSON.parse(String(messageEvent.data))
       if (payload.type === 'frame') {
+        // 回放期间暂停接收实时帧，避免覆盖回放位置
+        if (replayMode.value) return
         // 重置后仍可能收到停止瞬间的在途帧，忽略它，避免已清空的指标和车辆列表回跳
         if (!running.value && !finished.value) return
-        const frame = payload.frame
+        const frame = payload.frame as SimFrame
+        if (recordingActive) {
+          recorder.record(frame)
+          if (frame.finished) finishRecording()
+        }
         agvs.value = frame.agvs
         metrics.value = frame.metrics
         tick.value = frame.tick
@@ -229,6 +270,7 @@ function connectSocket() {
           status.value = payload as SimStatus
           paused.value = !!payload.paused
           if (payload.status === 'FINISHED' || payload.status === 'FAILED' || payload.status === 'DEADLOCK') {
+            finishRecording()
             running.value = false
             finished.value = true
           }
@@ -279,6 +321,12 @@ async function syncStatus() {
       return
     }
     status.value = current
+    stopReplay(false)
+    recorder.clear()
+    recordingActive = false
+    replayAvailable.value = false
+    replayTruncated.value = false
+    replayRange.value = { from: 0, to: 0 }
     running.value = current.status === 'RUNNING'
     finished.value = current.status !== 'RUNNING'
     paused.value = current.paused
@@ -315,6 +363,13 @@ async function start() {
       seed: seed.value
     })
     status.value = result
+    stopReplay(false)
+    recorder.clear()
+    recordingActive = true
+    replayAvailable.value = false
+    replayTruncated.value = false
+    replayRange.value = { from: 0, to: 0 }
+    replayPosition.value = 0
     events.value = []
     receivedEvents.value = 0
     agvs.value = []
@@ -353,6 +408,13 @@ async function resume() {
 async function reset() {
   try {
     await resetSim()
+    stopReplay(false)
+    recorder.clear()
+    recordingActive = false
+    replayAvailable.value = false
+    replayTruncated.value = false
+    replayRange.value = { from: 0, to: 0 }
+    replayPosition.value = 0
     running.value = false
     finished.value = false
     paused.value = false
@@ -368,6 +430,144 @@ async function reset() {
   } catch (error: any) {
     ElMessage.error(error.message || '重置失败')
   }
+}
+
+function finishRecording() {
+  if (!recordingActive) return
+  recordingActive = false
+  replayAvailable.value = recorder.available
+  replayTruncated.value = recorder.truncated
+}
+
+/** 把录像里的某一帧同步到场景和右侧面板。 */
+function applyReplayFrame(index: number, resetScene: boolean) {
+  const frame = recorder.frames[index]
+  if (!frame) return
+  replayIndex = index
+  tick.value = frame.tick
+  agvs.value = frame.agvs
+  metrics.value = frame.metrics
+  replayPosition.value = frame.tick
+  if (resetScene) sceneRef.value?.resetReplayFrames()
+  sceneRef.value?.pushReplayFrame(frame.tick, frame.agvs)
+
+  const visible = replayEvents.filter((event) => event.tick <= frame.tick)
+  receivedEvents.value = visible.length
+  events.value = visible.slice(-MAX_EVENTS).reverse()
+}
+
+function pauseReplay() {
+  const wasPlaying = replayPlaying.value
+  replayPlaying.value = false
+  if (replayRaf) {
+    cancelAnimationFrame(replayRaf)
+    replayRaf = 0
+  }
+  // 暂停时把画面对齐到当前帧，避免停在 120ms 插值延迟里
+  if (wasPlaying && replayMode.value && replayIndex >= 0) {
+    const frame = recorder.frames[replayIndex]
+    if (frame) {
+      sceneRef.value?.resetReplayFrames()
+      sceneRef.value?.pushReplayFrame(frame.tick, frame.agvs)
+    }
+  }
+}
+
+function stepReplay(now: number) {
+  if (!replayMode.value || !replayPlaying.value) return
+  const elapsed = now - replayLastFrameAt
+  replayLastFrameAt = now
+  replayVirtualTick = replayTickAfter(elapsed, replaySpeed.value, replayVirtualTick)
+
+  const index = findReplayIndex(recorder.frames, replayVirtualTick)
+  if (index > replayIndex) {
+    for (let cursor = replayIndex + 1; cursor <= index; cursor++) {
+      applyReplayFrame(cursor, false)
+    }
+  }
+
+  if (replayVirtualTick >= replayRange.value.to) {
+    replayVirtualTick = replayRange.value.to
+    replayPosition.value = replayRange.value.to
+    replayPlaying.value = false
+    replayRaf = 0
+    return
+  }
+  replayRaf = requestAnimationFrame(stepReplay)
+}
+
+function playReplay() {
+  if (!replayMode.value) return
+  if (replayIndex < 0) applyReplayFrame(0, true)
+  // 已经播到结尾时，再点播放从第一帧重新开始
+  if (replayIndex >= recorder.frames.length - 1) {
+    replayIndex = -1
+    replayVirtualTick = replayRange.value.from
+    applyReplayFrame(0, true)
+  }
+  replayPlaying.value = true
+  replayLastFrameAt = performance.now()
+  replayRaf = requestAnimationFrame(stepReplay)
+}
+
+function toggleReplayPlay() {
+  if (replayPlaying.value) pauseReplay()
+  else playReplay()
+}
+
+function restartReplay() {
+  pauseReplay()
+  replayIndex = -1
+  replayVirtualTick = replayRange.value.from
+  applyReplayFrame(0, true)
+  playReplay()
+}
+
+function seekReplay(target: number) {
+  pauseReplay()
+  const index = findReplayIndex(recorder.frames, target)
+  if (index < 0) return
+  replayVirtualTick = recorder.frames[index].tick
+  applyReplayFrame(index, true)
+}
+
+function onReplaySeek(value: number | number[]) {
+  const target = Array.isArray(value) ? value[0] : value
+  if (typeof target === 'number') seekReplay(target)
+}
+
+function onReplaySpeedChange(value: string | number | boolean | undefined) {
+  replaySpeed.value = Number(value) || 1
+}
+
+function enterReplay() {
+  const frames = recorder.frames
+  if (frames.length < 2) return
+  pauseReplay()
+  replayEvents = frames.flatMap((frame) => frame.events)
+  replayRange.value = { from: frames[0].tick, to: frames[frames.length - 1].tick }
+  replaySpeed.value = 1
+  replayMode.value = true
+  replayIndex = -1
+  replayVirtualTick = replayRange.value.from
+  sceneRef.value?.resetReplayFrames()
+  applyReplayFrame(0, false)
+  playReplay()
+}
+
+/** 退出回放；restore=true 时把画面和面板恢复到最终状态。 */
+function stopReplay(restore: boolean) {
+  pauseReplay()
+  if (!replayMode.value) return
+  replayMode.value = false
+  if (!restore) return
+  const last = recorder.frames[recorder.frames.length - 1]
+  if (!last) return
+  tick.value = last.tick
+  agvs.value = last.agvs
+  metrics.value = last.metrics
+  receivedEvents.value = replayEvents.length
+  events.value = replayEvents.slice(-MAX_EVENTS).reverse()
 }
 
 async function changeSpeed(value: number) {
@@ -471,6 +671,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown)
   disposed = true
+  pauseReplay()
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer)
     reconnectTimer = null
@@ -489,7 +690,7 @@ onBeforeUnmount(() => {
         class="param-select"
         style="width: 200px"
         placeholder="路网"
-        :disabled="running"
+        :disabled="running || replayMode"
         @change="onMapChange"
       >
         <el-option v-for="map in maps" :key="map.id" :label="map.name" :value="map.id" />
@@ -500,7 +701,7 @@ onBeforeUnmount(() => {
         class="param-select"
         style="width: 190px"
         placeholder="任务集"
-        :disabled="running"
+        :disabled="running || replayMode"
       >
         <el-option
           v-for="set in mapTaskSets"
@@ -511,18 +712,25 @@ onBeforeUnmount(() => {
       </el-select>
       <span v-if="selectedRoadnetId && mapTaskSets.length === 0" class="muted">该路网还没有任务集</span>
       <span class="field-label">算法</span>
-      <el-select v-model="algorithm" class="param-select" style="width: 150px" :disabled="running">
+      <el-select v-model="algorithm" class="param-select" style="width: 150px" :disabled="running || replayMode">
         <el-option v-for="item in algorithms" :key="item.dictCode" :label="item.dictValue" :value="item.dictCode" />
       </el-select>
       <span class="field-label">AGV 数量</span>
-      <el-input-number v-model="agvCount" :min="1" :max="maxAgvCount" style="width: 120px" :disabled="running" />
+      <el-input-number v-model="agvCount" :min="1" :max="maxAgvCount" style="width: 120px" :disabled="running || replayMode" />
       <span class="field-hint">最多 {{ maxAgvCount }} 台</span>
       <span class="field-label">随机种子</span>
-      <el-input-number v-model="seed" :min="0" :controls="false" style="width: 140px" :disabled="running" />
-      <el-button type="primary" :disabled="running || !selectedTaskSetId" @click="start">开始</el-button>
+      <el-input-number v-model="seed" :min="0" :controls="false" style="width: 140px" :disabled="running || replayMode" />
+      <el-button type="primary" :disabled="running || replayMode || !selectedTaskSetId" @click="start">开始</el-button>
       <el-button :disabled="!running || paused" @click="pause">暂停</el-button>
       <el-button :disabled="!running || !paused" @click="resume">继续</el-button>
       <el-button :disabled="!hasSim" @click="reset">重置</el-button>
+      <el-button
+        v-if="replayAvailable && !replayMode"
+        title="回放本次运行（录像只保存在当前页面）"
+        @click="enterReplay"
+      >
+        回放
+      </el-button>
       <el-radio-group
         class="speed-group"
         :model-value="speed"
@@ -577,7 +785,7 @@ onBeforeUnmount(() => {
           ref="sceneRef"
           :roadnet="roadnet"
           :agvs="agvViews"
-          :tick="tick"
+          :tick="sceneTick"
           :quality="quality"
           :show-labels="showLabels"
           :show-zones="showZones"
@@ -585,12 +793,40 @@ onBeforeUnmount(() => {
           @select="onSelectAgv"
           @view-mode="onViewMode"
         />
-        <div class="scene-hint" aria-label="场景操作说明">
+        <div v-if="!replayMode" class="scene-hint" aria-label="场景操作说明">
           <span><b>左键拖动</b> 旋转</span>
           <span><kbd>空格</kbd> + 左键拖动 平移</span>
           <span><b>右键拖动</b> 平移</span>
           <span><b>滚轮</b> 缩放</span>
           <span><b>点击车辆</b> 跟随</span>
+        </div>
+        <div v-if="replayMode" class="replay-bar">
+          <el-button size="small" type="primary" @click="toggleReplayPlay">
+            {{ replayPlaying ? '暂停' : '播放' }}
+          </el-button>
+          <el-button size="small" @click="restartReplay">重播</el-button>
+          <el-slider
+            v-model="replayPosition"
+            class="replay-slider"
+            :min="replayRange.from"
+            :max="replayRange.to"
+            :step="1"
+            :show-tooltip="false"
+            @change="onReplaySeek"
+          />
+          <span class="replay-tick">{{ replayPosition }} / {{ replayRange.to }}</span>
+          <el-radio-group
+            class="replay-speed"
+            :model-value="replaySpeed"
+            size="small"
+            @change="onReplaySpeedChange"
+          >
+            <el-radio-button v-for="value in REPLAY_SPEEDS" :key="value" :value="value">
+              {{ value }}x
+            </el-radio-button>
+          </el-radio-group>
+          <span v-if="replayTruncated" class="replay-note">仅录前 {{ replayLimit }} 帧</span>
+          <el-button size="small" @click="stopReplay(true)">退出回放</el-button>
         </div>
       </div>
 
@@ -758,6 +994,46 @@ onBeforeUnmount(() => {
   color: #dbe6f5;
   font: inherit;
   text-align: center;
+}
+
+/* 回放控制条压在场景底部，和操作说明互斥显示。 */
+.replay-bar {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(92, 125, 165, 0.45);
+  border-radius: 8px;
+  background: rgba(8, 17, 30, 0.86);
+  color: #dbe6f5;
+  font-size: 12px;
+}
+
+.replay-slider {
+  flex: 1 1 160px;
+  min-width: 120px;
+}
+
+.replay-tick {
+  min-width: 70px;
+  color: #9fb3cc;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.replay-note {
+  color: #e6a23c;
+}
+
+.replay-bar :deep(.el-slider) {
+  --el-slider-main-bg-color: #409eff;
+  --el-slider-runway-bg-color: rgba(127, 157, 192, 0.28);
+  --el-slider-height: 4px;
 }
 
 /* 场景组件自身保留 420px 最小高度，仿真页跟随窗口缩短时需放开来 */
