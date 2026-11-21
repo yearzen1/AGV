@@ -585,6 +585,13 @@ onBeforeUnmount(() => {
           @select="onSelectAgv"
           @view-mode="onViewMode"
         />
+        <div class="scene-hint" aria-label="场景操作说明">
+          <span><b>左键拖动</b> 旋转</span>
+          <span><kbd>空格</kbd> + 左键拖动 平移</span>
+          <span><b>右键拖动</b> 平移</span>
+          <span><b>滚轮</b> 缩放</span>
+          <span><b>点击车辆</b> 跟随</span>
+        </div>
       </div>
 
       <div class="side">
@@ -710,9 +717,47 @@ onBeforeUnmount(() => {
 }
 
 .scene-panel {
+  position: relative;
   padding: 0;
   overflow: hidden;
   min-height: 0;
+}
+
+/* 场景左下角的常驻操作说明，不拦截鼠标，避免影响旋转和平移。 */
+.scene-hint {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  max-width: calc(100% - 24px);
+  padding: 6px 10px;
+  border: 1px solid rgba(92, 125, 165, 0.35);
+  border-radius: 6px;
+  background: rgba(8, 17, 30, 0.72);
+  color: #9fb3cc;
+  font-size: 12px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.scene-hint b {
+  color: #dbe6f5;
+  font-weight: 600;
+}
+
+.scene-hint kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1px solid rgba(137, 166, 201, 0.45);
+  border-radius: 4px;
+  background: rgba(31, 59, 115, 0.6);
+  color: #dbe6f5;
+  font: inherit;
+  text-align: center;
 }
 
 /* 场景组件自身保留 420px 最小高度，仿真页跟随窗口缩短时需放开来 */
