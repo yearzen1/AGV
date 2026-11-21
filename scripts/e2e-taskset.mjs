@@ -25,11 +25,6 @@ function assert(condition, message) {
   console.error(`  ✗ ${message}`)
 }
 
-function stationOf(text) {
-  const matched = /([A-Za-z0-9_]+)\s*·/.exec(text)
-  return matched ? matched[1] : ''
-}
-
 async function launch() {
   try {
     return await chromium.launch({ headless: true })
@@ -39,18 +34,27 @@ async function launch() {
 }
 
 async function taskRows(dialog) {
-  const rows = dialog.locator('.el-table__body tbody tr')
+  const rows = dialog.locator('.task-row')
   const count = await rows.count()
   const result = []
   for (let index = 0; index < count; index += 1) {
-    const cells = rows.nth(index).locator('td')
+    const row = rows.nth(index)
     result.push({
-      seq: (await cells.nth(0).innerText()).trim(),
-      from: stationOf(await cells.nth(1).innerText()),
-      to: stationOf(await cells.nth(2).innerText())
+      seq: (await row.locator('.task-seq').innerText()).trim(),
+      from: (await row.locator('.station-chip').nth(0).innerText()).trim(),
+      to: (await row.locator('.station-chip').nth(1).innerText()).trim()
     })
   }
   return result
+}
+
+async function activateRow(dialog, index) {
+  await dialog.locator('.task-row').nth(index).locator('.task-seq').click()
+}
+
+async function pickOnMap(page, dialog, nodeId) {
+  await dialog.locator(`.task-map .node[data-id="${nodeId}"]`).click()
+  await page.waitForTimeout(80)
 }
 
 async function main() {
@@ -74,36 +78,81 @@ async function main() {
     await page.waitForURL('**/dashboard', { timeout: 15000 })
     await page.goto(`${BASE}/tasks`, { waitUntil: 'networkidle' })
 
-    console.log('新建任务集与加行')
+    console.log('新建任务集与地图选点')
     await page.getByRole('button', { name: '新建任务集' }).click()
     const dialog = page.getByRole('dialog', { name: '新建任务集' })
     await dialog.waitFor({ state: 'visible' })
     let rows = await taskRows(dialog)
     assert(rows.length === 1, `新任务集默认 ${rows.length} 行任务`)
-    const firstPair = `${rows[0].from}->${rows[0].to}`
+    assert(rows[0].from === '选起点' && rows[0].to === '选终点', '默认行等待地图选点')
+    assert((await dialog.locator('.task-row.active').count()) === 1, '默认选中第一行')
 
-    await dialog.getByRole('button', { name: '加一条' }).click()
-    await dialog.getByRole('button', { name: '加一条' }).click()
+    await pickOnMap(page, dialog, 'W1')
     rows = await taskRows(dialog)
-    assert(rows.length === 3, `连续加行后共 ${rows.length} 行任务`)
+    assert(rows[0].from === 'W1' && rows[0].to === '选终点', '点地图工位写入起点')
     assert(
-      rows.slice(1).every((row) => `${row.from}->${row.to}` !== firstPair),
-      '新增行没有重复第一组起终点'
+      (await dialog.locator('.map-toolbar .mode-badge').innerText()).includes('终点'),
+      '起点选完自动切到终点'
     )
+    await pickOnMap(page, dialog, 'W2')
+    rows = await taskRows(dialog)
+    assert(rows[0].from === 'W1' && rows[0].to === 'W2', '连续点两个工位完成一条任务')
+
+    console.log('非工位不可选')
+    await pickOnMap(page, dialog, 'CH1')
+    rows = await taskRows(dialog)
+    assert(rows[0].from === 'W1' && rows[0].to === 'W2', '点充电位不会写入端点')
+    await dialog.locator('.map-foot .map-notice').waitFor({ state: 'visible' })
+    assert(
+      (await dialog.locator('.map-foot .map-notice').innerText()).includes('工位'),
+      '选择非工位时给出提示'
+    )
+
+    console.log('新增行与行号重排')
+    await dialog.getByRole('button', { name: /在地图上新增任务/ }).click()
+    await dialog.getByRole('button', { name: /在地图上新增任务/ }).click()
+    rows = await taskRows(dialog)
+    assert(rows.length === 3, `连续新增后共 ${rows.length} 行任务`)
     assert(
       rows.every((row, index) => row.seq === String(index + 1)),
       '行号连续为 1…N'
     )
+    assert(rows[2].from === '选起点' && rows[2].to === '选终点', '新增行等待地图选点')
+    assert(
+      (await dialog.locator('.task-row.active .task-seq').innerText()).trim() === '3',
+      '新增后自动选中新行'
+    )
+
+    await activateRow(dialog, 2)
+    await pickOnMap(page, dialog, 'W2')
+    await pickOnMap(page, dialog, 'W3')
+    rows = await taskRows(dialog)
+    assert(rows[2].from === 'W2' && rows[2].to === 'W3', '新增行可以通过地图补齐起终点')
     await page.screenshot({ path: path.join(OUT, 'taskset-editor-1440x900.png') })
 
-    console.log('删除行后序号重排')
-    await dialog.getByRole('button', { name: '删除' }).first().click()
+    await dialog.locator('.task-row').first().locator('.row-del').click()
     rows = await taskRows(dialog)
     assert(rows.length === 2, `删除后剩余 ${rows.length} 行任务`)
     assert(
       rows.every((row, index) => row.seq === String(index + 1)),
       '删除首行后序号仍为 1…N'
     )
+
+    console.log('行与地图互相高亮')
+    await activateRow(dialog, 1)
+    assert(
+      (await dialog.locator('.task-map .node.selected-from').getAttribute('data-id')) ===
+        rows[1].from,
+      '选中行后地图高亮起点'
+    )
+    assert(
+      (await dialog.locator('.task-map .node.selected-to').getAttribute('data-id')) === rows[1].to,
+      '选中行后地图高亮终点'
+    )
+    await dialog.locator('.task-row').nth(1).locator('.station-chip').first().click()
+    await pickOnMap(page, dialog, 'W3')
+    rows = await taskRows(dialog)
+    assert(rows[1].from === 'W3', '点行内起点按钮后可在地图上改起点')
 
     console.log('批量填充与清空')
     await dialog.getByRole('button', { name: '填充 20 单演示数据' }).click()
@@ -126,13 +175,19 @@ async function main() {
     rows = await taskRows(dialog)
     assert(rows.length === 0, '清空后任务行数为 0')
     assert(
-      (await dialog.locator('.el-table__empty-text').innerText()).includes('暂无任务'),
-      '空表显示引导文案'
+      (await dialog.locator('.task-empty').innerText()).includes('暂无任务'),
+      '空列表显示引导文案'
     )
 
     console.log('保存失败时列出全部错误')
-    await dialog.getByRole('button', { name: '加一条' }).click()
-    await dialog.getByRole('button', { name: '加一条' }).click()
+    await dialog.getByRole('button', { name: /在地图上新增任务/ }).click()
+    await dialog.getByRole('button', { name: /在地图上新增任务/ }).click()
+    await activateRow(dialog, 0)
+    await pickOnMap(page, dialog, 'W1')
+    await pickOnMap(page, dialog, 'W2')
+    await activateRow(dialog, 1)
+    await pickOnMap(page, dialog, 'W2')
+    await pickOnMap(page, dialog, 'W3')
     await dialog.getByLabel('名称').fill(name)
     await page.route('**/api/taskset', async (route) => {
       if (route.request().method() !== 'POST') {
@@ -155,7 +210,7 @@ async function main() {
       '弹窗顶部列出全部 2 条错误'
     )
     assert(
-      (await dialog.locator('.invalid-row').count()) === 2,
+      (await dialog.locator('.task-row.invalid-row').count()) === 2,
       '两条错误对应的任务行都标红'
     )
     await page.screenshot({ path: path.join(OUT, 'taskset-errors-1440x900.png') })
@@ -218,3 +273,4 @@ main().catch((error) => {
   console.error(error)
   process.exitCode = 1
 })
+
