@@ -2,7 +2,7 @@
 // 前置：后端 http://localhost:8080 与前端 http://localhost:5173 已启动。
 // 首次运行需安装浏览器：cd agv-frontend && npx playwright install chromium
 // 用法：cd agv-frontend && npm run e2e:roadnet
-// 覆盖：布局与工具栏、节点/路段编辑、区域创建/改名/移动/缩放/删除/撤销、搜索、任务流向、3D 与全屏。
+// 覆盖：布局与工具栏、节点/路段编辑、区域创建/改名/移动/缩放/删除/撤销、搜索、任务流向、3D 区域与空格平移、全屏。
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -408,6 +408,48 @@ async function main() {
       '全屏后 3D 画面填满弹窗'
     )
     await footer.getByRole('button', { name: '退出全屏' }).click()
+
+    console.log('3D 空格平移')
+    const sceneBox = await page.locator('.preview-3d canvas').boundingBox()
+    assert(sceneBox != null, '3D 画布可定位')
+    const centerX = sceneBox.x + sceneBox.width / 2
+    const centerY = sceneBox.y + sceneBox.height / 2
+    await page.mouse.move(centerX, centerY)
+    const cameraBefore = await page.evaluate(() => window.__AGV_SCENE_DEBUG__.camera?.target ?? null)
+    assert(cameraBefore != null, '调试对象暴露相机目标')
+    await page.keyboard.down('Space')
+    await page.mouse.down()
+    await page.mouse.move(centerX + 120, centerY + 60, { steps: 8 })
+    await page.mouse.up()
+    await page.keyboard.up('Space')
+    await page.waitForTimeout(1200)
+    const cameraAfterPan = await page.evaluate(() => window.__AGV_SCENE_DEBUG__.camera?.target ?? null)
+    const panDistance = cameraAfterPan
+      ? Math.hypot(
+          cameraAfterPan[0] - cameraBefore[0],
+          cameraAfterPan[1] - cameraBefore[1],
+          cameraAfterPan[2] - cameraBefore[2]
+        )
+      : 0
+    assert(panDistance > 0.5, `空格+左键拖动平移视角（目标移动 ${panDistance.toFixed(2)} 米）`)
+
+    await page.mouse.move(centerX, centerY)
+    await page.mouse.down()
+    await page.mouse.move(centerX - 80, centerY - 40, { steps: 8 })
+    await page.mouse.up()
+    await page.waitForTimeout(400)
+    const cameraAfterRotate = await page.evaluate(
+      () => window.__AGV_SCENE_DEBUG__.camera?.target ?? null
+    )
+    const rotateDistance = cameraAfterRotate
+      ? Math.hypot(
+          cameraAfterRotate[0] - cameraAfterPan[0],
+          cameraAfterRotate[1] - cameraAfterPan[1],
+          cameraAfterRotate[2] - cameraAfterPan[2]
+        )
+      : 0
+    assert(rotateDistance < 0.05, '松开空格后左键恢复旋转，相机目标不变')
+
     await footer.getByRole('button', { name: '关闭' }).click()
     await page.waitForTimeout(300)
 
