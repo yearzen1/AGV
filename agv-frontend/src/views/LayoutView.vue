@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
@@ -7,6 +7,17 @@ import { useAuthStore } from '@/stores/auth'
 const auth = useAuthStore()
 const router = useRouter()
 const route = useRoute()
+
+const SIDEBAR_KEY = 'agv_layout_sidebar_collapsed'
+const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_KEY) === '1')
+
+watch(sidebarCollapsed, (collapsed) => {
+  localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0')
+})
+
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
 
 const menus = computed(() => {
   const base = [
@@ -35,7 +46,7 @@ function logout() {
 
 <template>
   <el-container class="layout">
-    <el-aside width="220px" class="aside">
+    <el-aside v-show="!sidebarCollapsed" width="220px" class="aside">
       <div class="logo">排策智演</div>
       <el-menu :default-active="route.path" router class="menu">
         <el-menu-item v-for="menu in menus" :key="menu.path" :index="menu.path">
@@ -47,6 +58,24 @@ function logout() {
     <el-container>
       <el-header class="header">
         <div class="header-title">
+          <el-button
+            class="sidebar-toggle"
+            text
+            size="small"
+            :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+            :aria-label="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+            @click="toggleSidebar"
+          >
+            <svg class="toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M4 6h16M4 12h16M4 18h16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+            </svg>
+          </el-button>
           {{ currentTitle }}
           <span v-if="currentSubtitle" class="header-subtitle">{{ currentSubtitle }}</span>
         </div>
@@ -121,6 +150,18 @@ function logout() {
   display: flex;
   align-items: baseline;
   gap: 8px;
+}
+
+.sidebar-toggle {
+  align-self: center;
+  padding: 4px;
+  margin-right: 2px;
+}
+
+.toggle-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
 }
 
 .header-subtitle {
