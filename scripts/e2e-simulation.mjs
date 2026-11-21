@@ -90,6 +90,8 @@ async function main() {
         JSON.stringify(['路网', '任务集', '算法', 'AGV 数量', '随机种子']),
       `工具栏五个参数都有文字标签：${labels.join(' / ')}`
     )
+    const hint = (await page.locator('.scene-hint').innerText()).replace(/\s+/g, ' ')
+    assert(hint.includes('左键拖动') && hint.includes('空格') && hint.includes('滚轮'), '场景左下角显示操作说明')
 
     console.log('检查 1366×768 布局')
     await page.setViewportSize({ width: 1366, height: 768 })
