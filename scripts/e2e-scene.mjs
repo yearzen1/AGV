@@ -94,6 +94,9 @@ const DUAL_NET = {
     { id: 'E2', from: 'J1', to: 'J2', length: 10, direction: 'TWO_WAY', speed: 1, capacity: 1, laneMode: 'DUAL' },
     { id: 'E3', from: 'J2', to: 'W1', length: 10, direction: 'TWO_WAY', speed: 1, capacity: 1, laneMode: 'DUAL' },
     { id: 'E4', from: 'W1', to: 'CH1', length: 10, direction: 'TWO_WAY', speed: 1, capacity: 1, laneMode: 'SINGLE' }
+  ],
+  zones: [
+    { id: 'Z1', name: '充电区', type: 'CHARGING', x: -3, y: -3, width: 5, height: 5 }
   ]
 }
 
@@ -173,9 +176,11 @@ async function main() {
     close(stats.dividers, expected.dividers, '分隔线数量')
     close(stats.arrows, expected.arrows, '箭头数量')
     close(stats.junctions, expected.junctions, '路口铺装数量')
+    close(stats.zones, DUAL_NET.zones.length, '区域数量')
     assert(stats.ribbons === 7, '三条双车道边各 2 条路面，单车道边 1 条')
     assert(stats.dividers === 4, '三条双车道和一条单车道双向各有分隔线')
     assert(stats.junctions === 4, '四个直角节点各有一块路口铺装')
+    assert(stats.zones === 1, '路网里的区域被渲染到 3D 场景')
     assert(agvs.length === 0, '3D 预览不渲染车辆')
 
     const canvas = await page.locator('canvas').boundingBox()

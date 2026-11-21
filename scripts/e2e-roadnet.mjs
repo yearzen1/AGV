@@ -367,9 +367,34 @@ async function main() {
     await page.screenshot({ path: path.join(OUT, 'roadnet-tasks-1440x900.png') })
     await page.getByText('在地图上显示任务流向').click()
 
+    console.log('3D 区域注释')
+    // 搜索定位会平移视图，先回到 100% 再画区域，避免拖拽终点跑出画布
+    await page.locator('.toolbar').getByTitle('重置为 100%').click()
+    await page.waitForTimeout(300)
+    await page.locator('.toolbar').getByText('区域', { exact: true }).click()
+    await page.waitForTimeout(200)
+    const zone3DSpot = await emptyMapPoint(page)
+    await page.mouse.move(zone3DSpot.x, zone3DSpot.y)
+    await page.mouse.down()
+    await page.mouse.move(zone3DSpot.x + 80, zone3DSpot.y + 60, { steps: 6 })
+    await page.mouse.up()
+    await page.waitForTimeout(200)
+    const zoneCountBefore3D = await page.locator('.zone-fill').count()
+    assert(zoneCountBefore3D === 1, `3D 前创建一个测试区域（实际 ${zoneCountBefore3D} 个）`)
+    await page.locator('.toolbar').getByText('选择', { exact: true }).click()
+
     console.log('3D 预览')
     await page.getByRole('button', { name: '3D 预览' }).click()
     await page.waitForSelector('.preview-3d canvas', { timeout: 15000 })
+    await page.waitForFunction(() => Boolean(window.__AGV_SCENE_DEBUG__?.road), null, {
+      timeout: 15000
+    })
+    const zoneStats = await page.evaluate(() => ({
+      zones: window.__AGV_SCENE_DEBUG__.road.zones,
+      visible: window.__AGV_SCENE_DEBUG__.zonesVisible
+    }))
+    assert(zoneStats.zones === 1, '3D 场景渲染区域色块')
+    assert(zoneStats.visible === true, '3D 默认显示区域')
     const footer = page.locator('.preview-3d-footer')
     assert((await footer.innerText()).includes('左键旋转'), '3D 弹窗显示操作提示')
     await footer.getByRole('button', { name: '全屏', exact: true }).click()
@@ -385,6 +410,27 @@ async function main() {
     await footer.getByRole('button', { name: '退出全屏' }).click()
     await footer.getByRole('button', { name: '关闭' }).click()
     await page.waitForTimeout(300)
+
+    console.log('3D 区域开关')
+    await page.locator('.toolbar').getByText('显示', { exact: true }).click()
+    await page.locator('.popover-list:visible').getByText('区域注释', { exact: true }).click()
+    await page.waitForTimeout(200)
+    await page.getByRole('button', { name: '3D 预览' }).click()
+    await page.waitForSelector('.preview-3d canvas', { timeout: 15000 })
+    await page.waitForFunction(() => Boolean(window.__AGV_SCENE_DEBUG__?.road), null, {
+      timeout: 15000
+    })
+    assert(
+      (await page.evaluate(() => window.__AGV_SCENE_DEBUG__.zonesVisible)) === false,
+      '关闭「区域注释」后 3D 区域层隐藏'
+    )
+    await page.locator('.preview-3d-footer').getByRole('button', { name: '关闭' }).click()
+    await page.waitForTimeout(300)
+    await page.locator('.toolbar').getByText('显示', { exact: true }).click()
+    await page.locator('.popover-list:visible').getByText('区域注释', { exact: true }).click()
+    await page.waitForTimeout(200)
+    await page.locator('.toolbar').getByText('显示', { exact: true }).click()
+    await page.waitForTimeout(200)
 
     console.log('画布全屏与退出')
     // 强制进入页面内全屏分支，保证在无头环境下也能回归降级逻辑
