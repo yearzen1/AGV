@@ -2331,6 +2331,7 @@ const expose = {
   isDirty,
   markSaved,
   markDirty,
+  showZones,
   focusError,
   fitSelection,
   showValidation,

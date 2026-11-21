@@ -1,14 +1,21 @@
 import * as THREE from 'three'
-import type { NetEdge, NetNode, RoadNetPayload } from '@/api/roadnet'
+import type { NetEdge, NetNode, NetZone, RoadNetPayload } from '@/api/roadnet'
 import { NODE_COLORS, ROAD_Y } from './constants'
 import { buildRoadGeometry, type MeshArrays, type RoadGeometryStats } from './roadGeometry'
+import { zoneExtents } from './zoneGeometry.ts'
+import { buildZoneLayer } from './zones.ts'
 import type { LabelFactory } from './labels'
+
+export interface RoadNetStats extends RoadGeometryStats {
+  zones: number
+}
 
 export interface RoadNetRender {
   group: THREE.Group
   edges: Map<string, NetEdge>
   bounds: THREE.Box3
-  stats: RoadGeometryStats
+  stats: RoadNetStats
+  zoneGroup: THREE.Group
   dispose(): void
 }
 
@@ -29,7 +36,7 @@ export function buildRoadNet(net: RoadNetPayload, labels: LabelFactory): RoadNet
   const group = new THREE.Group()
   group.name = 'roadnet'
   const edges = new Map(net.edges.map((edge) => [edge.id, edge]))
-  const bounds = computeBounds(net.nodes)
+  const bounds = computeBounds(net.nodes, net.zones ?? [])
   const geometry = buildRoadGeometry(net)
 
   // 路面和路口铺装共用一套沥青材质，只在几何上分开，方便统计和单测
@@ -93,33 +100,39 @@ export function buildRoadNet(net: RoadNetPayload, labels: LabelFactory): RoadNet
   addNodePads(group, net.nodes)
   addNodeLabels(group, net.nodes, labels)
 
+  const zoneLayer = buildZoneLayer(net.zones ?? [], labels)
+  if (zoneLayer.stats.zones > 0) group.add(zoneLayer.group)
+
   return {
     group,
     edges,
     bounds,
-    stats: geometry.stats,
+    stats: { ...geometry.stats, zones: zoneLayer.stats.zones },
+    zoneGroup: zoneLayer.group,
     dispose: () => disposeGroup(group)
   }
 }
 
-function computeBounds(nodes: NetNode[]): THREE.Box3 {
+function computeBounds(nodes: NetNode[], zones: NetZone[] = []): THREE.Box3 {
   const box = new THREE.Box3()
-  if (nodes.length === 0) {
+  const extents = zoneExtents(zones)
+  if (nodes.length === 0 && !extents) {
     box.set(new THREE.Vector3(-5, 0, -5), new THREE.Vector3(5, 0, 5))
     return box
   }
-  box.set(
-    new THREE.Vector3(
-      Math.min(...nodes.map((node) => node.x)),
-      0,
-      Math.min(...nodes.map((node) => node.y))
-    ),
-    new THREE.Vector3(
-      Math.max(...nodes.map((node) => node.x)),
-      0,
-      Math.max(...nodes.map((node) => node.y))
-    )
-  )
+
+  let minX = extents?.minX ?? Infinity
+  let minY = extents?.minY ?? Infinity
+  let maxX = extents?.maxX ?? -Infinity
+  let maxY = extents?.maxY ?? -Infinity
+  for (const node of nodes) {
+    minX = Math.min(minX, node.x)
+    minY = Math.min(minY, node.y)
+    maxX = Math.max(maxX, node.x)
+    maxY = Math.max(maxY, node.y)
+  }
+
+  box.set(new THREE.Vector3(minX, 0, minY), new THREE.Vector3(maxX, 0, maxY))
   return box
 }
 

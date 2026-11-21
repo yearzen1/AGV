@@ -64,6 +64,7 @@ const eventsTruncated = computed(() => receivedEvents.value > MAX_EVENTS)
 
 const quality = ref<SceneQuality>(loadQuality())
 const showLabels = ref(true)
+const showZones = ref(true)
 const topView = ref(false)
 const selectedAgvId = ref<string | null>(null)
 
@@ -540,6 +541,7 @@ onBeforeUnmount(() => {
         <el-option label="高画质" value="high" />
       </el-select>
       <el-checkbox v-model="showLabels" size="small">标签</el-checkbox>
+      <el-checkbox v-model="showZones" size="small">区域</el-checkbox>
       <el-button size="small" :type="topView ? 'primary' : ''" @click="toggleTopView">俯视</el-button>
       <el-tag v-if="simState" :type="simState.type" size="small">{{ simState.label }}</el-tag>
       <el-tag
@@ -578,6 +580,7 @@ onBeforeUnmount(() => {
           :tick="tick"
           :quality="quality"
           :show-labels="showLabels"
+          :show-zones="showZones"
           :selected-id="selectedAgvId"
           @select="onSelectAgv"
           @view-mode="onViewMode"

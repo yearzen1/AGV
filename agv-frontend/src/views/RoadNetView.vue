@@ -45,6 +45,7 @@ const mapTaskSets = computed(() =>
 const preview3DVisible = ref(false)
 const preview3DPayload = ref<RoadNetPayload | null>(null)
 const preview3DFullscreen = ref(false)
+const preview3DShowZones = ref(true)
 const roadnetSceneRef = ref<{ fitView: () => void } | null>(null)
 
 function reset3DView() {
@@ -410,6 +411,7 @@ async function onFileChange(event: Event) {
 
 function open3D() {
   preview3DPayload.value = currentPayload()
+  preview3DShowZones.value = editorRef.value?.showZones ?? true
   preview3DFullscreen.value = false
   preview3DVisible.value = true
 }
@@ -593,7 +595,13 @@ onBeforeUnmount(() => {
       destroy-on-close
     >
       <div class="preview-3d" :class="{ 'is-fullscreen': preview3DFullscreen }">
-        <RoadNetScene v-if="preview3DPayload" ref="roadnetSceneRef" :roadnet="preview3DPayload" :agvs="[]" />
+        <RoadNetScene
+          v-if="preview3DPayload"
+          ref="roadnetSceneRef"
+          :roadnet="preview3DPayload"
+          :agvs="[]"
+          :show-zones="preview3DShowZones"
+        />
       </div>
       <template #footer>
         <div class="preview-3d-footer">

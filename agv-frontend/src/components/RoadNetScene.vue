@@ -18,10 +18,12 @@ const props = withDefaults(
     tick?: number
     quality?: SceneQuality
     showLabels?: boolean
+    showZones?: boolean
     selectedId?: string | null
   }>(),
   {
     showLabels: true,
+    showZones: true,
     selectedId: null
   }
 )
@@ -33,12 +35,13 @@ const emit = defineEmits<{
 
 interface SceneDebug {
   road: RoadNetRender['stats'] | null
+  zonesVisible: boolean
   agvs: Array<{ id: string; arcId: string | null; laneOffset: number }>
 }
 
 const container = ref<HTMLDivElement | null>(null)
 const pathGroup = new THREE.Group()
-const debug: SceneDebug = { road: null, agvs: [] }
+const debug: SceneDebug = { road: null, zonesVisible: true, agvs: [] }
 
 if (import.meta.env.DEV) {
   ;(window as unknown as { __AGV_SCENE_DEBUG__?: SceneDebug }).__AGV_SCENE_DEBUG__ = debug
@@ -97,6 +100,13 @@ function rebuildRoadNet(net: RoadNetPayload | null) {
   viewer.setRoadNet(netRender.bounds)
   viewer.fitView()
   applyLabels()
+  applyZones()
+}
+
+function applyZones() {
+  const visible = props.showZones
+  if (netRender) netRender.zoneGroup.visible = visible
+  debug.zonesVisible = visible
 }
 
 function applyLabels() {
@@ -171,6 +181,11 @@ watch(
 watch(
   () => props.showLabels,
   () => applyLabels()
+)
+
+watch(
+  () => props.showZones,
+  () => applyZones()
 )
 
 watch(

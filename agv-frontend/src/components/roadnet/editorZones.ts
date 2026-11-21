@@ -1,26 +1,16 @@
 import type { NetZone, ZoneType } from '@/api/roadnet'
+import {
+  ZONE_TYPE_COLOR,
+  ZONE_TYPE_LABEL,
+  zoneTypeColor,
+  zoneTypeLabel
+} from '../../utils/zoneStyles.ts'
+
+export { ZONE_TYPE_COLOR, ZONE_TYPE_LABEL, zoneTypeColor, zoneTypeLabel }
 
 export const ZONE_MIN_SIZE = 1
 export const ZONE_DEFAULT_WIDTH = 6
 export const ZONE_DEFAULT_HEIGHT = 4
-
-export const ZONE_TYPE_LABEL: Record<string, string> = {
-  CHARGING: '充电区',
-  RECEIVING: '进货区',
-  UNLOADING: '卸货区',
-  RACK: '货架区',
-  PARKING: '停车区',
-  OTHER: '其他'
-}
-
-export const ZONE_TYPE_COLOR: Record<string, string> = {
-  CHARGING: '#67c23a',
-  RECEIVING: '#409eff',
-  UNLOADING: '#e6a23c',
-  RACK: '#b37feb',
-  PARKING: '#909399',
-  OTHER: '#8fa3bd'
-}
 
 export const ZONE_TYPES: ZoneType[] = [
   'CHARGING',
@@ -30,14 +20,6 @@ export const ZONE_TYPES: ZoneType[] = [
   'PARKING',
   'OTHER'
 ]
-
-export function zoneTypeLabel(type: string | undefined | null) {
-  return ZONE_TYPE_LABEL[type ?? ''] ?? ZONE_TYPE_LABEL.OTHER
-}
-
-export function zoneTypeColor(type: string | undefined | null) {
-  return ZONE_TYPE_COLOR[type ?? ''] ?? ZONE_TYPE_COLOR.OTHER
-}
 
 export function nextZoneId(zones: Array<{ id: string }>) {
   let max = 0
