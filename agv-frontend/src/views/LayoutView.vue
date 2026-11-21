@@ -47,7 +47,28 @@ function logout() {
 <template>
   <el-container class="layout">
     <el-aside v-show="!sidebarCollapsed" width="220px" class="aside">
-      <div class="logo">排策智演</div>
+      <div class="logo">
+        <span class="logo-text">排策智演</span>
+        <el-button
+          class="sidebar-collapse"
+          text
+          size="small"
+          title="收起侧边栏"
+          aria-label="收起侧边栏"
+          @click="toggleSidebar"
+        >
+          <svg class="toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M15 6l-6 6 6 6"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </el-button>
+      </div>
       <el-menu :default-active="route.path" router class="menu">
         <el-menu-item v-for="menu in menus" :key="menu.path" :index="menu.path">
           {{ menu.title }}
@@ -59,11 +80,12 @@ function logout() {
       <el-header class="header">
         <div class="header-title">
           <el-button
+            v-if="sidebarCollapsed"
             class="sidebar-toggle"
             text
             size="small"
-            :title="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
-            :aria-label="sidebarCollapsed ? '展开侧边栏' : '收起侧边栏'"
+            title="展开侧边栏"
+            aria-label="展开侧边栏"
             @click="toggleSidebar"
           >
             <svg class="toggle-icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -108,12 +130,27 @@ function logout() {
 
 .logo {
   height: 60px;
-  line-height: 60px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px 0 16px;
   color: #fff;
   font-size: 18px;
   letter-spacing: 3px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.logo-text {
+  padding-left: 6px;
+}
+
+.sidebar-collapse {
+  color: #b8c4d9;
+}
+
+.sidebar-collapse:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .menu {
