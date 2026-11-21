@@ -46,7 +46,9 @@ const mapTaskSets = computed(() =>
 
 const roadnet = ref<RoadNetPayload | null>(null)
 const maxAgvCount = computed(() => {
-  const total = (roadnet.value?.nodes ?? [])
+  // 路网还没加载时先不限制，否则输入框会把默认的 3 台夹成 1 台
+  if (!roadnet.value) return 99
+  const total = (roadnet.value.nodes ?? [])
     .filter((node) => node.type === 'CHARGER')
     .reduce((sum, node) => sum + Math.max(1, node.capacity ?? 1), 0)
   return total > 0 ? total : 1
@@ -717,7 +719,7 @@ onBeforeUnmount(() => {
       </el-select>
       <span class="field-label">AGV 数量</span>
       <el-input-number v-model="agvCount" :min="1" :max="maxAgvCount" style="width: 120px" :disabled="running || replayMode" />
-      <span class="field-hint">最多 {{ maxAgvCount }} 台</span>
+      <span v-if="roadnet" class="field-hint">最多 {{ maxAgvCount }} 台</span>
       <span class="field-label">随机种子</span>
       <el-input-number v-model="seed" :min="0" :controls="false" style="width: 140px" :disabled="running || replayMode" />
       <el-button type="primary" :disabled="running || replayMode || !selectedTaskSetId" @click="start">开始</el-button>
