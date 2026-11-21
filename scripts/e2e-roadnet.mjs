@@ -122,6 +122,10 @@ async function main() {
     await page.waitForURL('**/dashboard', { timeout: 15000 })
 
     console.log('左侧导航可收起')
+    assert(
+      (await page.locator('.aside').getByRole('button', { name: '收起侧边栏' }).count()) === 1,
+      '收起按钮位于侧边栏标题栏'
+    )
     await page.getByRole('button', { name: '收起侧边栏' }).click()
     await page.waitForTimeout(200)
     assert(!(await page.locator('.aside').isVisible()), '侧边栏可以收起')
