@@ -119,19 +119,17 @@ async function main() {
       speedDisabled: document.querySelectorAll('.speed-group .el-radio-button.is-disabled').length,
       speedChecked: document.querySelector('.speed-group .el-radio-button.is-active')?.textContent?.trim(),
       rows: document.querySelectorAll('.agv-row').length,
-      hint: document.querySelector('.agv-panel')?.textContent ?? ''
+      hint: document.querySelector('.agv-panel')?.textContent ?? '',
+      agvValue: document.querySelector('.toolbar .el-input-number input')?.value
     }))
     assert(idle.speedDisabled === 4, '空闲时倍速按钮全部禁用')
     assert(idle.speedChecked === '1x', '空闲时倍速停在 1x')
     assert(idle.rows === 0 && idle.hint.includes('尚未启动仿真'), '空闲时不显示车辆')
+    assert(idle.agvValue === '3', `默认 AGV 数量为 3（实际 ${idle.agvValue}）`)
 
     await page.screenshot({ path: path.join(OUT, 'sim-idle-1440x900.png') })
 
     console.log('启动仿真')
-    // 首次加载时路网还没回来，输入框会按默认上限把 3 台夹到 1 台；这里显式设回 3 台
-    const agvInput = page.locator('.toolbar .el-input-number input').first()
-    await agvInput.fill('3')
-    await agvInput.press('Enter')
     await page.getByRole('button', { name: '开始', exact: true }).click()
     const firstTick = await waitForTick(page, 'tick > 0')
     assert(firstTick > 0, `启动后 tick 开始递增（tick=${firstTick}）`)
