@@ -2,7 +2,7 @@
 // 前置：后端 http://localhost:8080 与前端 http://localhost:5173 已启动。
 // 首次运行需安装浏览器：cd agv-frontend && npx playwright install chromium
 // 用法：cd agv-frontend && npm run e2e:roadnet
-// 覆盖：布局与工具栏、节点/路段编辑、区域创建/改名/移动/缩放/删除/撤销、搜索、任务流向、3D 区域与空格平移、全屏。
+// 覆盖：左侧导航收起、布局与工具栏、节点/路段编辑、区域创建/改名/移动/缩放/删除/撤销、搜索、任务流向、3D 区域与空格平移、全屏。
 import { createRequire } from 'node:module'
 import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
@@ -120,6 +120,20 @@ async function main() {
     await page.getByPlaceholder('请输入密码').fill('admin123')
     await page.getByRole('button', { name: '登录' }).click()
     await page.waitForURL('**/dashboard', { timeout: 15000 })
+
+    console.log('左侧导航可收起')
+    await page.getByRole('button', { name: '收起侧边栏' }).click()
+    await page.waitForTimeout(200)
+    assert(!(await page.locator('.aside').isVisible()), '侧边栏可以收起')
+    await page.reload({ waitUntil: 'networkidle' })
+    await page.waitForFunction(() => document.querySelector('.header-title') != null, null, {
+      timeout: 15000
+    })
+    assert(!(await page.locator('.aside').isVisible()), '刷新后仍保持收起')
+    await page.getByRole('button', { name: '展开侧边栏' }).click()
+    await page.waitForTimeout(200)
+    assert(await page.locator('.aside').isVisible(), '侧边栏可以重新展开')
+
     await page.evaluate(() => {
       localStorage.setItem('agv_roadnet_minimap_collapsed', '0')
       localStorage.setItem('agv_roadnet_legend_collapsed', '0')
