@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { RoadNetPayload } from '@/api/roadnet'
+import { mapZones, zoneExtents } from '@/utils/mapZones'
 
 const props = defineProps<{
   roadnet: RoadNetPayload | null
@@ -42,12 +43,21 @@ const edges = computed(() => {
 const bounds = computed(() => {
   const list = nodes.value
   if (list.length === 0) return { x: 0, y: 0, width: 50, height: 34 }
+
   const xs = list.map((node) => node.x)
   const ys = list.map((node) => node.y)
-  const minX = Math.min(...xs)
-  const maxX = Math.max(...xs)
-  const minY = Math.min(...ys)
-  const maxY = Math.max(...ys)
+  let minX = Math.min(...xs)
+  let maxX = Math.max(...xs)
+  let minY = Math.min(...ys)
+  let maxY = Math.max(...ys)
+  const extents = zoneExtents(props.roadnet?.zones)
+  if (extents) {
+    minX = Math.min(minX, extents.minX)
+    maxX = Math.max(maxX, extents.maxX)
+    minY = Math.min(minY, extents.minY)
+    maxY = Math.max(maxY, extents.maxY)
+  }
+
   const span = Math.max(maxX - minX, maxY - minY, 4)
   const padding = Math.max(1.5, span * 0.12)
   return {
@@ -66,6 +76,8 @@ const unit = computed(() => Math.max(bounds.value.width, bounds.value.height))
 const dotRadius = computed(() => clamp(unit.value / 70, 0.28, 1.1))
 const stationRadius = computed(() => dotRadius.value * 1.35)
 const labelSize = computed(() => clamp(unit.value / 36, 0.55, 1.8))
+const zoneLabelSize = computed(() => clamp(unit.value / 32, 0.5, 1.4))
+const zones = computed(() => mapZones(props.roadnet?.zones, unit.value))
 const roadWidth = computed(() => clamp(unit.value / 26, 0.5, 2.2))
 const lineWidth = computed(() => clamp(unit.value / 260, 0.05, 0.16))
 const gridSize = computed(() => Math.max(1, Math.round(unit.value / 12)))
@@ -133,6 +145,22 @@ function nodeTitle(node: { id: string; station: boolean }) {
         fill="url(#task-map-grid)"
       />
 
+      <g v-if="zones.length > 0" class="zone-shapes">
+        <rect
+          v-for="zone in zones"
+          :key="`zone-${zone.id}`"
+          class="zone-rect"
+          :x="zone.x"
+          :y="zone.y"
+          :width="zone.width"
+          :height="zone.height"
+          :rx="dotRadius * 0.8"
+          :fill="zone.color"
+          :stroke="zone.color"
+          :stroke-width="lineWidth * 2"
+        />
+      </g>
+
       <g class="edges">
         <line
           v-for="edge in edges"
@@ -154,6 +182,22 @@ function nodeTitle(node: { id: string; station: boolean }) {
           :y2="edge.y2"
           :stroke-width="lineWidth"
         />
+      </g>
+
+      <g v-if="zones.length > 0" class="zone-labels">
+        <text
+          v-for="zone in zones"
+          v-show="zone.showLabel"
+          :key="`zone-label-${zone.id}`"
+          :x="zone.x + zoneLabelSize * 0.5"
+          :y="zone.y + zone.height - zoneLabelSize * 0.5"
+          :fill="zone.color"
+          :font-size="zoneLabelSize"
+          :stroke-width="zoneLabelSize * 0.18"
+          class="zone-label"
+        >
+          {{ zone.name }}
+        </text>
       </g>
 
       <g
@@ -221,6 +265,27 @@ function nodeTitle(node: { id: string; station: boolean }) {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.zone-shapes,
+.zone-labels {
+  pointer-events: none;
+}
+
+.zone-rect {
+  fill-opacity: 0.16;
+  stroke-opacity: 0.55;
+}
+
+.zone-label {
+  font-weight: 700;
+  text-anchor: start;
+  fill-opacity: 0.92;
+  stroke: #ffffff;
+  stroke-opacity: 0.9;
+  paint-order: stroke;
+  pointer-events: none;
+  user-select: none;
 }
 
 .edge-road {
