@@ -1,0 +1,4701 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>设计稿 · 排策智演 AGV 调度仿真</title>
+    <style>
+      :root {
+        --bg: #f3f1ea;
+        --panel: #ffffff;
+        --panel-2: #fcfcfa;
+        --panel-3: #efeee9;
+        --line: rgba(17, 17, 17, 0.09);
+        --line-2: rgba(17, 17, 17, 0.16);
+        --text: #111111;
+        --text-2: #5f5f59;
+        --text-3: #74746e;
+        --accent: #e5342a;
+        --accent-hi: #ff665c;
+        --accent-deep: #b42318;
+        --accent-soft: rgba(229, 52, 42, 0.08);
+        --mint: #111111;
+        --mint-soft: rgba(17, 17, 17, 0.05);
+        --amber: #7a7a74;
+        --amber-soft: rgba(17, 17, 17, 0.05);
+        --ok: #177a42;
+        --ok-soft: rgba(23, 122, 66, 0.09);
+        --rose: #e5342a;
+        --rose-soft: rgba(229, 52, 42, 0.08);
+        --violet: #5f5f59;
+        --radius: 12px;
+        --radius-sm: 8px;
+        --font: "Inter", "HarmonyOS Sans SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+        --font-display: "Bahnschrift", "DIN Alternate", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+        --mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, ui-monospace, monospace;
+        --s1: 4px;
+        --s2: 8px;
+        --s3: 12px;
+        --s4: 16px;
+        --s5: 24px;
+        --s6: 32px;
+        --s7: 48px;
+        --s8: 64px;
+        --shadow-md: 0 2px 4px rgba(17, 17, 17, 0.04), 0 16px 32px -8px rgba(17, 17, 17, 0.12);
+        --shadow-lg: 0 4px 10px rgba(17, 17, 17, 0.05), 0 32px 64px -16px rgba(17, 17, 17, 0.18);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background-color: var(--bg);
+        background-image:
+          radial-gradient(1100px 520px at 12% -10%, rgba(17, 17, 17, 0.035), transparent 60%),
+          linear-gradient(rgba(17, 17, 17, 0.022) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(17, 17, 17, 0.022) 1px, transparent 1px);
+        background-size: auto, 24px 24px, 24px 24px;
+        color: var(--text);
+        font-family: var(--font);
+        font-size: 14px;
+        line-height: 1.5;
+        overflow: hidden;
+      }
+
+      button,
+      input,
+      select {
+        font-family: inherit;
+      }
+
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: rgba(17, 17, 17, 0.14);
+        border-radius: 99px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Shell                                                               */
+      /* ------------------------------------------------------------------ */
+      .shell {
+        display: grid;
+        grid-template-columns: 78px minmax(0, 1fr);
+        height: 100vh;
+      }
+
+      .rail {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--s2);
+        padding: 14px 8px 12px;
+        background: linear-gradient(180deg, #fafaf7 0%, #f8f7f3 100%);
+        border-right: 1px solid var(--line);
+        z-index: 30;
+      }
+
+      .brand {
+        width: 38px;
+        height: 38px;
+        border-radius: 11px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(140deg, #d8d7d2, #d8d7d2);
+        border: 1px solid rgba(17, 17, 17, 0.24);
+        box-shadow: 0 0 22px rgba(229, 52, 42, 0.22);
+        margin-bottom: var(--s3);
+      }
+
+      .brand svg {
+        width: 22px;
+        height: 22px;
+        color: var(--accent);
+      }
+
+      .rail-item {
+        position: relative;
+        width: 62px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--text-3);
+        border-radius: 10px;
+        padding: 8px 2px 6px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+        transition: color 0.16s, background 0.16s, border-color 0.16s;
+      }
+
+      .rail-item svg {
+        width: 19px;
+        height: 19px;
+      }
+
+      .rail-item span {
+        font-size: 10px;
+        letter-spacing: 0.04em;
+      }
+
+      .rail-item:hover {
+        color: var(--text-2);
+        background: rgba(17, 17, 17, 0.05);
+      }
+
+      .rail-item.active {
+        color: var(--accent-hi);
+        background: var(--accent-soft);
+        border-color: rgba(229, 52, 42, 0.22);
+      }
+
+      .rail-item.active::before {
+        content: "";
+        position: absolute;
+        left: -8px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 2px;
+        height: 36px;
+        border-radius: 0 2px 2px 0;
+        background: var(--accent);
+        box-shadow: 0 0 10px rgba(229, 52, 42, 0.6);
+      }
+
+      .rail-spacer {
+        flex: 1;
+      }
+
+      .rail-spec {
+        width: 100%;
+        border: 1px dashed rgba(17, 17, 17, 0.18);
+        border-radius: 9px;
+        padding: 8px 4px;
+        background: transparent;
+        color: var(--text-3);
+        font-size: 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        cursor: pointer;
+      }
+
+      .rail-spec:hover {
+        color: var(--accent);
+        border-color: rgba(229, 52, 42, 0.4);
+      }
+
+      .rail-avatar {
+        margin-top: var(--s3);
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(140deg, #d8d7d2, #ffffff);
+        border: 1px solid var(--line-2);
+        color: var(--text-2);
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      .workspace {
+        min-width: 0;
+        display: grid;
+        grid-template-rows: 64px minmax(0, 1fr);
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: var(--s4);
+        padding: 0 var(--s5);
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(14px);
+        z-index: 20;
+      }
+
+      .page-id {
+        display: flex;
+        align-items: baseline;
+        gap: var(--s3);
+        min-width: 0;
+      }
+
+      .page-id h1 {
+        margin: 0;
+        font-size: 17px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+      }
+
+      .page-id p {
+        margin: 0;
+        font-size: 12px;
+        color: var(--text-3);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .topbar-search {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: var(--s2);
+        width: 260px;
+        height: 34px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: rgba(17, 17, 17, 0.03);
+        color: var(--text-3);
+        font-size: 12px;
+      }
+
+      .topbar-search kbd {
+        margin-left: auto;
+        font-family: var(--mono);
+        font-size: 10px;
+        padding: 1px 5px;
+        border: 1px solid var(--line-2);
+        border-radius: 4px;
+        color: var(--text-3);
+      }
+
+      .draft-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        color: var(--amber);
+        border: 1px dashed rgba(90, 90, 85, 0.45);
+        background: rgba(90, 90, 85, 0.06);
+        border-radius: 99px;
+        padding: 3px 9px;
+        text-transform: uppercase;
+      }
+
+      .env-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: var(--mint);
+        background: var(--mint-soft);
+        border: 1px solid rgba(17, 17, 17, 0.22);
+        border-radius: 99px;
+        padding: 3px 9px;
+      }
+
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 8px currentColor;
+      }
+
+      .topbar-user {
+        display: flex;
+        align-items: center;
+        gap: var(--s2);
+        font-size: 12px;
+        color: var(--text-2);
+        padding-left: var(--s4);
+        border-left: 1px solid var(--line);
+      }
+
+      .role {
+        color: var(--amber);
+        border: 1px solid rgba(90, 90, 85, 0.3);
+        background: rgba(90, 90, 85, 0.08);
+        border-radius: 99px;
+        padding: 2px 7px;
+        font-size: 10px;
+      }
+
+      .stage {
+        position: relative;
+        min-height: 0;
+      }
+
+      .screen {
+        position: absolute;
+        inset: 0;
+        display: none;
+        overflow: auto;
+        padding: var(--s5);
+      }
+
+      .screen.active {
+        display: block;
+      }
+
+      .screen.sim-screen {
+        padding: 0;
+        overflow: hidden;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Primitives                                                          */
+      /* ------------------------------------------------------------------ */
+      .panel {
+        min-width: 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95));
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        gap: var(--s2);
+        padding: 13px var(--s4);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .panel-head h2 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+
+      .panel-head .sub {
+        color: var(--text-3);
+        font-size: 11px;
+      }
+
+      .panel-head .right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .eyebrow {
+        font-size: 10px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-3);
+      }
+
+      .mono {
+        font-family: var(--mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .muted {
+        color: var(--text-3);
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 12px;
+        border: 1px solid var(--line-2);
+        border-radius: var(--radius-sm);
+        background: rgba(17, 17, 17, 0.04);
+        color: var(--text-2);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: border-color 0.16s, color 0.16s, background 0.16s;
+      }
+
+      .btn:hover {
+        color: var(--text);
+        border-color: rgba(17, 17, 17, 0.32);
+        background: rgba(17, 17, 17, 0.06);
+      }
+
+      .btn.primary {
+        border-color: rgba(229, 52, 42, 0.55);
+        background: linear-gradient(180deg, #111111, #d8d7d2);
+        color: #f7f6f2;
+        font-weight: 700;
+        box-shadow: 0 0 22px rgba(229, 52, 42, 0.18);
+      }
+
+      .btn.primary:hover {
+        background: linear-gradient(180deg, #ffffff, #e8e7e2);
+        color: #111111;
+      }
+
+      .btn.ghost {
+        border-color: transparent;
+        background: transparent;
+        color: var(--text-3);
+      }
+
+      .btn.icon {
+        width: 32px;
+        padding: 0;
+      }
+
+      .btn svg {
+        width: 14px;
+        height: 14px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 2px 8px;
+        border-radius: 99px;
+        font-size: 10px;
+        letter-spacing: 0.03em;
+        border: 1px solid var(--line);
+        color: var(--text-2);
+        background: rgba(17, 17, 17, 0.05);
+        white-space: nowrap;
+      }
+
+      .chip.live {
+        color: var(--mint);
+        border-color: rgba(17, 17, 17, 0.28);
+        background: var(--mint-soft);
+      }
+
+      .chip.warn {
+        color: var(--accent);
+        border-color: rgba(229, 52, 42, 0.32);
+        background: rgba(229, 52, 42, 0.06);
+      }
+
+      .chip.ok {
+        color: var(--ok);
+        border-color: rgba(23, 122, 66, 0.3);
+        background: var(--ok-soft);
+      }
+
+      .chip.ok .dot {
+        color: var(--ok);
+      }
+
+      .chip.danger {
+        color: var(--rose);
+        border-color: rgba(229, 52, 42, 0.3);
+        background: var(--rose-soft);
+      }
+
+      .chip.accent {
+        color: var(--accent);
+        border-color: rgba(229, 52, 42, 0.3);
+        background: var(--accent-soft);
+      }
+
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+      }
+
+      .field label {
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        color: var(--text-3);
+      }
+
+      .control {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 34px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: rgba(255, 255, 255, 0.65);
+        color: var(--text);
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .control:hover {
+        border-color: var(--line-2);
+      }
+
+      .control .value {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .control svg {
+        width: 12px;
+        height: 12px;
+        color: var(--text-3);
+        flex: 0 0 auto;
+      }
+
+      .icon {
+        width: 16px;
+        height: 16px;
+        display: block;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Overview                                                            */
+      /* ------------------------------------------------------------------ */
+      .kpi-row {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--s4);
+        margin-bottom: var(--s4);
+      }
+
+      .kpi {
+        position: relative;
+        padding: 16px;
+        overflow: hidden;
+      }
+
+      .kpi::after {
+        content: "";
+        position: absolute;
+        right: -30px;
+        top: -30px;
+        width: 110px;
+        height: 110px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(17, 17, 17, 0.05), transparent 65%);
+      }
+
+      .kpi-label {
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-3);
+      }
+
+      .kpi-value {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .kpi-value strong {
+        font-family: var(--mono);
+        font-size: 30px;
+        line-height: 1;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+      }
+
+      .kpi-value em {
+        font-style: normal;
+        font-size: 11px;
+        color: var(--text-3);
+      }
+
+      .kpi-sub {
+        margin-top: 10px;
+        font-size: 11px;
+        color: var(--text-3);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .delta-up {
+        color: var(--mint);
+      }
+      .delta-warn {
+        color: var(--accent);
+      }
+
+      .overview-main {
+        display: grid;
+        grid-template-columns: minmax(0, 1.7fr) minmax(340px, 0.9fr);
+        gap: var(--s4);
+        margin-bottom: var(--s4);
+      }
+
+      .live-panel {
+        display: flex;
+        flex-direction: column;
+        min-height: 390px;
+      }
+
+      .live-map {
+        position: relative;
+        flex: 1;
+        min-height: 0;
+        margin: 0 var(--s4) var(--s4);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        background:
+          radial-gradient(700px 320px at 50% 20%, rgba(17, 17, 17, 0.04), transparent 65%),
+          #fafaf7;
+      }
+
+      .live-map svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .live-overlay {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        display: flex;
+        gap: 6px;
+      }
+
+      .live-legend {
+        position: absolute;
+        left: 12px;
+        bottom: 12px;
+        display: flex;
+        gap: 12px;
+        font-size: 10px;
+        color: var(--text-3);
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid var(--line);
+        padding: 5px 9px;
+        border-radius: 99px;
+        backdrop-filter: blur(8px);
+      }
+
+      .live-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .live-legend i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+
+      .launch-panel {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .launch-body {
+        padding: var(--s4);
+        display: flex;
+        flex-direction: column;
+        gap: var(--s3);
+      }
+
+      .launch-body .btn.primary {
+        height: 38px;
+        margin-top: 2px;
+      }
+
+      .health {
+        margin-top: auto;
+        border-top: 1px solid var(--line);
+        padding: 12px var(--s4);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .health-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        color: var(--text-3);
+      }
+
+      .health-row b {
+        margin-left: auto;
+        font-weight: 500;
+        color: var(--text-2);
+      }
+
+      .overview-bottom {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(320px, 1fr);
+        gap: var(--s4);
+      }
+
+      .table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      .table th {
+        text-align: left;
+        font-weight: 500;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-3);
+        padding: 9px var(--s4);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .table td {
+        padding: 11px var(--s4);
+        border-bottom: 1px solid var(--line);
+        color: var(--text-2);
+      }
+
+      .table tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      .table tbody tr:hover td {
+        background: rgba(17, 17, 17, 0.03);
+      }
+
+      .table .strong {
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      .id-cell {
+        max-width: 120px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text-3);
+      }
+
+      .feed {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+      }
+
+      .feed-row {
+        display: grid;
+        grid-template-columns: 54px 8px minmax(0, 1fr);
+        gap: 10px;
+        align-items: start;
+        padding: 10px var(--s4);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .feed-row:last-child {
+        border-bottom: none;
+      }
+
+      .feed-time {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--text-3);
+        padding-top: 2px;
+      }
+
+      .feed-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        margin-top: 5px;
+        background: var(--accent);
+        box-shadow: 0 0 8px currentColor;
+      }
+
+      .feed-dot.warn {
+        background: var(--amber);
+      }
+      .feed-dot.ok {
+        background: var(--mint);
+      }
+
+      .feed-text {
+        font-size: 12px;
+        color: var(--text-2);
+        line-height: 1.55;
+      }
+
+      .feed-text b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Simulation                                                          */
+      /* ------------------------------------------------------------------ */
+      .sim-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        grid-template-rows: minmax(0, 1fr) 72px;
+        height: 100%;
+      }
+
+      .sim-stage {
+        position: relative;
+        min-width: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(1000px 600px at 50% 0%, rgba(17, 17, 17, 0.04), transparent 60%),
+          #f6f5f1;
+        border-right: 1px solid var(--line);
+      }
+
+      .sim-stage > .sim-map {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .sim-top {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        top: 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        pointer-events: none;
+      }
+
+      .sim-top > * {
+        pointer-events: auto;
+      }
+
+      .glass {
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        backdrop-filter: blur(14px);
+        box-shadow: var(--shadow-md);
+      }
+
+      .scenario-pill {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 38px;
+        padding: 0 12px;
+        font-size: 12px;
+        color: var(--text-2);
+      }
+
+      .scenario-pill b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      .sim-top-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .sim-tools {
+        position: absolute;
+        left: 18px;
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding: 5px;
+        border-radius: 11px;
+      }
+
+      .tool {
+        width: 34px;
+        height: 34px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-3);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .tool:hover {
+        color: var(--text);
+        background: rgba(17, 17, 17, 0.06);
+      }
+
+      .tool.active {
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .tool svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .sim-hint {
+        position: absolute;
+        left: 18px;
+        bottom: 14px;
+        font-size: 10px;
+        color: var(--text-3);
+        display: flex;
+        gap: 12px;
+        background: rgba(255, 255, 255, 0.75);
+        border: 1px solid var(--line);
+        border-radius: 99px;
+        padding: 5px 10px;
+        backdrop-filter: blur(8px);
+      }
+
+      .sim-hint kbd {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--text-2);
+        border: 1px solid var(--line-2);
+        border-radius: 4px;
+        padding: 0 4px;
+        margin-right: 3px;
+      }
+
+      .sim-drawer {
+        min-height: 0;
+        overflow: auto;
+        background: linear-gradient(180deg, #fafaf7 0%, #f8f7f3 100%);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .drawer-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .drawer-head h2 {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .drawer-actions {
+        margin-left: auto;
+        display: flex;
+        gap: 2px;
+      }
+
+      .tick-block {
+        padding: 16px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 84px;
+        gap: 12px;
+        align-items: center;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .tick-value {
+        font-family: var(--mono);
+        font-size: 32px;
+        line-height: 1;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+      }
+
+      .tick-label {
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        color: var(--text-3);
+        text-transform: uppercase;
+      }
+
+      .ring {
+        position: relative;
+        width: 76px;
+        height: 76px;
+      }
+
+      .ring svg {
+        transform: rotate(-90deg);
+      }
+
+      .ring-value {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-family: var(--mono);
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--mint);
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border-bottom: 1px solid var(--line);
+      }
+
+      .metric {
+        padding: 12px 14px;
+        border-right: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .metric:nth-child(3n) {
+        border-right: none;
+      }
+      .metric:nth-last-child(-n + 3) {
+        border-bottom: none;
+      }
+
+      .metric-label {
+        font-size: 9px;
+        letter-spacing: 0.1em;
+        color: var(--text-3);
+        text-transform: uppercase;
+      }
+
+      .metric-value {
+        margin-top: 5px;
+        font-family: var(--mono);
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--text);
+        letter-spacing: -0.02em;
+      }
+
+      .metric-value small {
+        font-size: 9px;
+        color: var(--text-3);
+        margin-left: 2px;
+        font-weight: 400;
+      }
+
+      .drawer-section {
+        border-bottom: 1px solid var(--line);
+      }
+
+      .drawer-section:last-child {
+        border-bottom: none;
+        flex: 1;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: center;
+        padding: 10px 16px 8px;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-3);
+      }
+
+      .section-head span:last-child {
+        margin-left: auto;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+
+      .fleet-row {
+        display: grid;
+        grid-template-columns: 8px 58px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 16px;
+        border-left: 2px solid transparent;
+      }
+
+      .fleet-row:hover {
+        background: rgba(17, 17, 17, 0.03);
+      }
+
+      .fleet-row.selected {
+        background: var(--accent-soft);
+        border-left-color: var(--accent);
+      }
+
+      .fleet-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 8px currentColor;
+      }
+
+      .fleet-id {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text);
+      }
+
+      .fleet-task {
+        font-size: 10px;
+        color: var(--text-3);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .event-list {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .event-row {
+        display: grid;
+        grid-template-columns: 40px 6px minmax(0, 1fr);
+        gap: 8px;
+        padding: 7px 16px;
+        align-items: start;
+        font-size: 11px;
+        color: var(--text-2);
+        line-height: 1.5;
+      }
+
+      .event-tick {
+        font-family: var(--mono);
+        font-size: 9px;
+        color: var(--text-3);
+        padding-top: 1px;
+      }
+
+      .event-row .dot {
+        margin-top: 5px;
+      }
+
+      .sim-timeline {
+        grid-column: 1 / -1;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 0 18px;
+        border-top: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(12px);
+      }
+
+      .transport {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .round-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 1px solid var(--line-2);
+        background: rgba(17, 17, 17, 0.05);
+        color: var(--text-2);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .round-btn.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #f7f6f2;
+      }
+
+      .round-btn svg {
+        width: 15px;
+        height: 15px;
+      }
+
+      .timeline {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .timeline .track {
+        position: relative;
+        flex: 1;
+        height: 4px;
+        border-radius: 99px;
+        background: rgba(17, 17, 17, 0.12);
+      }
+
+      .timeline .fill {
+        position: absolute;
+        inset: 0 38% 0 0;
+        border-radius: 99px;
+        background: linear-gradient(90deg, #b9b8b2, #111111);
+        box-shadow: none;
+      }
+
+      .timeline .thumb {
+        position: absolute;
+        top: 50%;
+        left: 62%;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--accent);
+        border: 2px solid #111111;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 0 10px rgba(229, 52, 42, 0.55);
+      }
+
+      .timeline .time {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text-2);
+        white-space: nowrap;
+      }
+
+      .speed-group {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 3px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .speed {
+        border: 0;
+        background: transparent;
+        color: var(--text-3);
+        font-family: var(--mono);
+        font-size: 10px;
+        padding: 4px 7px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      .speed:hover {
+        color: var(--text-2);
+      }
+
+      .speed.active {
+        color: #f7f6f2;
+        background: var(--accent);
+        font-weight: 600;
+      }
+
+      /* Sim map */
+      .sim-road {
+        stroke: #e2e1db;
+        stroke-width: 30;
+        stroke-linecap: round;
+        fill: none;
+      }
+      .sim-road-center {
+        stroke: rgba(17, 17, 17, 0.2);
+        stroke-width: 1.4;
+        stroke-dasharray: 9 12;
+        fill: none;
+      }
+      .sim-zone {
+        stroke-width: 1.2;
+        fill-opacity: 0.08;
+        stroke-opacity: 0.32;
+      }
+      .sim-zone-label {
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        opacity: 0.75;
+      }
+      .sim-node {
+        fill: #f4f3ee;
+        stroke: #8c8b85;
+        stroke-width: 2;
+      }
+      .sim-node.station {
+        fill: #ffffff;
+        stroke: #e5342a;
+        stroke-width: 2.4;
+      }
+      .sim-node-label {
+        font-family: var(--mono);
+        font-size: 11px;
+        fill: #5f5f59;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+      .agv-body {
+        fill: #f0efea;
+        stroke: #111111;
+        stroke-width: 1.6;
+      }
+      .agv-glow {
+        fill: rgba(229, 52, 42, 0.18);
+        filter: blur(6px);
+      }
+      .agv-label {
+        font-family: var(--mono);
+        font-size: 10px;
+        fill: #111111;
+        text-anchor: middle;
+        font-weight: 600;
+      }
+      .agv-status {
+        font-size: 9px;
+        fill: #d8d7d2;
+        text-anchor: middle;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Map studio                                                          */
+      /* ------------------------------------------------------------------ */
+      .studio {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 336px;
+        gap: var(--s4);
+        height: calc(100vh - 64px - 48px);
+        min-height: 560px;
+      }
+
+      .studio-canvas {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background:
+          radial-gradient(700px 400px at 10% 0%, rgba(17, 17, 17, 0.03), transparent 60%),
+          #fafaf7;
+      }
+
+      .studio-canvas > .studio-map {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .studio-top {
+        position: absolute;
+        top: 12px;
+        left: 12px;
+        right: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .studio-top .glass {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 36px;
+        padding: 0 10px;
+      }
+
+      .seg {
+        display: flex;
+        padding: 2px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        gap: 2px;
+      }
+
+      .seg button {
+        border: 0;
+        background: transparent;
+        color: var(--text-3);
+        font-size: 11px;
+        padding: 4px 9px;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+
+      .seg button.active {
+        color: var(--text);
+        background: rgba(17, 17, 17, 0.09);
+      }
+
+      .studio-tools {
+        position: absolute;
+        top: 50%;
+        left: 12px;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        padding: 5px;
+        border-radius: 11px;
+      }
+
+      .studio-zoom {
+        position: absolute;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 3px;
+        border-radius: 9px;
+      }
+
+      .zoom-btn {
+        width: 28px;
+        height: 28px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--text-2);
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+
+      .zoom-btn:hover {
+        background: rgba(17, 17, 17, 0.06);
+      }
+
+      .zoom-val {
+        min-width: 44px;
+        text-align: center;
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--text-2);
+      }
+
+      .studio-status {
+        position: absolute;
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 7px 10px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.7999999999999999);
+        border: 1px solid var(--line);
+        backdrop-filter: blur(10px);
+        font-size: 10px;
+        color: var(--text-3);
+      }
+
+      .studio-status b {
+        color: var(--text-2);
+        font-weight: 500;
+      }
+
+      .studio-status .right {
+        margin-left: auto;
+        display: flex;
+        gap: 12px;
+      }
+
+      .inspector {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .tabs {
+        display: flex;
+        gap: 2px;
+        padding: 4px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .tab {
+        flex: 1;
+        border: 0;
+        background: transparent;
+        color: var(--text-3);
+        font-size: 11px;
+        padding: 7px 4px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      .tab.active {
+        color: var(--text);
+        background: rgba(17, 17, 17, 0.08);
+      }
+
+      .inspector-body {
+        padding: var(--s4);
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: var(--s4);
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .form-grid .field.full {
+        grid-column: 1 / -1;
+      }
+
+      .select-strip {
+        display: flex;
+        gap: 4px;
+        padding: 3px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.6);
+      }
+
+      .select-strip span {
+        flex: 1;
+        text-align: center;
+        font-size: 10px;
+        padding: 4px;
+        border-radius: 5px;
+        color: var(--text-3);
+      }
+
+      .select-strip span.active {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .inspector-divider {
+        height: 1px;
+        background: var(--line);
+      }
+
+      .stat-line {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 11px;
+        color: var(--text-3);
+        padding: 3px 0;
+      }
+
+      .stat-line b {
+        color: var(--text);
+        font-family: var(--mono);
+        font-weight: 500;
+      }
+
+      .check-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--line);
+        font-size: 11px;
+        color: var(--text-2);
+        line-height: 1.5;
+      }
+
+      .check-row:last-child {
+        border-bottom: none;
+      }
+
+      .check-row svg {
+        width: 13px;
+        height: 13px;
+        flex: 0 0 13px;
+        margin-top: 2px;
+      }
+
+      .check-row.ok svg {
+        color: var(--mint);
+      }
+      .check-row.warn svg {
+        color: var(--amber);
+      }
+
+      /* Studio map */
+      .studio-zone {
+        fill-opacity: 0.1;
+        stroke-opacity: 0.42;
+        stroke-width: 1.2;
+      }
+      .studio-zone-label {
+        font-size: 10px;
+        letter-spacing: 0.06em;
+        opacity: 0.7;
+      }
+      .studio-road {
+        stroke: #e2e1db;
+        stroke-width: 18;
+        stroke-linecap: round;
+      }
+      .studio-road-line {
+        stroke: rgba(17, 17, 17, 0.24);
+        stroke-width: 1;
+        stroke-dasharray: 6 8;
+      }
+      .studio-node {
+        fill: #f4f3ee;
+        stroke: #8c8b85;
+        stroke-width: 2;
+        cursor: pointer;
+      }
+      .studio-node.station {
+        fill: #ffffff;
+        stroke: #e5342a;
+      }
+      .studio-node.buffer {
+        fill: #f2f1ec;
+        stroke: #c9c8c2;
+      }
+      .studio-node.charger {
+        fill: #f0efea;
+        stroke: #111111;
+      }
+      .studio-node.selected {
+        stroke: #ffffff;
+        stroke-width: 3;
+      }
+      .studio-node-label {
+        font-family: var(--mono);
+        font-size: 9px;
+        fill: #5f5f59;
+        text-anchor: middle;
+        pointer-events: none;
+      }
+      .studio-selection {
+        fill: none;
+        stroke: var(--accent);
+        stroke-width: 1.6;
+        stroke-dasharray: 5 4;
+        opacity: 0.9;
+      }
+      .studio-dim {
+        font-family: var(--mono);
+        font-size: 9px;
+        fill: #deddd7;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Task composer                                                       */
+      /* ------------------------------------------------------------------ */
+      .task-page {
+        height: calc(100vh - 64px - 48px);
+        min-height: 560px;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: var(--s4);
+      }
+
+      .task-head {
+        display: flex;
+        align-items: center;
+        gap: var(--s3);
+      }
+
+      .task-title h2 {
+        margin: 0 0 3px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+
+      .task-title p {
+        margin: 0;
+        font-size: 11px;
+        color: var(--text-3);
+      }
+
+      .task-head-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .composer {
+        display: grid;
+        grid-template-columns: minmax(0, 1.55fr) minmax(340px, 1fr);
+        gap: var(--s4);
+        min-height: 0;
+      }
+
+      .task-map {
+        position: relative;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background:
+          radial-gradient(600px 380px at 40% 10%, rgba(17, 17, 17, 0.03), transparent 60%),
+          #fafaf7;
+      }
+
+      .task-map svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      .map-badge {
+        position: absolute;
+        left: 14px;
+        top: 14px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        padding: 0 10px;
+        border-radius: 99px;
+        font-size: 10px;
+        color: var(--amber);
+        background: rgba(90, 90, 85, 0.1);
+        border: 1px solid rgba(90, 90, 85, 0.28);
+      }
+
+      .map-badge.ok {
+        color: var(--mint);
+        background: var(--mint-soft);
+        border-color: rgba(17, 17, 17, 0.26);
+      }
+
+      .map-legend {
+        position: absolute;
+        left: 14px;
+        bottom: 12px;
+        display: flex;
+        gap: 10px;
+        font-size: 10px;
+        color: var(--text-3);
+      }
+
+      .map-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      .map-legend i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        display: inline-block;
+      }
+
+      .task-station {
+        fill: #ffffff;
+        stroke: #e5342a;
+        stroke-width: 2;
+        cursor: pointer;
+      }
+      .task-station:hover {
+        stroke: #e8e7e2;
+      }
+      .task-station.is-from {
+        fill: #ffffff;
+        stroke: #111111;
+      }
+      .task-station.is-to {
+        fill: #fbedea;
+        stroke: #c9c8c2;
+      }
+      .task-station-label {
+        font-family: var(--mono);
+        font-size: 9px;
+        fill: #5f5f59;
+        text-anchor: middle;
+        pointer-events: none;
+      }
+      .task-marker-badge {
+        font-family: var(--mono);
+        font-size: 7px;
+        font-weight: 700;
+        fill: #f7f6f2;
+        text-anchor: middle;
+      }
+      .task-route {
+        fill: none;
+        stroke: #e5342a;
+        stroke-width: 1.4;
+        stroke-dasharray: 5 5;
+        opacity: 0.8;
+      }
+
+      .task-panel {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .task-tools {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .task-tools .count {
+        margin-left: auto;
+        font-size: 10px;
+        color: var(--text-3);
+      }
+
+      .task-list {
+        flex: 1;
+        overflow: auto;
+        padding: 6px;
+      }
+
+      .task-row {
+        display: grid;
+        grid-template-columns: 26px minmax(0, 1fr) 22px;
+        gap: 8px;
+        align-items: center;
+        padding: 8px;
+        border: 1px solid transparent;
+        border-left: 2px solid transparent;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+
+      .task-row:hover {
+        background: rgba(17, 17, 17, 0.03);
+      }
+
+      .task-row.active {
+        background: var(--accent-soft);
+        border-color: rgba(229, 52, 42, 0.2);
+        border-left-color: var(--accent);
+      }
+
+      .task-seq {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--text-3);
+        text-align: center;
+      }
+
+      .task-row.active .task-seq {
+        color: var(--accent);
+      }
+
+      .task-route-line {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .station-chip {
+        border: 1px solid var(--line-2);
+        background: rgba(17, 17, 17, 0.03);
+        color: var(--text-2);
+        border-radius: 6px;
+        padding: 3px 8px;
+        font-family: var(--mono);
+        font-size: 10px;
+        cursor: pointer;
+        min-width: 48px;
+      }
+
+      .station-chip.empty {
+        border-style: dashed;
+        border-color: var(--line-2);
+        background: transparent;
+        color: var(--text-3);
+      }
+
+      .station-chip.picking {
+        border-color: rgba(90, 90, 85, 0.5);
+        color: var(--amber);
+        background: var(--amber-soft);
+      }
+
+      .task-arrow {
+        color: var(--text-3);
+        font-size: 10px;
+      }
+
+      .row-del {
+        border: 0;
+        background: transparent;
+        color: var(--text-3);
+        cursor: pointer;
+        font-size: 14px;
+        padding: 0;
+      }
+
+      .row-del:hover {
+        color: var(--rose);
+      }
+
+      .task-empty {
+        height: 100%;
+        display: grid;
+        place-items: center;
+        padding: 30px;
+        text-align: center;
+        color: var(--text-3);
+        font-size: 11px;
+        line-height: 1.8;
+      }
+
+      .task-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        border-top: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.44999999999999996);
+      }
+
+      .task-foot .validation {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10px;
+        color: var(--mint);
+      }
+
+      .task-foot .right {
+        margin-left: auto;
+        display: flex;
+        gap: 8px;
+      }
+
+      /* Task map */
+      .composer-zone {
+        fill-opacity: 0.1;
+        stroke-opacity: 0.4;
+        stroke-width: 1.2;
+      }
+      .composer-zone-label {
+        font-size: 10px;
+        opacity: 0.65;
+      }
+      .composer-road {
+        stroke: #e2e1db;
+        stroke-width: 20;
+        stroke-linecap: round;
+      }
+      .composer-road-line {
+        stroke: rgba(17, 17, 17, 0.22);
+        stroke-width: 1;
+        stroke-dasharray: 6 9;
+      }
+      .composer-node {
+        fill: #f4f3ee;
+        stroke: #8c8b85;
+        stroke-width: 2;
+      }
+      .composer-node.station {
+        fill: #ffffff;
+        stroke: #e5342a;
+        stroke-width: 2.4;
+        cursor: pointer;
+      }
+      .composer-node.station:hover {
+        stroke: #e8e7e2;
+      }
+      .composer-node-label {
+        font-family: var(--mono);
+        font-size: 9px;
+        fill: #5f5f59;
+        text-anchor: middle;
+        pointer-events: none;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Experiments                                                         */
+      /* ------------------------------------------------------------------ */
+      .lab {
+        display: flex;
+        flex-direction: column;
+        gap: var(--s4);
+      }
+
+      .run-bar {
+        display: flex;
+        align-items: flex-end;
+        gap: var(--s3);
+        padding: 14px 16px;
+      }
+
+      .run-bar .field {
+        width: 200px;
+      }
+
+      .run-bar .field.narrow {
+        width: 140px;
+      }
+
+      .run-bar .actions {
+        margin-left: auto;
+        display: flex;
+        gap: 8px;
+      }
+
+      .recommend {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 16px;
+        border: 1px solid rgba(17, 17, 17, 0.24);
+        border-radius: 10px;
+        background: linear-gradient(90deg, rgba(17, 17, 17, 0.12), rgba(17, 17, 17, 0.02));
+        color: var(--text-2);
+        font-size: 12px;
+      }
+
+      .recommend b {
+        color: var(--mint);
+        font-weight: 600;
+      }
+
+      .recommend .tag {
+        font-size: 9px;
+        letter-spacing: 0.1em;
+        color: var(--mint);
+        border: 1px solid rgba(17, 17, 17, 0.3);
+        padding: 2px 7px;
+        border-radius: 99px;
+      }
+
+      .metric-cards {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--s4);
+      }
+
+      .metric-card {
+        padding: 16px;
+      }
+
+      .metric-card-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 16px;
+      }
+
+      .metric-card-head h3 {
+        margin: 0;
+        font-size: 12px;
+        font-weight: 600;
+      }
+
+      .metric-card-head .unit {
+        font-size: 9px;
+        color: var(--text-3);
+      }
+
+      .metric-card-head .winner {
+        margin-left: auto;
+        font-size: 9px;
+        color: var(--mint);
+        border: 1px solid rgba(17, 17, 17, 0.3);
+        padding: 2px 6px;
+        border-radius: 99px;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: 54px minmax(0, 1fr) 54px;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+
+      .bar-row:last-child {
+        margin-bottom: 0;
+      }
+
+      .bar-name {
+        font-size: 10px;
+        color: var(--text-3);
+        white-space: nowrap;
+      }
+
+      .bar-track {
+        height: 8px;
+        border-radius: 99px;
+        background: rgba(17, 17, 17, 0.06);
+        overflow: hidden;
+      }
+
+      .bar {
+        height: 100%;
+        border-radius: 99px;
+        transition: width 0.8s ease;
+      }
+
+      .bar.a {
+        background: linear-gradient(90deg, #b42318, #e5342a);
+      }
+
+      .bar.b {
+        background: linear-gradient(90deg, #8c8b85, #111111);
+      }
+
+      .bar-value {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--text);
+        text-align: right;
+      }
+
+      .bar-value small {
+        font-size: 9px;
+        color: var(--text-3);
+        margin-left: 3px;
+      }
+
+      .lab-bottom {
+        display: grid;
+        grid-template-columns: minmax(0, 1.4fr) minmax(320px, 1fr);
+        gap: var(--s4);
+      }
+
+      .trend {
+        padding: 16px;
+      }
+
+      .trend svg {
+        width: 100%;
+        height: 160px;
+        margin-top: 8px;
+      }
+
+      .trend-legend {
+        display: flex;
+        gap: 14px;
+        font-size: 10px;
+        color: var(--text-3);
+      }
+
+      .trend-legend span {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .trend-legend i {
+        width: 12px;
+        height: 2px;
+        border-radius: 2px;
+        display: inline-block;
+      }
+
+      .history-actions {
+        display: flex;
+        gap: 2px;
+        justify-content: flex-end;
+      }
+
+      .link-btn {
+        border: 0;
+        background: transparent;
+        color: var(--text-2);
+        font-size: 10px;
+        cursor: pointer;
+        padding: 2px 4px;
+      }
+
+      .link-btn:hover {
+        color: var(--text);
+      }
+
+      .link-btn.muted {
+        color: var(--text-3);
+      }
+
+      /* 小字标签统一不低于 11px；正文仍为 12–14px。 */
+      .chip,
+      .eyebrow,
+      .kpi-label,
+      .metric-label,
+      .section-head,
+      .tick-label,
+      .fleet-task,
+      .event-tick,
+      .map-legend,
+      .map-badge,
+      .sim-hint,
+      .speed,
+      .zoom-val,
+      .studio-status,
+      .table th {
+        font-size: 11px;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Monochrome signal system                                            */
+      /* ------------------------------------------------------------------ */
+      .btn.primary {
+        background: linear-gradient(180deg, #ffffff, #d8d7d2);
+        border-color: #ffffff;
+        color: #f7f6f2;
+        box-shadow: 0 0 22px rgba(17, 17, 17, 0.08);
+      }
+
+      .btn.primary:hover {
+        background: #ffffff;
+        color: #111111;
+      }
+
+      .round-btn.primary {
+        background: var(--text);
+        border-color: var(--text);
+        color: var(--bg);
+      }
+
+      .speed.active {
+        background: var(--text);
+        color: var(--bg);
+      }
+
+      .chip.accent {
+        color: var(--text);
+        border-color: var(--line-2);
+        background: rgba(17, 17, 17, 0.04);
+      }
+
+      .chip.live .dot,
+      .env-chip .dot {
+        color: var(--ok);
+      }
+
+      .feed-dot {
+        background: #8c8b85;
+        box-shadow: none;
+      }
+      .feed-dot.warn {
+        background: var(--accent);
+      }
+      .feed-dot.ok {
+        background: #111111;
+      }
+
+      .fleet-dot {
+        background: #111111;
+        box-shadow: none;
+      }
+
+      .bar.a {
+        background: linear-gradient(90deg, #b9b8b2, #8c8b85);
+      }
+      .bar.b {
+        background: linear-gradient(90deg, #5f5f59, #111111);
+      }
+
+      .metric-card-head .winner {
+        color: var(--ok);
+        border-color: rgba(23, 122, 66, 0.32);
+      }
+
+      .recommend .tag {
+        color: var(--text-2);
+        border-color: var(--line-2);
+      }
+
+      .recommend {
+        border-color: rgba(17, 17, 17, 0.12);
+        background: linear-gradient(90deg, rgba(17, 17, 17, 0.05), rgba(17, 17, 17, 0.02));
+      }
+
+      .map-badge {
+        color: var(--text);
+        background: rgba(17, 17, 17, 0.05);
+        border-color: var(--line-2);
+      }
+
+      .map-badge.ok {
+        color: var(--text-2);
+        background: rgba(17, 17, 17, 0.04);
+        border-color: var(--line-2);
+      }
+
+      .sim-node.station {
+        stroke: #111111;
+      }
+
+      .agv-body {
+        stroke: #111111;
+      }
+
+      .agv-glow {
+        fill: rgba(17, 17, 17, 0.06);
+      }
+
+      .studio-node.station,
+      .studio-node.selected {
+        stroke: #111111;
+      }
+
+      .composer-node.station {
+        stroke: #d8d7d2;
+      }
+      .composer-node.station.is-from {
+        stroke: #111111;
+      }
+      .composer-node.station.is-to {
+        stroke: var(--accent);
+      }
+
+      .live-map svg circle[stroke="#e5342a"],
+      .login-map svg circle[stroke="#e5342a"] {
+        stroke: #111111;
+      }
+
+      .trend svg polyline:nth-of-type(1) {
+        stroke: #8c8b85;
+      }
+      .trend svg polyline:nth-of-type(2) {
+        stroke: #111111;
+      }
+      .trend svg g[fill="#e5342a"] circle {
+        fill: #8c8b85;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Light paper system                                                  */
+      /* ------------------------------------------------------------------ */
+      .btn.primary {
+        background: #111111;
+        border-color: #111111;
+        color: #ffffff;
+        box-shadow: 0 8px 18px rgba(17, 17, 17, 0.12);
+      }
+
+      .btn.primary:hover {
+        background: #2b2b2b;
+        border-color: #2b2b2b;
+        color: #ffffff;
+      }
+
+      .rail-item.active {
+        color: var(--text);
+        background: rgba(17, 17, 17, 0.05);
+        border-color: var(--line);
+      }
+
+      .panel {
+        background: #ffffff;
+        box-shadow: 0 1px 2px rgba(17, 17, 17, 0.03);
+      }
+
+      .brand,
+      .login-brand .mark {
+        background: linear-gradient(140deg, #f2f1ec, #deddd7);
+        border-color: var(--line-2);
+        box-shadow: 0 2px 6px rgba(17, 17, 17, 0.08);
+      }
+
+      .env-chip,
+      .chip.live {
+        color: var(--text);
+        border-color: var(--line-2);
+        background: rgba(17, 17, 17, 0.03);
+      }
+
+      .env-chip {
+        color: var(--ok);
+        border-color: rgba(23, 122, 66, 0.3);
+        background: var(--ok-soft);
+      }
+
+      .env-chip .dot {
+        color: var(--ok);
+      }
+
+      .sim-drawer,
+      .sim-timeline,
+      .login-card {
+        background: #ffffff;
+      }
+
+      .login-card .control {
+        background: #ffffff;
+      }
+
+      .sim-stage {
+        background:
+          radial-gradient(1000px 600px at 50% 0%, rgba(17, 17, 17, 0.04), transparent 60%),
+          #f3f2ed;
+      }
+
+      .timeline .fill {
+        background: linear-gradient(90deg, #b9b8b2, #111111);
+      }
+
+      .timeline .thumb {
+        background: var(--accent);
+        border-color: #ffffff;
+        box-shadow: 0 0 0 2px rgba(229, 52, 42, 0.16);
+      }
+
+      .task-row.active {
+        background: rgba(229, 52, 42, 0.05);
+        border-color: rgba(229, 52, 42, 0.18);
+        border-left-color: var(--accent);
+      }
+
+      .sim-zone-label,
+      .studio-zone-label,
+      .composer-zone-label,
+      .live-map svg text,
+      .login-map svg text {
+        fill: #5f5f59 !important;
+      }
+
+      .sim-zone-label,
+      .studio-zone-label,
+      .composer-zone-label {
+        opacity: 0.9 !important;
+      }
+
+      .agv-status {
+        fill: #5f5f59;
+      }
+
+      .agv-body {
+        fill: #ffffff;
+        stroke-width: 1.2;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Editorial white refinement                                          */
+      /* ------------------------------------------------------------------ */
+      .rail {
+        background: #0d0d0b;
+        border-right-color: #232320;
+      }
+
+      .rail-item {
+        color: #8b8b84;
+      }
+
+      .rail-item:hover {
+        color: #f5f5f0;
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .rail-item.active {
+        color: #ffffff;
+        background: rgba(255, 255, 255, 0.08);
+        border-color: transparent;
+      }
+
+      .rail-item.active::before {
+        background: var(--accent);
+        box-shadow: 0 0 12px rgba(229, 52, 42, 0.7);
+      }
+
+      .brand {
+        background: #f5f5f0;
+        border-color: #3a3a36;
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+      }
+
+      .brand svg {
+        color: var(--accent);
+      }
+
+      .rail-spec {
+        color: #8b8b84;
+        border-color: rgba(255, 255, 255, 0.16);
+      }
+
+      .rail-spec:hover {
+        color: #ffffff;
+        border-color: rgba(255, 255, 255, 0.32);
+      }
+
+      .rail-avatar {
+        background: #1c1c19;
+        border-color: rgba(255, 255, 255, 0.16);
+        color: #f5f5f0;
+      }
+
+      .panel {
+        border-color: rgba(17, 17, 17, 0.13);
+        box-shadow:
+          0 1px 0 rgba(17, 17, 17, 0.03),
+          0 18px 36px -26px rgba(17, 17, 17, 0.28);
+      }
+
+      .hero {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: var(--s5);
+        padding: 8px 0 26px;
+        margin-bottom: var(--s5);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .hero-kicker {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--text-3);
+      }
+
+      .hero-kicker::before {
+        content: "";
+        width: 30px;
+        height: 2px;
+        background: var(--accent);
+      }
+
+      .hero h2 {
+        margin: 12px 0 8px;
+        font-family: var(--font-display);
+        font-size: 32px;
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+        font-weight: 600;
+      }
+
+      .hero h2 em {
+        font-style: normal;
+        color: var(--accent);
+      }
+
+      .hero p {
+        margin: 0;
+        font-size: 12px;
+        color: var(--text-2);
+      }
+
+      .hero-side {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding-bottom: 4px;
+      }
+
+      .hero-live {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+        border: 1px solid var(--line-2);
+        border-radius: 8px;
+        background: #ffffff;
+      }
+
+      .hero-live .dot {
+        color: var(--ok);
+      }
+
+      .hero-live b {
+        display: block;
+        font-family: var(--mono);
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        color: var(--ok);
+      }
+
+      .hero-live span {
+        display: block;
+        font-size: 10px;
+        color: var(--text-3);
+      }
+
+      .hero-sign {
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.12em;
+        color: var(--text-3);
+        text-align: right;
+        line-height: 1.7;
+      }
+
+      .kpi {
+        border-top: 2px solid #111111;
+      }
+
+      .kpi:nth-child(4) {
+        border-top-color: var(--accent);
+      }
+
+      .kpi-index {
+        position: absolute;
+        top: 14px;
+        right: 16px;
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.1em;
+        color: var(--text-3);
+      }
+
+      .kpi-spark {
+        display: flex;
+        align-items: flex-end;
+        gap: 3px;
+        height: 26px;
+        margin-top: 14px;
+        opacity: 0.9;
+      }
+
+      .kpi-spark i {
+        flex: 1;
+        min-width: 2px;
+        background: #d8d7d2;
+        border-radius: 1px;
+      }
+
+      .kpi-spark i:nth-last-child(2) {
+        background: #a9a8a1;
+      }
+
+      .kpi-spark i:last-child {
+        background: #111111;
+      }
+
+      .kpi-spark.hot i:nth-last-child(2) {
+        background: rgba(229, 52, 42, 0.4);
+      }
+
+      .kpi-spark.hot i:last-child {
+        background: var(--accent);
+      }
+
+      .hud {
+        position: absolute;
+        width: 14px;
+        height: 14px;
+        border: 0 solid rgba(17, 17, 17, 0.55);
+        pointer-events: none;
+        z-index: 2;
+      }
+
+      .hud-tl {
+        left: 10px;
+        top: 10px;
+        border-left-width: 1px;
+        border-top-width: 1px;
+      }
+      .hud-tr {
+        right: 10px;
+        top: 10px;
+        border-right-width: 1px;
+        border-top-width: 1px;
+      }
+      .hud-bl {
+        left: 10px;
+        bottom: 10px;
+        border-left-width: 1px;
+        border-bottom-width: 1px;
+      }
+      .hud-br {
+        right: 10px;
+        bottom: 10px;
+        border-right-width: 1px;
+        border-bottom-width: 1px;
+      }
+
+      .hud-scan {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: linear-gradient(180deg, transparent, rgba(229, 52, 42, 0.45), transparent);
+        animation: hud-scan 8s linear infinite;
+        pointer-events: none;
+      }
+
+      @keyframes hud-scan {
+        0% {
+          left: 8%;
+          opacity: 0;
+        }
+        12% {
+          opacity: 0.8;
+        }
+        88% {
+          opacity: 0.8;
+        }
+        100% {
+          left: 92%;
+          opacity: 0;
+        }
+      }
+
+      .hud-readout {
+        position: absolute;
+        top: 12px;
+        right: 32px;
+        font-family: var(--mono);
+        font-size: 9px;
+        line-height: 1.6;
+        color: var(--text-3);
+        text-align: right;
+        pointer-events: none;
+      }
+
+      .sim-stage::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px solid rgba(17, 17, 17, 0.14);
+        pointer-events: none;
+      }
+
+      .sim-stage .hud-readout {
+        top: auto;
+        bottom: 14px;
+        right: 34px;
+      }
+
+      .metric-card {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .metric-card.winner::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 16px;
+        bottom: 16px;
+        width: 2px;
+        background: var(--ok);
+      }
+
+      .metric-card .ghost-index {
+        position: absolute;
+        right: 12px;
+        bottom: 6px;
+        font-family: var(--font-display);
+        font-size: 54px;
+        line-height: 1;
+        color: rgba(17, 17, 17, 0.045);
+        pointer-events: none;
+      }
+
+      .login-watermark {
+        position: absolute;
+        right: -10px;
+        bottom: 34px;
+        font-family: var(--font-display);
+        font-size: 220px;
+        line-height: 0.8;
+        letter-spacing: -0.08em;
+        color: rgba(17, 17, 17, 0.035);
+        pointer-events: none;
+        user-select: none;
+      }
+
+      .login-copy {
+        border-left: 2px solid var(--accent);
+        padding-left: 22px;
+      }
+
+      .login-copy h2 {
+        font-family: var(--font-display);
+        font-size: 40px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      .login-copy h2 em {
+        font-style: normal;
+        color: var(--accent);
+      }
+
+      .login-meta {
+        position: absolute;
+        top: 48px;
+        right: 48px;
+        font-family: var(--mono);
+        font-size: 9px;
+        letter-spacing: 0.12em;
+        color: var(--text-3);
+        text-align: right;
+        line-height: 1.8;
+      }
+
+      .login-card {
+        border-top: 2px solid var(--accent);
+      }
+
+      .eyebrow,
+      .kpi-label,
+      .metric-label,
+      .section-head,
+      .tick-label,
+      .table th,
+      .hero-kicker {
+        text-transform: none;
+        letter-spacing: 0.03em;
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Foundations                                                         */
+      /* ------------------------------------------------------------------ */
+      .foundations {
+        display: grid;
+        grid-template-columns: 1.1fr 1fr;
+        gap: var(--s4);
+      }
+
+      .found-block {
+        padding: var(--s4);
+        margin-bottom: var(--s4);
+      }
+
+      .found-title {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: var(--s4);
+      }
+
+      .found-title h2 {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .found-title span {
+        font-size: 10px;
+        color: var(--text-3);
+      }
+
+      .swatch-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+      }
+
+      .swatch {
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        overflow: hidden;
+      }
+
+      .swatch .color {
+        height: 42px;
+      }
+
+      .swatch .meta {
+        padding: 5px 7px;
+        font-size: 9px;
+        color: var(--text-3);
+        line-height: 1.5;
+      }
+
+      .swatch .meta b {
+        display: block;
+        color: var(--text-2);
+        font-weight: 500;
+        font-family: var(--mono);
+        font-size: 9px;
+      }
+
+      .type-row {
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        padding: 7px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .type-row:last-child {
+        border-bottom: none;
+      }
+
+      .type-row .sample {
+        width: 150px;
+        color: var(--text);
+      }
+
+      .type-row .spec {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--text-3);
+      }
+
+      .spacing-row {
+        display: flex;
+        align-items: flex-end;
+        gap: 10px;
+        margin-top: 6px;
+      }
+
+      .space {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--mono);
+        font-size: 9px;
+        color: var(--text-3);
+      }
+
+      .space i {
+        width: 100%;
+        background: rgba(17, 17, 17, 0.05);
+        border: 1px solid rgba(17, 17, 17, 0.16);
+        border-radius: 3px;
+        display: block;
+      }
+
+      .component-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .component-row:last-child {
+        border-bottom: none;
+      }
+
+      .component-row .label {
+        width: 86px;
+        font-size: 10px;
+        color: var(--text-3);
+        flex: 0 0 86px;
+      }
+
+      .shadow-demo {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+
+      .shadow-box {
+        height: 52px;
+        border-radius: 8px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        display: grid;
+        place-items: center;
+        font-size: 9px;
+        color: var(--text-3);
+      }
+
+      .shadow-box.s1 {
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.25);
+      }
+      .shadow-box.s2 {
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 16px -4px rgba(0, 0, 0, 0.35);
+      }
+      .shadow-box.s3 {
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3), 0 20px 32px -8px rgba(0, 0, 0, 0.45);
+      }
+      .shadow-box.s4 {
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3), 0 36px 64px -16px rgba(0, 0, 0, 0.6);
+      }
+
+      /* ------------------------------------------------------------------ */
+      /* Login                                                               */
+      /* ------------------------------------------------------------------ */
+      .brand {
+        cursor: pointer;
+      }
+
+      .login-screen {
+        position: fixed !important;
+        inset: 0;
+        z-index: 100;
+        padding: 0 !important;
+        overflow: hidden;
+        background: #f7f6f2;
+      }
+
+      .login-shell {
+        display: grid;
+        grid-template-columns: minmax(0, 1.25fr) minmax(420px, 0.75fr);
+        height: 100%;
+      }
+
+      .login-visual {
+        position: relative;
+        overflow: hidden;
+        padding: 48px;
+        background:
+          radial-gradient(900px 620px at 20% 10%, rgba(17, 17, 17, 0.03), transparent 60%),
+          radial-gradient(700px 500px at 90% 90%, rgba(17, 17, 17, 0.02), transparent 60%),
+          #fafaf7;
+        border-right: 1px solid var(--line);
+      }
+
+      .login-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text);
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+
+      .login-brand .mark {
+        width: 30px;
+        height: 30px;
+        border-radius: 9px;
+        display: grid;
+        place-items: center;
+        background: linear-gradient(140deg, #d8d7d2, #d8d7d2);
+        border: 1px solid rgba(17, 17, 17, 0.24);
+        box-shadow: 0 0 20px rgba(229, 52, 42, 0.25);
+      }
+
+      .login-brand small {
+        display: block;
+        font-size: 9px;
+        letter-spacing: 0.24em;
+        color: var(--text-3);
+        font-weight: 500;
+      }
+
+      .login-copy {
+        position: relative;
+        z-index: 2;
+        margin-top: 18vh;
+        max-width: 560px;
+      }
+
+      .login-copy h2 {
+        margin: 14px 0 16px;
+        font-size: 38px;
+        line-height: 1.22;
+        letter-spacing: -0.03em;
+        font-weight: 600;
+      }
+
+      .login-copy h2 em {
+        font-style: normal;
+        color: var(--accent);
+      }
+
+      .login-copy p {
+        margin: 0;
+        font-size: 13px;
+        color: var(--text-2);
+        letter-spacing: 0.02em;
+      }
+
+      .login-map {
+        position: absolute;
+        left: 6%;
+        right: 6%;
+        bottom: 8%;
+        width: 88%;
+        height: 44%;
+        opacity: 0.85;
+      }
+
+      .login-stats {
+        position: absolute;
+        left: 48px;
+        bottom: 48px;
+        display: flex;
+        gap: 28px;
+        z-index: 2;
+      }
+
+      .login-stat b {
+        display: block;
+        font-family: var(--mono);
+        font-size: 20px;
+        font-weight: 600;
+        color: var(--text);
+      }
+
+      .login-stat span {
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        color: var(--text-3);
+      }
+
+      .login-panel {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 40px;
+        background: rgba(255, 255, 255, 0.85);
+      }
+
+      .login-card {
+        width: min(360px, 100%);
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0.95));
+        box-shadow: var(--shadow-lg);
+      }
+
+      .login-card h3 {
+        margin: 8px 0 4px;
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+
+      .login-card > p {
+        margin: 0 0 22px;
+        font-size: 12px;
+        color: var(--text-3);
+      }
+
+      .login-card .field {
+        margin-bottom: 14px;
+      }
+
+      .login-card .control {
+        height: 38px;
+        background: rgba(255, 255, 255, 0.7999999999999999);
+      }
+
+      .login-btn {
+        width: 100%;
+        height: 40px;
+        margin-top: 6px;
+      }
+
+      .demo-row {
+        display: flex;
+        gap: 6px;
+        margin-top: 16px;
+      }
+
+      .demo-chip {
+        flex: 1;
+        border: 1px solid var(--line);
+        background: rgba(17, 17, 17, 0.03);
+        color: var(--text-3);
+        border-radius: 7px;
+        padding: 7px 6px;
+        font-size: 10px;
+        cursor: pointer;
+      }
+
+      .demo-chip.active {
+        color: var(--accent);
+        border-color: rgba(229, 52, 42, 0.3);
+        background: var(--accent-soft);
+      }
+
+      .login-foot {
+        margin-top: 20px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+        font-size: 10px;
+        letter-spacing: 0.04em;
+        color: var(--text-3);
+        text-align: center;
+      }
+
+      .back-btn {
+        font-size: 11px;
+      }
+
+      @media (max-width: 980px) {
+        .login-shell {
+          grid-template-columns: 1fr;
+        }
+        .login-visual {
+          display: none;
+        }
+      }
+
+      @media (max-width: 1280px) {
+        .topbar-search,
+        .draft-badge {
+          display: none;
+        }
+      }
+
+      @media (max-width: 1180px) {
+        .kpi-row {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .overview-main,
+        .overview-bottom,
+        .lab-bottom,
+        .foundations {
+          grid-template-columns: 1fr;
+        }
+        .studio {
+          grid-template-columns: minmax(0, 1fr);
+          height: auto;
+        }
+        .inspector {
+          max-height: 460px;
+        }
+        .composer {
+          grid-template-columns: 1fr;
+        }
+        .task-map {
+          min-height: 380px;
+        }
+        .sim-shell {
+          grid-template-columns: minmax(0, 1fr) 300px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <svg xmlns="http://www.w3.org/2000/svg" style="display: none">
+      <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="4" y="4" width="6" height="6" rx="1.2" />
+        <rect x="14" y="4" width="6" height="6" rx="1.2" />
+        <rect x="4" y="14" width="6" height="6" rx="1.2" />
+        <rect x="14" y="14" width="6" height="6" rx="1.2" />
+      </symbol>
+      <symbol id="i-map" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M9 4 3.5 6.2v13.3L9 17.3l6 2.2 5.5-2.2V4L15 6.2 9 4Z" stroke-linejoin="round" />
+        <path d="M9 4v13.3M15 6.2v13.3" />
+      </symbol>
+      <symbol id="i-tasks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M9 6h11M9 12h11M9 18h11" stroke-linecap="round" />
+        <path d="m3.5 6 1.5 1.5L7 5M3.5 12 5 13.5 7 11M3.5 18 5 19.5 7 17" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="8.2" />
+        <path d="M10 8.6 15.4 12 10 15.4V8.6Z" fill="currentColor" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M4 20V4" stroke-linecap="round" />
+        <path d="M8 16v-5M13 16V7M18 16v-8" stroke-linecap="round" />
+        <path d="M4 20h16" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="m12 3 8.5 4.5L12 12 3.5 7.5 12 3Z" stroke-linejoin="round" />
+        <path d="m4.5 12 7.5 4 7.5-4M4.5 16.5l7.5 4 7.5-4" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="11" cy="11" r="6.2" />
+        <path d="m16 16 4 4" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="m8 10 4 4 4-4" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M6 9a6 6 0 1 1 12 0c0 4 1.5 5.5 2 6.5H4c.5-1 2-2.5 2-6.5Z" stroke-linejoin="round" />
+        <path d="M10 19a2 2 0 0 0 4 0" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 5v14M5 12h14" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M9 6v12M15 6v12" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-replay" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M4 11a8 8 0 1 1 2.3 5.7M4 5v6h6" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-select" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="m5 3 14 8.2-6.1 1.3-3.2 5.7L5 3Z" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M12 3v18M3 12h18M12 3 9.5 5.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5M3 12l2.5-2.5M3 12l2.5 2.5M21 12l-2.5-2.5M21 12l-2.5 2.5" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-node" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="12" cy="12" r="3.2" />
+        <circle cx="12" cy="12" r="8" opacity=".35" stroke-dasharray="3 3" />
+      </symbol>
+      <symbol id="i-edge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <circle cx="5.5" cy="18.5" r="2.2" />
+        <circle cx="18.5" cy="5.5" r="2.2" />
+        <path d="m7.4 16.6 9.2-9.2" stroke-linecap="round" stroke-dasharray="2 3" />
+      </symbol>
+      <symbol id="i-zone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="4" y="5" width="16" height="14" rx="2" stroke-dasharray="3 2" />
+      </symbol>
+      <symbol id="i-fit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="m5 12 4.5 4.5L19 7" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M12 4 3 20h18L12 4Z" stroke-linejoin="round" />
+        <path d="M12 9v5M12 17v.1" stroke-linecap="round" />
+      </symbol>
+      <symbol id="i-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M3 12s3.4-5.5 9-5.5S21 12 21 12s-3.4 5.5-9 5.5S3 12 3 12Z" stroke-linejoin="round" />
+        <circle cx="12" cy="12" r="2.3" />
+      </symbol>
+      <symbol id="i-panel" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="4" y="5" width="16" height="14" rx="2" />
+        <path d="M14 5v14" />
+      </symbol>
+      <symbol id="i-expand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M14 4h6v6M20 4l-6 6M10 20H4v-6M4 20l6-6" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-rotate" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M20 8a8 8 0 1 0 1 7M20 3v5h-5" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-arrow-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 19V5M6 11l6-6 6 6" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-arrow-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M12 5v14M6 13l6 6 6-6" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+        <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5" stroke-linecap="round" stroke-linejoin="round" />
+      </symbol>
+    </svg>
+
+    <div class="shell">
+      <aside class="rail">
+        <div class="brand" title="排策智演">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+            <path d="M4 7h16M4 12h10M4 17h16" stroke-linecap="round" />
+            <circle cx="18" cy="12" r="2" fill="currentColor" stroke="none" />
+          </svg>
+        </div>
+        <button class="rail-item active" data-screen="overview">
+          <svg><use href="#i-grid" /></svg><span>概览</span>
+        </button>
+        <button class="rail-item" data-screen="studio">
+          <svg><use href="#i-map" /></svg><span>地图</span>
+        </button>
+        <button class="rail-item" data-screen="tasks">
+          <svg><use href="#i-tasks" /></svg><span>任务</span>
+        </button>
+        <button class="rail-item" data-screen="sim">
+          <svg><use href="#i-play" /></svg><span>仿真</span>
+        </button>
+        <button class="rail-item" data-screen="lab">
+          <svg><use href="#i-chart" /></svg><span>对比</span>
+        </button>
+        <div class="rail-spacer"></div>
+        <button class="rail-spec" data-screen="foundations">
+          <svg width="15" height="15"><use href="#i-layers" /></svg>
+          规范
+        </button>
+        <div class="rail-avatar">JH</div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div class="page-id">
+            <h1 id="pageTitle">概览</h1>
+            <p id="pageSubtitle">调度态势与运行入口</p>
+          </div>
+          <div class="topbar-search">
+            <svg width="14" height="14"><use href="#i-search" /></svg>
+            搜索路网 / 任务 / 实验
+            <kbd>Ctrl K</kbd>
+          </div>
+          
+          <span class="env-chip"><span class="dot"></span>已连接</span>
+          <div class="topbar-user">
+            <span class="role">管理员</span>
+            <span>系统管理员</span>
+          </div>
+        </header>
+
+        <main class="stage">
+          <!-- ============================================================ -->
+          <!-- Overview                                                     -->
+          <!-- ============================================================ -->
+          <section class="screen active" data-screen="overview">
+            <section class="hero">
+              <div>
+                <div class="hero-kicker">调度态势</div>
+                <h2>实时掌握<em>路网、车辆与任务</em>。</h2>
+                <p>标准车间（双充电位） · 演示任务集（20 单）</p>
+              </div>
+              <div class="hero-side">
+                <div class="hero-live">
+                  <span class="dot"></span>
+                  <div><b>运行中 · 3 台在途</b><span>tick 2751 · 20 / 20 完成</span></div>
+                </div>
+                
+              </div>
+            </section>
+
+            <div class="kpi-row">
+              <article class="panel kpi">
+                
+                <div class="kpi-label">路网</div>
+                <div class="kpi-value"><strong>4</strong><em>张路网</em></div>
+                <div class="kpi-sub"><span class="delta-up">● 3 套模板</span> · 标准车间已加载</div>
+                <div class="kpi-spark"><i style="height: 38%"></i><i style="height: 52%"></i><i style="height: 46%"></i><i style="height: 64%"></i><i style="height: 58%"></i><i style="height: 72%"></i><i style="height: 68%"></i><i style="height: 84%"></i></div>
+              </article>
+              <article class="panel kpi">
+                
+                <div class="kpi-label">工位</div>
+                <div class="kpi-value"><strong>3</strong><em>个工位</em></div>
+                <div class="kpi-sub">W1 · W2 · W3 <span class="muted">/ 双充电位</span></div>
+                <div class="kpi-spark"><i style="height: 60%"></i><i style="height: 60%"></i><i style="height: 45%"></i><i style="height: 72%"></i><i style="height: 72%"></i><i style="height: 55%"></i><i style="height: 66%"></i><i style="height: 66%"></i></div>
+              </article>
+              <article class="panel kpi">
+                
+                <div class="kpi-label">实验</div>
+                <div class="kpi-value"><strong>12</strong><em>次实验</em></div>
+                <div class="kpi-sub"><span class="delta-up">↑ 8.3%</span> 本周平均完成率</div>
+                <div class="kpi-spark"><i style="height: 34%"></i><i style="height: 48%"></i><i style="height: 42%"></i><i style="height: 58%"></i><i style="height: 52%"></i><i style="height: 70%"></i><i style="height: 66%"></i><i style="height: 78%"></i></div>
+              </article>
+              <article class="panel kpi">
+                
+                <div class="kpi-label">冲突</div>
+                <div class="kpi-value"><strong>12</strong><em>次</em></div>
+                <div class="kpi-sub"><span class="delta-warn">● 最近 20 单</span> · 等待 779 tick</div>
+                <div class="kpi-spark hot"><i style="height: 72%"></i><i style="height: 54%"></i><i style="height: 66%"></i><i style="height: 42%"></i><i style="height: 58%"></i><i style="height: 36%"></i><i style="height: 48%"></i><i style="height: 30%"></i></div>
+              </article>
+            </div>
+
+            <div class="overview-main">
+              <article class="panel live-panel">
+                <div class="panel-head">
+                  <h2>实时态势</h2>
+                  <span class="sub">标准车间（双充电位）</span>
+                  <div class="right">
+                    <span class="chip live"><span class="dot"></span>实时</span>
+                    <button class="btn icon" title="全屏"><svg><use href="#i-expand" /></svg></button>
+                  </div>
+                </div>
+                <div class="live-map">
+                  <span class="hud hud-tl"></span><span class="hud hud-tr"></span><span class="hud hud-bl"></span><span class="hud hud-br"></span>
+                  <svg viewBox="0 0 760 360" preserveAspectRatio="xMidYMid meet">
+                    <defs>
+                      <pattern id="miniGrid" width="28" height="28" patternUnits="userSpaceOnUse">
+                        <path d="M28 0H0V28" fill="none" stroke="rgba(17, 17, 17, 0.06)" />
+                      </pattern>
+                      <path id="miniPath1" d="M170 290 L170 190 L330 190 L490 190 L490 300" />
+                      <path id="miniPath2" d="M170 80 L330 80 L620 80 L620 190 L620 290" />
+                    </defs>
+                    <rect width="760" height="360" fill="url(#miniGrid)" />
+                    <g>
+                      <rect x="115" y="50" width="580" height="64" rx="4" fill="#111111" fill-opacity=".07" stroke="#111111" stroke-opacity=".22" />
+                      <rect x="120" y="238" width="120" height="86" rx="4" fill="#deddd7" fill-opacity=".07" stroke="#deddd7" stroke-opacity=".22" />
+                      <rect x="550" y="238" width="120" height="86" rx="4" fill="#c9c8c2" fill-opacity=".07" stroke="#c9c8c2" stroke-opacity=".22" />
+                      <text x="405" y="106" font-size="9" fill="#111111" opacity=".65" text-anchor="middle">充电区</text>
+                      <text x="180" y="254" font-size="9" fill="#5f5f59" opacity=".8" text-anchor="start">进货区</text>
+                      <text x="630" y="254" font-size="9" fill="#5f5f59" opacity=".8" text-anchor="start">卸货区</text>
+                    </g>
+                    <g fill="none" stroke="#e2e1db" stroke-width="21" stroke-linecap="round">
+                      <path d="M170 80 L170 290 M170 190 L490 190 M490 80 L620 80 M620 80 L620 290 M170 80 L330 80 L620 80 M490 80 L490 190 M170 290 L170 290 M330 190 L330 250 M490 190 L490 250" />
+                    </g>
+                    <g fill="none" stroke="rgba(17, 17, 17, 0.26)" stroke-width="1" stroke-dasharray="5 7">
+                      <path d="M170 80 L170 290 M170 190 L490 190 M490 80 L620 80 M620 80 L620 290 M170 80 L330 80 L620 80 M490 80 L490 190" />
+                    </g>
+                    <g>
+                      <circle cx="170" cy="80" r="8" fill="#ffffff" stroke="#111111" stroke-width="2" />
+                      <circle cx="620" cy="80" r="8" fill="#ffffff" stroke="#111111" stroke-width="2" />
+                      <circle cx="170" cy="190" r="5" fill="#f4f3ee" stroke="#8c8b85" stroke-width="1.5" />
+                      <circle cx="330" cy="190" r="5" fill="#f4f3ee" stroke="#8c8b85" stroke-width="1.5" />
+                      <circle cx="490" cy="190" r="5" fill="#f4f3ee" stroke="#8c8b85" stroke-width="1.5" />
+                      <circle cx="620" cy="190" r="5" fill="#f4f3ee" stroke="#8c8b85" stroke-width="1.5" />
+                      <circle cx="490" cy="80" r="5" fill="#f4f3ee" stroke="#8c8b85" stroke-width="1.5" />
+                      <circle cx="170" cy="290" r="9" fill="#ffffff" stroke="#111111" stroke-width="2" />
+                      <circle cx="490" cy="300" r="9" fill="#ffffff" stroke="#111111" stroke-width="2" />
+                      <circle cx="620" cy="290" r="9" fill="#ffffff" stroke="#111111" stroke-width="2" />
+                    </g>
+                    <g font-family="var(--mono)" font-size="9" fill="#5f5f59" text-anchor="middle">
+                      <text x="170" y="63">CH1</text><text x="620" y="63">CH2</text>
+                      <text x="170" y="173">J1</text><text x="330" y="173">J5</text>
+                      <text x="490" y="173">J2</text><text x="620" y="173">J3</text>
+                      <text x="490" y="63">J4</text>
+                      <text x="170" y="314">W1</text><text x="490" y="324">W2</text><text x="620" y="314">W3</text>
+                    </g>
+                    <g>
+                      <circle r="4.5" fill="#177a42">
+                        <animateMotion dur="9s" repeatCount="indefinite"><mpath href="#miniPath1" /></animateMotion>
+                      </circle>
+                      <circle r="4.5" fill="#111111">
+                        <animateMotion dur="11s" repeatCount="indefinite"><mpath href="#miniPath2" /></animateMotion>
+                      </circle>
+                      <circle r="4.5" fill="#c9c8c2">
+                        <animateMotion dur="13s" repeatCount="indefinite" begin="2s"><mpath href="#miniPath1" /></animateMotion>
+                      </circle>
+                    </g>
+                  </svg>
+                  <div class="live-overlay">
+                    <span class="chip accent">AGV 3 台在途</span>
+                    <span class="chip">tick 2751</span>
+                  </div>
+                  <div class="live-legend">
+                    <span><i style="background: #177a42"></i>行驶</span>
+                    <span><i style="background: #111111"></i>充电</span>
+                    <span><i style="background: #c9c8c2"></i>等待</span>
+                  </div>
+                </div>
+              </article>
+
+              <article class="panel launch-panel">
+                <div class="panel-head">
+                  <h2>快速启动</h2>
+                  <span class="sub">沿用上次参数</span>
+                </div>
+                <div class="launch-body">
+                  <div class="field">
+                    <label>路网</label>
+                    <div class="control"><span class="value">标准车间（双充电位）</span><svg><use href="#i-chevron" /></svg></div>
+                  </div>
+                  <div class="field">
+                    <label>任务集</label>
+                    <div class="control"><span class="value">演示任务集（20 单）</span><svg><use href="#i-chevron" /></svg></div>
+                  </div>
+                  <div class="field">
+                    <label>调度算法</label>
+                    <div class="control"><span class="value">就近分配</span><svg><use href="#i-chevron" /></svg></div>
+                  </div>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px">
+                    <div class="field">
+                      <label>AGV 数量</label>
+                      <div class="control"><span class="value mono">3</span><span class="muted" style="font-size: 10px">/ 8</span></div>
+                    </div>
+                    <div class="field">
+                      <label>随机种子</label>
+                      <div class="control"><span class="value mono">20261107</span></div>
+                    </div>
+                  </div>
+                  <button class="btn primary" data-jump="sim">启动仿真 <svg><use href="#i-arrow-up" /></svg></button>
+                  <button class="btn ghost">载入上次实验参数</button>
+                </div>
+                <div class="health">
+                  <div class="health-row"><span class="dot" style="color: #177a42"></span>后端 API<b>8080 · 正常</b></div>
+                  <div class="health-row"><span class="dot" style="color: #177a42"></span>实时帧通道<b>/ws/sim 已连接</b></div>
+                  <div class="health-row"><span class="dot" style="color: #8c8b85"></span>引擎版本<b class="mono">v6 · 确定性</b></div>
+                </div>
+              </article>
+            </div>
+
+            <div class="overview-bottom">
+              <article class="panel">
+                <div class="panel-head">
+                  <h2>最近实验</h2>
+                  <span class="sub">同参数对比与回放</span>
+                  <div class="right"><button class="btn ghost">全部记录</button></div>
+                </div>
+                <table class="table">
+                  <thead>
+                    <tr><th>实验 ID</th><th>算法</th><th>完成</th><th>完成时间</th><th>状态</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td class="id-cell">373491834007552</td>
+                      <td>就近分配</td>
+                      <td class="mono strong">20 / 20</td>
+                      <td class="mono">2608 tick</td>
+                      <td><span class="chip live">已完成</span></td>
+                    </tr>
+                    <tr>
+                      <td class="id-cell">373489083613184</td>
+                      <td>贪心 ETA</td>
+                      <td class="mono strong">20 / 20</td>
+                      <td class="mono">2327 tick</td>
+                      <td><span class="chip live">已完成</span></td>
+                    </tr>
+                    <tr>
+                      <td class="id-cell">373488794656768</td>
+                      <td>就近分配</td>
+                      <td class="mono strong">12 / 20</td>
+                      <td class="mono">—</td>
+                      <td><span class="chip danger">死锁</span></td>
+                    </tr>
+                    <tr>
+                      <td class="id-cell">373471902122240</td>
+                      <td>贪心 ETA</td>
+                      <td class="mono strong">20 / 20</td>
+                      <td class="mono">2412 tick</td>
+                      <td><span class="chip">已回放</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </article>
+
+              <article class="panel">
+                <div class="panel-head">
+                  <h2>运行事件</h2>
+                  <span class="sub">最近 30 分钟</span>
+                  <div class="right"><span class="chip">tick 2751</span></div>
+                </div>
+                <div class="feed">
+                  <div class="feed-row">
+                    <span class="feed-time">T+8s</span><i class="feed-dot ok"></i>
+                    <span class="feed-text"><b>AGV-3 完成卸货</b> · W3 · 任务 11</span>
+                  </div>
+                  <div class="feed-row">
+                    <span class="feed-time">T+7s</span><i class="feed-dot"></i>
+                    <span class="feed-text"><b>AGV-1 进入 E5+</b> · 目标 W2</span>
+                  </div>
+                  <div class="feed-row">
+                    <span class="feed-time">T+6s</span><i class="feed-dot warn"></i>
+                    <span class="feed-text"><b>AGV-2 冲突等待</b> · E6 被 AGV-1 占用</span>
+                  </div>
+                  <div class="feed-row">
+                    <span class="feed-time">T+4s</span><i class="feed-dot ok"></i>
+                    <span class="feed-text"><b>任务 20 分配</b> · W1 → W2 · AGV-2</span>
+                  </div>
+                  <div class="feed-row">
+                    <span class="feed-time">T+2s</span><i class="feed-dot"></i>
+                    <span class="feed-text"><b>实验 373489 完成</b> · 贪心 ETA 20/20</span>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <!-- ============================================================ -->
+          <!-- Simulation                                                   -->
+          <!-- ============================================================ -->
+          <section class="screen sim-screen" data-screen="sim">
+            <div class="sim-shell">
+              <div class="sim-stage">
+                <span class="hud hud-tl"></span><span class="hud hud-tr"></span><span class="hud hud-bl"></span><span class="hud hud-br"></span>
+                
+                <svg class="sim-map" viewBox="0 0 1000 620" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <pattern id="simGrid" width="50" height="50" patternUnits="userSpaceOnUse">
+                      <path d="M50 0H0V50" fill="none" stroke="rgba(17, 17, 17, 0.06)" />
+                    </pattern>
+                  </defs>
+                  <rect width="1000" height="620" fill="url(#simGrid)" />
+
+                  <g>
+                    <rect x="110" y="70" width="760" height="112" rx="6" fill="#111111" class="sim-zone" stroke="#111111" />
+                    <rect x="108" y="372" width="180" height="186" rx="6" fill="#deddd7" class="sim-zone" stroke="#deddd7" />
+                    <rect x="712" y="372" width="180" height="186" rx="6" fill="#c9c8c2" class="sim-zone" stroke="#c9c8c2" />
+                    <text x="320" y="102" class="sim-zone-label" fill="#111111" text-anchor="middle">充电区</text>
+                    <text x="145" y="392" class="sim-zone-label" fill="#5f5f59" text-anchor="middle">进货区</text>
+                    <text x="755" y="392" class="sim-zone-label" fill="#5f5f59" text-anchor="middle">卸货区</text>
+                  </g>
+
+                  <g>
+                    <path class="sim-road" d="M200 140 L200 300 M200 300 L400 300 M400 300 L500 300 M500 300 L800 300 M800 300 L800 140 M200 140 L500 140 L800 140 M500 140 L500 300 M200 300 L200 500 M500 300 L500 500 M800 300 L800 500 M400 300 L400 220" />
+                    <path class="sim-road-center" d="M200 140 L200 300 M200 300 L400 300 M400 300 L500 300 M500 300 L800 300 M800 300 L800 140 M200 140 L500 140 L800 140 M500 140 L500 300 M200 300 L200 500 M500 300 L500 500 M800 300 L800 500 M400 300 L400 220" />
+                  </g>
+
+                  <g>
+                    <circle class="sim-node station" cx="200" cy="140" r="13" />
+                    <circle class="sim-node station" cx="800" cy="140" r="13" />
+                    <circle class="sim-node" cx="200" cy="300" r="8" />
+                    <circle class="sim-node" cx="400" cy="300" r="8" />
+                    <circle class="sim-node" cx="500" cy="300" r="8" />
+                    <circle class="sim-node" cx="800" cy="300" r="8" />
+                    <circle class="sim-node" cx="500" cy="140" r="8" />
+                    <circle class="sim-node" cx="400" cy="220" r="8" />
+                    <circle class="sim-node station" cx="200" cy="500" r="15" />
+                    <circle class="sim-node station" cx="500" cy="500" r="15" />
+                    <circle class="sim-node station" cx="800" cy="500" r="15" />
+                    <g class="sim-node-label">
+                      <text x="200" y="111">CH1</text><text x="800" y="111">CH2</text>
+                      <text x="200" y="323">J1</text><text x="400" y="323">J5</text>
+                      <text x="500" y="323">J2</text><text x="800" y="323">J3</text>
+                      <text x="500" y="111">J4</text><text x="400" y="248">B1</text>
+                      <text x="200" y="535">W1</text><text x="500" y="535">W2</text><text x="800" y="535">W3</text>
+                    </g>
+                  </g>
+
+                  <g id="agv1" class="agv">
+                    <g class="agv-rotate">
+                      <rect class="agv-glow" x="-26" y="-19" width="52" height="38" rx="14" />
+                      <rect class="agv-body" x="-17" y="-11" width="34" height="22" rx="5" />
+                      <circle cx="11" cy="-9" r="3" fill="#111111" />
+                    </g>
+                    <text class="agv-label" y="-24">AGV-1</text>
+                    <text class="agv-status" y="30">行驶 · W2</text>
+                  </g>
+                  <g id="agv2" class="agv">
+                    <g class="agv-rotate">
+                      <rect class="agv-glow" x="-26" y="-19" width="52" height="38" rx="14" />
+                      <rect class="agv-body" x="-17" y="-11" width="34" height="22" rx="5" />
+                      <circle cx="11" cy="-9" r="3" fill="#c9c8c2" />
+                    </g>
+                    <text class="agv-label" y="-24">AGV-2</text>
+                    <text class="agv-status" y="30">等待 · E6</text>
+                  </g>
+                  <g id="agv3" class="agv">
+                    <g class="agv-rotate">
+                      <rect class="agv-glow" x="-26" y="-19" width="52" height="38" rx="14" />
+                      <rect class="agv-body" x="-17" y="-11" width="34" height="22" rx="5" />
+                      <circle cx="11" cy="-9" r="3" fill="#5f5f59" />
+                    </g>
+                    <text class="agv-label" y="-24">AGV-3</text>
+                    <text class="agv-status" y="30">卸货 · W3</text>
+                  </g>
+                </svg>
+
+                <div class="sim-top">
+                  <div class="scenario-pill glass">
+                    <span class="dot" style="color: #111111"></span>
+                    <b>标准车间</b>
+                    <span>演示任务集 · 20 单</span>
+                    <span class="chip accent">就近分配</span>
+                  </div>
+                  <div class="sim-top-right">
+                    <span class="chip accent glass" style="height: 30px"><span class="dot"></span>回放中</span>
+                    <span class="chip glass" style="height: 30px">3 / 8 AGV</span>
+                    <button class="btn glass" data-sim-pause><svg><use href="#i-pause" /></svg>暂停</button>
+                    <button class="btn glass icon" title="侧栏"><svg><use href="#i-panel" /></svg></button>
+                  </div>
+                </div>
+
+                <div class="sim-tools glass">
+                  <button class="tool active" title="旋转"><svg><use href="#i-rotate" /></svg></button>
+                  <button class="tool" title="平移"><svg><use href="#i-move" /></svg></button>
+                  <button class="tool" title="俯视"><svg><use href="#i-arrow-up" /></svg></button>
+                  <button class="tool" title="适应画布"><svg><use href="#i-fit" /></svg></button>
+                </div>
+
+                <div class="sim-hint">
+                  <span><kbd>左键</kbd>旋转</span>
+                  <span><kbd>空格</kbd>+左键 平移</span>
+                  <span><kbd>滚轮</kbd>缩放</span>
+                </div>
+              </div>
+
+              <aside class="sim-drawer">
+                <div class="drawer-head">
+                  <h2>运行指标</h2>
+                  <span class="chip live"><span class="dot"></span>实时</span>
+                  <div class="drawer-actions">
+                    <button class="btn icon ghost" title="收起"><svg><use href="#i-chevron" /></svg></button>
+                  </div>
+                </div>
+
+                <div class="tick-block">
+                  <div>
+                    <div class="tick-label">仿真 tick</div>
+                    <div class="tick-value" data-sim-tick>2751</div>
+                    <div class="muted" style="font-size: 10px; margin-top: 4px">tick 100 ms · 4x</div>
+                  </div>
+                  <div class="ring">
+                    <svg width="76" height="76" viewBox="0 0 76 76">
+                      <circle cx="38" cy="38" r="32" fill="none" stroke="rgba(17, 17, 17, 0.1)" stroke-width="5" />
+                      <circle cx="38" cy="38" r="32" fill="none" stroke="#111111" stroke-width="5" stroke-linecap="round" stroke-dasharray="201" stroke-dashoffset="0" />
+                    </svg>
+                    <div class="ring-value">100%</div>
+                  </div>
+                </div>
+
+                <div class="metric-grid">
+                  <div class="metric"><div class="metric-label">完成</div><div class="metric-value" data-sim-done>20<small>/20</small></div></div>
+                  <div class="metric"><div class="metric-label">完成时间</div><div class="metric-value" data-sim-makespan>2608</div></div>
+                  <div class="metric"><div class="metric-label">冲突</div><div class="metric-value">12</div></div>
+                  <div class="metric"><div class="metric-label">总里程</div><div class="metric-value">708.0<small>m</small></div></div>
+                  <div class="metric"><div class="metric-label">等待</div><div class="metric-value">779<small>tick</small></div></div>
+                  <div class="metric"><div class="metric-label">平均交付</div><div class="metric-value">1254<small>tick</small></div></div>
+                </div>
+
+                <div class="drawer-section">
+                  <div class="section-head"><span>车辆状态</span><span>3 台</span></div>
+                  <div class="fleet-row selected">
+                    <i class="fleet-dot"></i>
+                    <span class="fleet-id">AGV-1</span>
+                    <span class="fleet-task">任务 17 · E4- · 8.0m</span>
+                    <span class="chip accent">行驶</span>
+                  </div>
+                  <div class="fleet-row">
+                    <i class="fleet-dot" style="background: #c9c8c2"></i>
+                    <span class="fleet-id">AGV-2</span>
+                    <span class="fleet-task">任务 19 · E3+ · 0.2m</span>
+                    <span class="chip warn">等待</span>
+                  </div>
+                  <div class="fleet-row">
+                    <i class="fleet-dot" style="background: #5f5f59"></i>
+                    <span class="fleet-id">AGV-3</span>
+                    <span class="fleet-task">任务 11 · W3 · 卸货</span>
+                    <span class="chip live">卸货</span>
+                  </div>
+                </div>
+
+                <div class="drawer-section">
+                  <div class="section-head"><span>事件流</span><span>最近 5 条</span></div>
+                  <div class="event-list">
+                    <div class="event-row"><span class="event-tick">2751</span><i class="dot" style="color: #111111"></i><span>AGV-3 开始卸货 · 任务 11</span></div>
+                    <div class="event-row"><span class="event-tick">2750</span><i class="dot" style="color: #e5342a"></i><span>AGV-2 冲突等待 · E6 被 AGV-1 占用</span></div>
+                    <div class="event-row"><span class="event-tick">2748</span><i class="dot" style="color: #5f5f59"></i><span>AGV-1 进入 E5+ · 目标 W2</span></div>
+                    <div class="event-row"><span class="event-tick">2746</span><i class="dot" style="color: #111111"></i><span>任务 20 完成 · W1 → W2</span></div>
+                    <div class="event-row"><span class="event-tick">2744</span><i class="dot" style="color: #5f5f59"></i><span>AGV-3 完成装货 · W3</span></div>
+                  </div>
+                </div>
+              </aside>
+
+              <div class="sim-timeline">
+                <div class="transport">
+                  <button class="round-btn" data-sim-replay title="重播"><svg><use href="#i-replay" /></svg></button>
+                  <button class="round-btn primary" data-sim-play title="播放 / 暂停"><svg><use href="#i-pause" /></svg></button>
+                </div>
+                <div class="timeline">
+                  <span class="time mono" data-sim-elapsed>2751 / 2751</span>
+                  <div class="track">
+                    <div class="fill" data-sim-fill style="right: 0%"></div>
+                    <div class="thumb" data-sim-thumb style="left: 100%"></div>
+                  </div>
+                  <span class="time mono">100 ms / tick</span>
+                </div>
+                <div class="speed-group">
+                  <button class="speed" data-speed="0.25">0.25x</button>
+                  <button class="speed" data-speed="0.5">0.5x</button>
+                  <button class="speed" data-speed="1">1x</button>
+                  <button class="speed" data-speed="2">2x</button>
+                  <button class="speed" data-speed="4">4x</button>
+                  <button class="speed active" data-speed="8">8x</button>
+                </div>
+                <button class="btn ghost">退出回放</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============================================================ -->
+          <!-- Map studio                                                   -->
+          <!-- ============================================================ -->
+          <section class="screen" data-screen="studio">
+            <div class="studio">
+              <div class="studio-canvas">
+                <span class="hud hud-tl"></span><span class="hud hud-tr"></span><span class="hud hud-bl"></span><span class="hud hud-br"></span>
+                <svg class="studio-map" viewBox="0 0 900 620" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <pattern id="studioGrid" width="20" height="20" patternUnits="userSpaceOnUse">
+                      <path d="M20 0H0V20" fill="none" stroke="rgba(17, 17, 17, 0.05)" />
+                    </pattern>
+                  </defs>
+                  <rect width="900" height="620" fill="url(#studioGrid)" />
+
+                  <g>
+                    <rect x="120" y="80" width="660" height="110" rx="6" fill="#111111" class="studio-zone" stroke="#111111" />
+                    <rect x="110" y="360" width="160" height="170" rx="6" fill="#deddd7" class="studio-zone" stroke="#deddd7" />
+                    <rect x="630" y="360" width="160" height="170" rx="6" fill="#c9c8c2" class="studio-zone" stroke="#c9c8c2" />
+                    <text x="300" y="188" class="studio-zone-label" fill="#111111" text-anchor="middle">充电区</text>
+                    <text x="145" y="382" class="studio-zone-label" fill="#5f5f59" text-anchor="middle">进货区</text>
+                    <text x="655" y="382" class="studio-zone-label" fill="#5f5f59" text-anchor="middle">卸货区</text>
+                  </g>
+
+                  <g>
+                    <path class="studio-road" d="M190 135 L190 290 M190 290 L370 290 M370 290 L550 290 M550 290 L710 290 M710 290 L710 135 M190 135 L450 135 L710 135 M450 135 L450 290 M190 290 L190 470 M550 290 L550 470 M710 290 L710 470 M370 290 L370 210" />
+                    <path class="studio-road-line" d="M190 135 L190 290 M190 290 L370 290 M370 290 L550 290 M550 290 L710 290 M710 290 L710 135 M190 135 L450 135 L710 135 M450 135 L450 290 M190 290 L190 470 M550 290 L550 470 M710 290 L710 470 M370 290 L370 210" />
+                  </g>
+
+                  <g>
+                    <circle class="studio-node charger" cx="190" cy="135" r="13" />
+                    <circle class="studio-node charger" cx="710" cy="135" r="13" />
+                    <circle class="studio-node" cx="190" cy="290" r="8" />
+                    <circle class="studio-node" cx="370" cy="290" r="8" />
+                    <circle class="studio-node" cx="550" cy="290" r="8" />
+                    <circle class="studio-node" cx="710" cy="290" r="8" />
+                    <circle class="studio-node" cx="450" cy="135" r="8" />
+                    <circle class="studio-node buffer" cx="370" cy="210" r="8" />
+                    <circle class="studio-node station" cx="190" cy="470" r="13" />
+                    <circle class="studio-node station selected" cx="550" cy="470" r="13" />
+                    <circle class="studio-node station" cx="710" cy="470" r="13" />
+                    <circle class="studio-selection" cx="550" cy="470" r="22" />
+                    <g class="studio-node-label">
+                      <text x="190" y="163">CH1</text><text x="710" y="163">CH2</text>
+                      <text x="190" y="312">J1</text><text x="370" y="312">J5</text>
+                      <text x="550" y="312">J2</text><text x="710" y="312">J3</text>
+                      <text x="450" y="163">J4</text><text x="370" y="234">B1</text>
+                      <text x="190" y="497">W1</text><text x="550" y="497">W2</text><text x="710" y="497">W3</text>
+                    </g>
+                    <g class="studio-dim">
+                      <text x="552" y="452">(10.0, 16.0)</text>
+                      <text x="552" y="530">工位 · 容量 1</text>
+                    </g>
+                  </g>
+                </svg>
+
+                <div class="studio-top">
+                  <div class="glass">
+                    <span class="eyebrow">路网</span>
+                    <span class="mono" style="font-size: 11px">标准车间（双充电位）</span>
+                    <svg width="12" height="12" style="color: var(--text-3)"><use href="#i-chevron" /></svg>
+                  </div>
+                  <div class="seg glass">
+                    <button class="active">编辑</button>
+                    <button>预览</button>
+                  </div>
+                  <div style="margin-left: auto; display: flex; gap: 6px">
+                    <button class="btn glass"><svg><use href="#i-check" /></svg>校验</button>
+                    <button class="btn glass"><svg><use href="#i-play" /></svg>3D 预览</button>
+                    <button class="btn primary">保存</button>
+                  </div>
+                </div>
+
+                <div class="studio-tools glass">
+                  <button class="tool active" title="选择"><svg><use href="#i-select" /></svg></button>
+                  <button class="tool" title="节点"><svg><use href="#i-node" /></svg></button>
+                  <button class="tool" title="路段"><svg><use href="#i-edge" /></svg></button>
+                  <button class="tool" title="区域"><svg><use href="#i-zone" /></svg></button>
+                  <button class="tool" title="平移"><svg><use href="#i-move" /></svg></button>
+                </div>
+
+                <div class="studio-zoom glass">
+                  <button class="zoom-btn">−</button>
+                  <span class="zoom-val">100%</span>
+                  <button class="zoom-btn">+</button>
+                  <button class="zoom-btn"><svg width="14" height="14"><use href="#i-fit" /></svg></button>
+                </div>
+
+                <div class="studio-status">
+                  <span>光标 <b class="mono">10.0, 16.0</b></span>
+                  <span>网格 <b>0.5 m</b></span>
+                  <span>节点 <b class="mono">11</b> · 路段 <b class="mono">12</b> · 区域 <b class="mono">7</b></span>
+                  <div class="right">
+                    <span>自动校验 <b style="color: var(--mint)">通过</b></span>
+                    <span><kbd>Space</kbd> 平移</span>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="panel inspector">
+                <div class="tabs">
+                  <button class="tab active">属性</button>
+                  <button class="tab">区域</button>
+                  <button class="tab">统计</button>
+                  <button class="tab">校验</button>
+                </div>
+                <div class="inspector-body">
+                  <div>
+                    <div class="eyebrow" style="margin-bottom: 10px">选中节点</div>
+                    <div class="form-grid">
+                      <div class="field">
+                        <label>编号</label>
+                        <div class="control"><span class="value mono">W2</span></div>
+                      </div>
+                      <div class="field">
+                        <label>类型</label>
+                        <div class="control"><span class="value">工位</span><svg><use href="#i-chevron" /></svg></div>
+                      </div>
+                      <div class="field">
+                        <label>X 坐标</label>
+                        <div class="control"><span class="value mono">10.0</span></div>
+                      </div>
+                      <div class="field">
+                        <label>Y 坐标</label>
+                        <div class="control"><span class="value mono">16.0</span></div>
+                      </div>
+                      <div class="field full">
+                        <label>容量</label>
+                        <div class="select-strip"><span>1</span><span class="active">2</span><span>4</span><span>8</span></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="inspector-divider"></div>
+
+                  <div>
+                    <div class="eyebrow" style="margin-bottom: 8px">连接路段</div>
+                    <div class="stat-line"><span>E5 · J3 → W2</span><b>8.0 m</b></div>
+                    <div class="stat-line"><span>E6 · J2 → W2</span><b>8.0 m</b></div>
+                    <div class="stat-line"><span>入度 / 出度</span><b>2 / 2</b></div>
+                  </div>
+
+                  <div class="inspector-divider"></div>
+
+                  <div>
+                    <div class="eyebrow" style="margin-bottom: 8px">校验</div>
+                    <div class="check-row ok"><svg><use href="#i-check" /></svg><span>工位容量合法，端点存在</span></div>
+                    <div class="check-row ok"><svg><use href="#i-check" /></svg><span>至少一个充电位 · 全部工位可达</span></div>
+                    <div class="check-row warn"><svg><use href="#i-warn" /></svg><span>B1 缓存位当前为叶子节点，符合规则</span></div>
+                  </div>
+
+                  <div class="inspector-divider"></div>
+
+                  <div class="stat-line"><span>撤销 / 重做</span><b>Ctrl+Z / Ctrl+Shift+Z</b></div>
+                  <div class="stat-line"><span>复制 / 粘贴</span><b>Ctrl+C / Ctrl+V</b></div>
+                </div>
+              </aside>
+            </div>
+          </section>
+
+          <!-- ============================================================ -->
+          <!-- Task composer                                                -->
+          <!-- ============================================================ -->
+          <section class="screen" data-screen="tasks">
+            <div class="task-page">
+              <div class="task-head">
+                <div class="task-title">
+                  <h2>演示任务集 <span class="muted" style="font-weight: 400">· 20 单</span></h2>
+                  <p>标准车间（双充电位） · 3 个工位 · 地图点选起终点</p>
+                </div>
+                <div class="task-head-right">
+                  <div class="control" style="width: 230px">
+                    <span class="muted" style="font-size: 10px">路网</span>
+                    <span class="value">标准车间（双充电位）</span>
+                    <svg><use href="#i-chevron" /></svg>
+                  </div>
+                  <button class="btn">填充演示数据</button>
+                  <button class="btn primary">保存任务集</button>
+                </div>
+              </div>
+
+              <div class="composer">
+                <div class="task-map">
+                  <span class="hud hud-tl"></span><span class="hud hud-tr"></span><span class="hud hud-bl"></span><span class="hud hud-br"></span>
+                  <svg viewBox="0 0 720 480" preserveAspectRatio="xMidYMid meet">
+                    <defs>
+                      <pattern id="taskGrid" width="24" height="24" patternUnits="userSpaceOnUse">
+                        <path d="M24 0H0V24" fill="none" stroke="rgba(17, 17, 17, 0.05)" />
+                      </pattern>
+                    </defs>
+                    <rect width="720" height="480" fill="url(#taskGrid)" />
+
+                    <g>
+                      <rect x="80" y="60" width="560" height="90" rx="5" fill="#111111" class="composer-zone" stroke="#111111" />
+                      <rect x="72" y="300" width="140" height="140" rx="5" fill="#deddd7" class="composer-zone" stroke="#deddd7" />
+                      <rect x="508" y="300" width="140" height="140" rx="5" fill="#c9c8c2" class="composer-zone" stroke="#c9c8c2" />
+                      <text x="360" y="150" class="composer-zone-label" fill="#111111" text-anchor="middle">充电区</text>
+                      <text x="105" y="430" class="composer-zone-label" fill="#deddd7" text-anchor="middle">进货区</text>
+                      <text x="535" y="430" class="composer-zone-label" fill="#c9c8c2" text-anchor="middle">卸货区</text>
+                    </g>
+
+                    <g>
+                      <path class="composer-road" d="M140 100 L140 240 M140 240 L310 240 M310 240 L490 240 M490 240 L580 240 M580 240 L580 100 M140 100 L490 100 L580 100 M490 100 L490 240 M140 240 L140 370 M490 240 L490 370 M580 240 L580 370" />
+                      <path class="composer-road-line" d="M140 100 L140 240 M140 240 L310 240 M310 240 L490 240 M490 240 L580 240 M580 240 L580 100 M140 100 L490 100 L580 100 M490 100 L490 240 M140 240 L140 370 M490 240 L490 370 M580 240 L580 370" />
+                    </g>
+
+                    <g>
+                      <circle class="composer-node" cx="140" cy="100" r="9" /><circle class="composer-node" cx="580" cy="100" r="9" />
+                      <circle class="composer-node" cx="140" cy="240" r="6" /><circle class="composer-node" cx="310" cy="240" r="6" />
+                      <circle class="composer-node" cx="490" cy="240" r="6" /><circle class="composer-node" cx="580" cy="240" r="6" />
+                      <circle class="composer-node" cx="490" cy="100" r="6" />
+                      <circle class="composer-node station is-from" cx="140" cy="370" r="11" data-task-node="W1" />
+                      <circle class="composer-node station" cx="490" cy="370" r="11" data-task-node="W2" />
+                      <circle class="composer-node station is-to" cx="580" cy="370" r="11" data-task-node="W3" />
+                      <circle cx="148" cy="359" r="8" fill="#111111" />
+                      <text x="148" y="362" class="task-marker-badge">起</text>
+                      <circle cx="588" cy="359" r="8" fill="#e5342a" />
+                      <text x="588" y="362" class="task-marker-badge">终</text>
+                      <path class="task-route" d="M150 370 L150 240 L580 240 L580 370" />
+                      <g class="composer-node-label">
+                        <text x="140" y="121">CH1</text><text x="580" y="121">CH2</text>
+                        <text x="140" y="260">J1</text><text x="310" y="260">J5</text>
+                        <text x="490" y="260">J2</text><text x="580" y="260">J3</text>
+                        <text x="490" y="121">J4</text>
+                        <text x="140" y="398">W1</text><text x="490" y="398">W2</text><text x="580" y="398">W3</text>
+                      </g>
+                    </g>
+                  </svg>
+
+                  <div class="map-badge" data-task-mode><span class="dot" style="color: inherit"></span>点击工位设置起点</div>
+                  <div class="map-legend">
+                    <span><i style="background: #111111"></i>起点</span>
+                    <span><i style="background: #e5342a"></i>终点</span>
+                    <span><i style="background: #8c8b85"></i>其他节点</span>
+                  </div>
+                </div>
+
+                <aside class="panel task-panel">
+                  <div class="task-tools">
+                    <button class="btn primary" data-task-add><svg><use href="#i-plus" /></svg>新增任务</button>
+                    <button class="btn">清空</button>
+                    <span class="count mono">20 条</span>
+                  </div>
+                  <div class="task-list" data-task-list></div>
+                  <div class="task-foot">
+                    <div class="validation"><svg width="13" height="13"><use href="#i-check" /></svg>路径可达 · 起终点不同</div>
+                    <div class="right">
+                      <button class="btn">取消</button>
+                      <button class="btn primary">保存</button>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============================================================ -->
+          <!-- Experiments                                                  -->
+          <!-- ============================================================ -->
+          <section class="screen" data-screen="lab">
+            <div class="lab">
+              <article class="panel run-bar">
+                <div class="field">
+                  <label>路网</label>
+                  <div class="control"><span class="value">标准车间（双充电位）</span><svg><use href="#i-chevron" /></svg></div>
+                </div>
+                <div class="field">
+                  <label>任务集</label>
+                  <div class="control"><span class="value">演示任务集（20 单）</span><svg><use href="#i-chevron" /></svg></div>
+                </div>
+                <div class="field narrow">
+                  <label>AGV 数量</label>
+                  <div class="control"><span class="value mono">3</span><span class="muted" style="font-size: 10px">/ 8</span></div>
+                </div>
+                <div class="field narrow">
+                  <label>随机种子</label>
+                  <div class="control"><span class="value mono">20261107</span></div>
+                </div>
+                <div class="actions">
+                  <button class="btn">导出 CSV</button>
+                  <button class="btn primary" data-run-lab>运行对比</button>
+                </div>
+              </article>
+
+              <div class="recommend">
+                <span class="tag">结论</span>
+                <span><b>贪心 ETA</b> 在 4 项可比指标上均更优，推荐优先使用。完成时间减少 <b>281 tick（10.8%）</b>，总等待减少 <b>352 tick</b>。</span>
+              </div>
+
+              <div class="metric-cards">
+                <article class="panel metric-card winner">
+                  
+                  <div class="metric-card-head"><h3>完成时间</h3><span class="unit">tick</span><span class="winner">贪心 ETA 胜出</span></div>
+                  <div class="bar-row"><span class="bar-name">就近分配</span><div class="bar-track"><div class="bar a" style="width: 100%"></div></div><span class="bar-value">2608</span></div>
+                  <div class="bar-row"><span class="bar-name">贪心 ETA</span><div class="bar-track"><div class="bar b" style="width: 89.2%"></div></div><span class="bar-value">2327 <small>−10.8%</small></span></div>
+                </article>
+                <article class="panel metric-card winner">
+                  
+                  <div class="metric-card-head"><h3>总路径长</h3><span class="unit">m</span><span class="winner">贪心 ETA 胜出</span></div>
+                  <div class="bar-row"><span class="bar-name">就近分配</span><div class="bar-track"><div class="bar a" style="width: 100%"></div></div><span class="bar-value">708.0</span></div>
+                  <div class="bar-row"><span class="bar-name">贪心 ETA</span><div class="bar-track"><div class="bar b" style="width: 88.7%"></div></div><span class="bar-value">628.0 <small>−11.3%</small></span></div>
+                </article>
+                <article class="panel metric-card winner">
+                  
+                  <div class="metric-card-head"><h3>总等待</h3><span class="unit">tick</span><span class="winner">贪心 ETA 胜出</span></div>
+                  <div class="bar-row"><span class="bar-name">就近分配</span><div class="bar-track"><div class="bar a" style="width: 100%"></div></div><span class="bar-value">779</span></div>
+                  <div class="bar-row"><span class="bar-name">贪心 ETA</span><div class="bar-track"><div class="bar b" style="width: 54.8%"></div></div><span class="bar-value">427 <small>−45.2%</small></span></div>
+                </article>
+                <article class="panel metric-card winner">
+                  
+                  <div class="metric-card-head"><h3>冲突次数</h3><span class="unit">次</span><span class="winner">贪心 ETA 胜出</span></div>
+                  <div class="bar-row"><span class="bar-name">就近分配</span><div class="bar-track"><div class="bar a" style="width: 100%"></div></div><span class="bar-value">12</span></div>
+                  <div class="bar-row"><span class="bar-name">贪心 ETA</span><div class="bar-track"><div class="bar b" style="width: 66.7%"></div></div><span class="bar-value">8 <small>−33.3%</small></span></div>
+                </article>
+              </div>
+
+              <div class="lab-bottom">
+                <article class="panel">
+                  <div class="panel-head">
+                    <h2>实验历史</h2>
+                    <span class="sub">按创建时间倒序</span>
+                    <div class="right"><button class="btn ghost">筛选</button></div>
+                  </div>
+                  <table class="table">
+                    <thead><tr><th>实验</th><th>算法</th><th>完成</th><th>完成时间</th><th>状态</th><th></th></tr></thead>
+                    <tbody>
+                      <tr>
+                        <td class="id-cell">373491834007552</td>
+                        <td>就近分配</td>
+                        <td class="mono strong">20 / 20</td>
+                        <td class="mono">2608</td>
+                        <td><span class="chip live">已完成</span></td>
+                        <td class="history-actions"><button class="link-btn">对比</button><button class="link-btn muted">回放</button></td>
+                      </tr>
+                      <tr>
+                        <td class="id-cell">373489083613184</td>
+                        <td>贪心 ETA</td>
+                        <td class="mono strong">20 / 20</td>
+                        <td class="mono">2327</td>
+                        <td><span class="chip live">已完成</span></td>
+                        <td class="history-actions"><button class="link-btn">对比</button><button class="link-btn muted">回放</button></td>
+                      </tr>
+                      <tr>
+                        <td class="id-cell">373488794656768</td>
+                        <td>就近分配</td>
+                        <td class="mono strong">12 / 20</td>
+                        <td class="mono">—</td>
+                        <td><span class="chip danger">死锁</span></td>
+                        <td class="history-actions"><button class="link-btn muted">事件</button><button class="link-btn muted">回放</button></td>
+                      </tr>
+                      <tr>
+                        <td class="id-cell">373471902122240</td>
+                        <td>贪心 ETA</td>
+                        <td class="mono strong">20 / 20</td>
+                        <td class="mono">2412</td>
+                        <td><span class="chip">已回放</span></td>
+                        <td class="history-actions"><button class="link-btn">查看</button></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </article>
+
+                <article class="panel trend">
+                  <div class="panel-head" style="border: 0; padding: 0; margin-bottom: 6px">
+                    <h2>完成时间趋势</h2>
+                    <span class="sub">最近 8 次</span>
+                  </div>
+                  <div class="trend-legend">
+                    <span><i style="background: #8c8b85"></i>就近分配</span>
+                    <span><i style="background: #111111"></i>贪心 ETA</span>
+                  </div>
+                  <svg viewBox="0 0 340 160" preserveAspectRatio="none">
+                    <g stroke="rgba(17, 17, 17, 0.08)" stroke-width="1">
+                      <path d="M0 30H340M0 70H340M0 110H340M0 150H340" />
+                    </g>
+                    <polyline points="10,52 55,58 100,47 145,60 190,55 235,48 280,51 325,44" fill="none" stroke="#8c8b85" stroke-width="2" />
+                    <polyline points="10,70 55,66 100,63 145,58 190,61 235,52 280,49 325,47" fill="none" stroke="#111111" stroke-width="2" />
+                    <g fill="#8c8b85">
+                      <circle cx="325" cy="44" r="3" /><circle cx="280" cy="51" r="3" /><circle cx="235" cy="48" r="3" />
+                    </g>
+                    <g fill="#111111">
+                      <circle cx="325" cy="47" r="3" /><circle cx="280" cy="49" r="3" /><circle cx="235" cy="52" r="3" />
+                    </g>
+                  </svg>
+                  <div class="stat-line"><span>平均提升</span><b>−9.6%</b></div>
+                  <div class="stat-line"><span>样本</span><b>12 次</b></div>
+                </article>
+              </div>
+            </div>
+          </section>
+
+          <!-- ============================================================ -->
+          <!-- Foundations                                                  -->
+          <!-- ============================================================ -->
+          <section class="screen" data-screen="foundations">
+            <div class="foundations">
+              <div>
+                <article class="panel found-block">
+                  <div class="found-title"><h2>色彩</h2><span>白纸 + 墨黑 + 信号红 / 连接绿</span></div>
+                  <div class="swatch-grid" style="margin-bottom: 10px">
+                    <div class="swatch"><div class="color" style="background: #f7f6f2"></div><div class="meta"><b>bg</b>#F7F6F2</div></div>
+                    <div class="swatch"><div class="color" style="background: #ffffff"></div><div class="meta"><b>surface</b>#FFFFFF</div></div>
+                    <div class="swatch"><div class="color" style="background: #efeee9"></div><div class="meta"><b>surface-3</b>#EFEEE9</div></div>
+                    <div class="swatch"><div class="color" style="background: #e5342a"></div><div class="meta"><b>signal</b>#E5342A</div></div>
+                    <div class="swatch"><div class="color" style="background: #fbe7e5"></div><div class="meta"><b>signal-soft</b>#FBE7E5</div></div>
+                    <div class="swatch"><div class="color" style="background: #f5f5f0"></div><div class="meta"><b>neutral-100</b>#F5F5F0</div></div>
+                    <div class="swatch"><div class="color" style="background: #d8d7d2"></div><div class="meta"><b>neutral-300</b>#D8D7D2</div></div>
+                    <div class="swatch"><div class="color" style="background: #8c8b85"></div><div class="meta"><b>neutral-500</b>#8C8B85</div></div>
+                    <div class="swatch"><div class="color" style="background: #5f5f59"></div><div class="meta"><b>neutral-700</b>#5F5F59</div></div>
+                    <div class="swatch"><div class="color" style="background: #1b1b1b"></div><div class="meta"><b>neutral-900</b>#1B1B1B</div></div>
+                  </div>
+                  <div class="eyebrow">用色规则</div>
+                  <div class="stat-line"><span>信号红只给选中、冲突、危险与当前路径</span><b>单一</b></div>
+                  <div class="stat-line"><span>已连接、运行中与实时状态使用连接绿</span><b>#177A42</b></div>
+                  <div class="stat-line"><span>主操作使用墨黑实心，不和信号色抢层级</span><b>黑</b></div>
+                  <div class="stat-line"><span>其余状态优先用文字和明度</span><b>灰阶</b></div>
+                  <div class="stat-line"><span>文字层级最多 3 档</span><b>900 / 600 / 400</b></div>
+                </article>
+
+                <article class="panel found-block">
+                  <div class="found-title"><h2>字号与层级</h2><span>4 档字号 + 技术黑体 + 等宽数字</span></div>
+                  <div class="type-row"><span class="sample" style="font-size: 30px; font-weight: 600; letter-spacing: -0.03em">排策智演</span><span class="spec">30 / 600 / title</span></div>
+                  <div class="type-row"><span class="sample" style="font-family: var(--font-display); font-size: 30px; letter-spacing: 0.01em">AGV-01</span><span class="spec">Bahnschrift / 600</span></div>
+                  <div class="type-row"><span class="sample" style="font-size: 20px; font-weight: 600">调度态势</span><span class="spec">20 / 600 / section</span></div>
+                  <div class="type-row"><span class="sample" style="font-size: 14px; font-weight: 500">标准车间（双充电位）</span><span class="spec">14 / 500 / body</span></div>
+                  <div class="type-row"><span class="sample" style="font-size: 12px; color: var(--text-2)">任务 17 · E4- · 8.0m</span><span class="spec">12 / 400 / secondary</span></div>
+                  <div class="type-row"><span class="sample mono" style="font-size: 11px; color: var(--text-3)">2751 tick · 100 ms</span><span class="spec">11 / mono / label</span></div>
+                </article>
+
+                <article class="panel found-block">
+                  <div class="found-title"><h2>间距</h2><span>4 起步，16 基准</span></div>
+                  <div class="spacing-row">
+                    <div class="space"><i style="height: 4px; width: 30px"></i>4</div>
+                    <div class="space"><i style="height: 8px; width: 30px"></i>8</div>
+                    <div class="space"><i style="height: 12px; width: 30px"></i>12</div>
+                    <div class="space"><i style="height: 16px; width: 30px"></i>16</div>
+                    <div class="space"><i style="height: 24px; width: 30px"></i>24</div>
+                    <div class="space"><i style="height: 32px; width: 30px"></i>32</div>
+                    <div class="space"><i style="height: 48px; width: 30px"></i>48</div>
+                    <div class="space"><i style="height: 64px; width: 30px"></i>64</div>
+                  </div>
+                </article>
+              </div>
+
+              <div>
+                <article class="panel found-block">
+                  <div class="found-title"><h2>组件</h2><span>按钮层级 / 控件 / 状态</span></div>
+                  <div class="component-row">
+                    <span class="label">按钮</span>
+                    <button class="btn primary">启动仿真</button>
+                    <button class="btn">校验</button>
+                    <button class="btn ghost">取消</button>
+                    <button class="btn icon"><svg><use href="#i-panel" /></svg></button>
+                  </div>
+                  <div class="component-row">
+                    <span class="label">状态</span>
+                    <span class="chip live"><span class="dot"></span>实时</span>
+                    <span class="chip ok"><span class="dot"></span>已连接</span>
+                    <span class="chip warn">等待</span>
+                    <span class="chip danger">死锁</span>
+                    <span class="chip accent">回放中</span>
+                  </div>
+                  <div class="component-row">
+                    <span class="label">输入</span>
+                    <div class="control" style="width: 150px"><span class="value mono">20261107</span></div>
+                    <div class="control" style="width: 180px"><span class="value">就近分配</span><svg><use href="#i-chevron" /></svg></div>
+                  </div>
+                  <div class="component-row">
+                    <span class="label">快捷</span>
+                    <span class="chip"><kbd style="font-family: var(--mono); font-size: 9px">Space</kbd> 平移</span>
+                    <span class="chip"><kbd style="font-family: var(--mono); font-size: 9px">Ctrl+S</kbd> 保存</span>
+                    <span class="chip"><kbd style="font-family: var(--mono); font-size: 9px">Esc</kbd> 取消</span>
+                  </div>
+                </article>
+
+                <article class="panel found-block">
+                  <div class="found-title"><h2>阴影与层次</h2><span>深色界面靠边框和亮度分层</span></div>
+                  <div class="shadow-demo">
+                    <div class="shadow-box s1">xs · 控件</div>
+                    <div class="shadow-box s2">sm · 卡片</div>
+                    <div class="shadow-box s3">md · 浮层</div>
+                    <div class="shadow-box s4">lg · 弹窗</div>
+                  </div>
+                  <div class="stat-line" style="margin-top: 10px"><span>浮层使用 backdrop-blur + 1px 边</span><b>玻璃</b></div>
+                  <div class="stat-line"><span>卡片不叠阴影，靠 1px 线区分</span><b>扁平</b></div>
+                </article>
+
+                <article class="panel found-block">
+                  <div class="found-title"><h2>规则</h2><span>从 设计规则 落地</span></div>
+                  <div class="check-row ok"><svg><use href="#i-check" /></svg><span>每个页面只有一个实心 primary 操作。</span></div>
+                  <div class="check-row ok"><svg><use href="#i-check" /></svg><span>层级同时用字号、字重、颜色，不只靠字号。</span></div>
+                  <div class="check-row ok"><svg><use href="#i-check" /></svg><span>长 ID 用等宽 + 省略号，不换行撑破表格。</span></div>
+                  <div class="check-row ok"><svg><use href="#i-check" /></svg><span>间距只取 4 / 8 / 12 / 16 / 24 / 32 / 48。</span></div>
+                  <div class="check-row ok"><svg><use href="#i-check" /></svg><span>状态色只用于状态，不用于装饰。</span></div>
+                  <div class="check-row ok"><svg><use href="#i-check" /></svg><span>大标题使用技术黑体，不引入衬线字体。</span></div>
+                  <div class="check-row ok"><svg><use href="#i-check" /></svg><span>深色只用于左侧导航框，主体保持白纸。</span></div>
+                </article>
+              </div>
+            </div>
+          </section>
+          <!-- ============================================================ -->
+          <!-- Login                                                        -->
+          <!-- ============================================================ -->
+          <section class="screen login-screen" data-screen="login">
+            <div class="login-shell">
+              <div class="login-visual">
+                <div class="login-brand">
+                  <span class="mark">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#e5342a" stroke-width="1.7">
+                      <path d="M4 18h6a3 3 0 0 0 3-3v-3a3 3 0 0 1 3-3h4" stroke-linecap="round" />
+                      <circle cx="4" cy="18" r="1.6" fill="#e5342a" stroke="none" />
+                      <circle cx="20" cy="9" r="1.6" fill="#e5342a" stroke="none" />
+                    </svg>
+                  </span>
+                  <span>排策智演<small>AGV 调度仿真</small></span>
+                </div>
+
+                
+
+                <div class="login-copy">
+                  <h2>车间 AGV 集群<em>调度与仿真</em>。</h2>
+                  <p>路径规划 · 时间窗预约 · 冲突消解 · 实验对比</p>
+                </div>
+
+                <svg class="login-map" viewBox="0 0 760 380" preserveAspectRatio="xMidYMid meet">
+                  <defs>
+                    <pattern id="loginGrid" width="32" height="32" patternUnits="userSpaceOnUse">
+                      <path d="M32 0H0V32" fill="none" stroke="rgba(17, 17, 17, 0.06)" />
+                    </pattern>
+                    <path id="loginPath1" d="M150 300 L150 190 L340 190 L530 190 L530 300" />
+                    <path id="loginPath2" d="M150 80 L340 80 L620 80 L620 190 L620 300" />
+                  </defs>
+                  <rect width="760" height="380" fill="url(#loginGrid)" />
+                  <g>
+                    <rect x="100" y="46" width="560" height="66" rx="4" fill="#111111" fill-opacity=".06" stroke="#111111" stroke-opacity=".18" />
+                    <rect x="100" y="240" width="116" height="90" rx="4" fill="#deddd7" fill-opacity=".06" stroke="#deddd7" stroke-opacity=".18" />
+                    <rect x="540" y="240" width="116" height="90" rx="4" fill="#c9c8c2" fill-opacity=".06" stroke="#c9c8c2" stroke-opacity=".18" />
+                    <text x="380" y="100" font-size="8" fill="#111111" opacity=".55" text-anchor="middle" letter-spacing="2">充电区</text>
+                  </g>
+                  <g fill="none" stroke="#e2e1db" stroke-width="18" stroke-linecap="round">
+                    <path d="M150 80 L150 300 M150 190 L530 190 M530 80 L620 80 M620 80 L620 300 M150 80 L340 80 L620 80 M530 80 L530 190" />
+                  </g>
+                  <g fill="none" stroke="rgba(17, 17, 17, 0.22)" stroke-width="1" stroke-dasharray="5 8">
+                    <path d="M150 80 L150 300 M150 190 L530 190 M530 80 L620 80 M620 80 L620 300 M150 80 L340 80 L620 80 M530 80 L530 190" />
+                  </g>
+                  <g>
+                    <circle cx="150" cy="80" r="7" fill="#ffffff" stroke="#111111" stroke-width="2" />
+                    <circle cx="620" cy="80" r="7" fill="#ffffff" stroke="#111111" stroke-width="2" />
+                    <circle cx="150" cy="190" r="5" fill="#f4f3ee" stroke="#8c8b85" stroke-width="1.5" />
+                    <circle cx="340" cy="190" r="5" fill="#f4f3ee" stroke="#8c8b85" stroke-width="1.5" />
+                    <circle cx="530" cy="190" r="5" fill="#f4f3ee" stroke="#8c8b85" stroke-width="1.5" />
+                    <circle cx="620" cy="190" r="5" fill="#f4f3ee" stroke="#8c8b85" stroke-width="1.5" />
+                    <circle cx="530" cy="80" r="5" fill="#f4f3ee" stroke="#8c8b85" stroke-width="1.5" />
+                    <circle cx="150" cy="300" r="8" fill="#ffffff" stroke="#111111" stroke-width="2" />
+                    <circle cx="530" cy="300" r="8" fill="#ffffff" stroke="#111111" stroke-width="2" />
+                    <circle cx="620" cy="300" r="8" fill="#ffffff" stroke="#111111" stroke-width="2" />
+                  </g>
+                  <g>
+                    <circle r="5" fill="#177a42" opacity=".9">
+                      <animateMotion dur="8s" repeatCount="indefinite"><mpath href="#loginPath1" /></animateMotion>
+                    </circle>
+                    <circle r="5" fill="#111111" opacity=".9">
+                      <animateMotion dur="10s" repeatCount="indefinite"><mpath href="#loginPath2" /></animateMotion>
+                    </circle>
+                    <circle r="5" fill="#c9c8c2" opacity=".9">
+                      <animateMotion dur="12s" repeatCount="indefinite" begin="2s"><mpath href="#loginPath1" /></animateMotion>
+                    </circle>
+                  </g>
+                </svg>
+
+                <div class="login-stats">
+                  <div class="login-stat"><b>4</b><span>路网</span></div>
+                  <div class="login-stat"><b>3</b><span>算法</span></div>
+                  <div class="login-stat"><b>12</b><span>实验</span></div>
+                  <div class="login-stat"><b>100%</b><span>可复现</span></div>
+                </div>
+                
+              </div>
+
+              <div class="login-panel">
+                <div class="login-card">
+                  
+                  <h3>登录</h3>
+                  <p>使用预置账号快速体验</p>
+                  <div class="field">
+                    <label>用户名</label>
+                    <div class="control"><span class="value mono">admin</span></div>
+                  </div>
+                  <div class="field">
+                    <label>密码</label>
+                    <div class="control"><span class="value mono">••••••••</span></div>
+                  </div>
+                  <button class="btn primary login-btn">登录</button>
+                  <div class="demo-row">
+                    <button class="demo-chip active">管理员 · admin</button>
+                    <button class="demo-chip">调度人员 · dispatcher</button>
+                  </div>
+                  
+                </div>
+                <button class="btn ghost back-btn" data-screen="overview">← 返回设计稿</button>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      const titles = {
+        overview: ["概览", "调度态势与运行入口"],
+        studio: ["车间地图", "路网编辑与区域注释"],
+        tasks: ["任务集", "地图选点与任务编排"],
+        sim: ["仿真运行", "实时控制台与回放"],
+        lab: ["对比实验", "同参数下的算法对比"],
+        foundations: ["设计规范", "颜色、字号、间距与组件"],
+        login: ["登录", "进入调度台"]
+      };
+
+      const railItems = [...document.querySelectorAll(".rail-item, .rail-spec")];
+      const screens = [...document.querySelectorAll(".screen")];
+
+      function showScreen(name) {
+        railItems.forEach((item) => item.classList.toggle("active", item.dataset.screen === name));
+        screens.forEach((screen) => screen.classList.toggle("active", screen.dataset.screen === name));
+        document.getElementById("pageTitle").textContent = titles[name][0];
+        document.getElementById("pageSubtitle").textContent = titles[name][1];
+        if (name === "lab") animateBars();
+      }
+
+      railItems.forEach((item) => item.addEventListener("click", () => showScreen(item.dataset.screen)));
+      document.querySelectorAll("[data-jump]").forEach((btn) =>
+        btn.addEventListener("click", () => showScreen(btn.dataset.jump))
+      );
+      document.querySelector(".brand")?.addEventListener("click", () => showScreen("login"));
+      document.querySelector(".back-btn")?.addEventListener("click", () => showScreen("overview"));
+
+      /* ------------------------------------------------------------------ */
+      /* Simulation                                                          */
+      /* ------------------------------------------------------------------ */
+      const simPaths = {
+        agv1: [
+          [200, 500], [200, 300], [400, 300], [500, 300], [500, 500],
+          [500, 300], [400, 300], [200, 300], [200, 500]
+        ],
+        agv2: [
+          [200, 140], [500, 140], [800, 140], [800, 300], [800, 500],
+          [800, 300], [800, 140], [500, 140], [200, 140]
+        ],
+        agv3: [
+          [500, 500], [500, 300], [800, 300], [800, 140], [500, 140],
+          [200, 140], [200, 300], [400, 300], [500, 300], [500, 500]
+        ]
+      };
+
+      const simState = { playing: true, speed: 8, tick: 2751, max: 2751, phase: 0.12, last: performance.now() };
+      const agvEls = { agv1: document.getElementById("agv1"), agv2: document.getElementById("agv2"), agv3: document.getElementById("agv3") };
+      const tickEl = document.querySelector("[data-sim-tick]");
+      const elapsedEl = document.querySelector("[data-sim-elapsed]");
+      const fillEl = document.querySelector("[data-sim-fill]");
+      const thumbEl = document.querySelector("[data-sim-thumb]");
+      const playBtns = [...document.querySelectorAll("[data-sim-play], [data-sim-pause]")];
+
+      function pathPoint(points, t) {
+        const total = points.length - 1;
+        const raw = ((t % 1) + 1) % 1;
+        const scaled = raw * total;
+        const index = Math.min(total - 1, Math.floor(scaled));
+        const local = scaled - index;
+        const a = points[index];
+        const b = points[index + 1];
+        return [a[0] + (b[0] - a[0]) * local, a[1] + (b[1] - a[1]) * local];
+      }
+
+      function renderSim() {
+        tickEl.textContent = String(simState.max);
+        elapsedEl.textContent = `${simState.max} / ${simState.max}`;
+        fillEl.style.right = "0%";
+        thumbEl.style.left = "100%";
+        const offsets = { agv1: 0.05, agv2: 0.32, agv3: 0.68 };
+        for (const [id, el] of Object.entries(agvEls)) {
+          const points = simPaths[id];
+          const t = simState.phase * 2.2 + offsets[id];
+          const [x, y] = pathPoint(points, t);
+          const eps = 0.004;
+          const [x2, y2] = pathPoint(points, t + eps);
+          const angle = (Math.atan2(y2 - y, x2 - x) * 180) / Math.PI;
+          el.setAttribute("transform", `translate(${x},${y})`);
+          el.querySelector(".agv-rotate")?.setAttribute("transform", `rotate(${angle})`);
+        }
+      }
+
+      function simFrame(now) {
+        const dt = Math.min(now - simState.last, 80);
+        simState.last = now;
+        if (simState.playing) {
+          simState.phase = (simState.phase + (dt / 1000) * 0.018 * simState.speed) % 1;
+        }
+        renderSim();
+        requestAnimationFrame(simFrame);
+      }
+      renderSim();
+      requestAnimationFrame(simFrame);
+
+      playBtns.forEach((btn) =>
+        btn.addEventListener("click", () => {
+          simState.playing = !simState.playing;
+          playBtns.forEach((item) => {
+            item.innerHTML = `<svg><use href="#${simState.playing ? "i-pause" : "i-play"}" /></svg>`;
+            item.title = simState.playing ? "暂停" : "播放";
+          });
+        })
+      );
+
+      document.querySelectorAll("[data-speed]").forEach((btn) =>
+        btn.addEventListener("click", () => {
+          simState.speed = Number(btn.dataset.speed);
+          document.querySelectorAll("[data-speed]").forEach((item) => item.classList.toggle("active", item === btn));
+        })
+      );
+
+      document.querySelector("[data-sim-replay]")?.addEventListener("click", () => {
+        simState.phase = 0;
+        simState.playing = true;
+        playBtns.forEach((item) => {
+          item.innerHTML = `<svg><use href="#i-pause" /></svg>`;
+        });
+      });
+
+      /* ------------------------------------------------------------------ */
+      /* Task composer                                                       */
+      /* ------------------------------------------------------------------ */
+      const taskPairs = [
+        ["W1", "W3"], ["W1", "W2"], ["W2", "W1"], ["W3", "W2"], ["W1", "W2"],
+        ["W2", "W3"], ["W3", "W1"], ["W1", "W2"], ["W2", "W1"], ["W3", "W2"],
+        ["W1", "W3"], ["W2", "W3"], ["W3", "W2"], ["W1", "W2"], ["W2", "W1"],
+        ["W3", "W1"], ["W1", "W3"], ["W2", "W3"], ["W3", "W1"], ["W1", "W2"]
+      ];
+      const taskSeed = taskPairs.map(([from, to], index) => ({ id: index + 1, from, to }));
+
+      const taskState = {
+        tasks: taskSeed,
+        active: 0,
+        field: "from",
+        nextId: 13
+      };
+
+      const taskListEl = document.querySelector("[data-task-list]");
+      const taskModeEl = document.querySelector("[data-task-mode]");
+
+      function taskRender() {
+        taskListEl.innerHTML = "";
+        taskState.tasks.forEach((task, index) => {
+          const row = document.createElement("div");
+          row.className = "task-row" + (index === taskState.active ? " active" : "");
+          row.innerHTML = `
+            <span class="task-seq">${String(index + 1).padStart(2, "0")}</span>
+            <div class="task-route-line">
+              <button class="station-chip ${task.from ? "" : "empty"} ${index === taskState.active && taskState.field === "from" ? "picking" : ""}" data-field="from">${task.from || "选起点"}</button>
+              <span class="task-arrow">→</span>
+              <button class="station-chip ${task.to ? "" : "empty"} ${index === taskState.active && taskState.field === "to" ? "picking" : ""}" data-field="to">${task.to || "选终点"}</button>
+            </div>
+            <button class="row-del" title="删除">×</button>
+          `;
+          row.addEventListener("click", (event) => {
+            if (event.target.classList.contains("row-del")) {
+              taskState.tasks.splice(index, 1);
+              taskState.active = Math.max(0, Math.min(taskState.active, taskState.tasks.length - 1));
+              taskRender();
+              return;
+            }
+            taskState.active = index;
+            const chip = event.target.closest(".station-chip");
+            if (chip) taskState.field = chip.dataset.field;
+            else taskState.field = !task.from ? "from" : !task.to ? "to" : "from";
+            taskRender();
+          });
+          taskListEl.appendChild(row);
+        });
+
+        const count = document.querySelector(".task-tools .count");
+        if (count) count.textContent = `${taskState.tasks.length} 条`;
+        const active = taskState.tasks[taskState.active];
+        if (taskModeEl) {
+          if (!active) taskModeEl.textContent = "新增任务后开始选点";
+          else if (taskState.field === "from") taskModeEl.textContent = "点击工位设置起点";
+          else if (taskState.field === "to") taskModeEl.textContent = "点击工位设置终点";
+          else taskModeEl.textContent = "当前任务已完成 · 点起点/终点重选";
+        }
+        document.querySelectorAll("[data-task-node]").forEach((node) => {
+          node.classList.toggle("is-from", active && node.dataset.taskNode === active.from);
+          node.classList.toggle("is-to", active && node.dataset.taskNode === active.to);
+        });
+      }
+
+      document.querySelectorAll("[data-task-node]").forEach((node) =>
+        node.addEventListener("click", () => {
+          const active = taskState.tasks[taskState.active];
+          if (!active || !taskState.field) return;
+          active[taskState.field] = node.dataset.taskNode;
+          taskState.field = taskState.field === "from" && !active.to ? "to" : "from";
+          if (taskState.field === "from" && active.from && active.to) taskState.field = "from";
+          taskRender();
+        })
+      );
+
+      document.querySelector("[data-task-add]")?.addEventListener("click", () => {
+        taskState.tasks.unshift({ id: taskState.nextId++, from: "W2", to: null });
+        taskState.active = 0;
+        taskState.field = "to";
+        taskRender();
+      });
+
+      taskRender();
+
+      /* ------------------------------------------------------------------ */
+      /* Experiments                                                         */
+      /* ------------------------------------------------------------------ */
+      function animateBars() {
+        document.querySelectorAll(".bar").forEach((bar) => {
+          const target = bar.style.width;
+          bar.style.width = "0%";
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              bar.style.width = target;
+            });
+          });
+        });
+      }
+
+      document.querySelector("[data-run-lab]")?.addEventListener("click", () => {
+        animateBars();
+      });
+    </script>
+  </body>
+</html>
+
