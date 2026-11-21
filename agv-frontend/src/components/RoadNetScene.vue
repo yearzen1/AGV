@@ -36,12 +36,13 @@ const emit = defineEmits<{
 interface SceneDebug {
   road: RoadNetRender['stats'] | null
   zonesVisible: boolean
+  camera: { position: number[]; target: number[] } | null
   agvs: Array<{ id: string; arcId: string | null; laneOffset: number }>
 }
 
 const container = ref<HTMLDivElement | null>(null)
 const pathGroup = new THREE.Group()
-const debug: SceneDebug = { road: null, zonesVisible: true, agvs: [] }
+const debug: SceneDebug = { road: null, zonesVisible: true, camera: null, agvs: [] }
 
 if (import.meta.env.DEV) {
   ;(window as unknown as { __AGV_SCENE_DEBUG__?: SceneDebug }).__AGV_SCENE_DEBUG__ = debug
@@ -67,6 +68,12 @@ function init() {
   viewer.onFrame = (dt, now) => {
     fleet?.update(dt, now)
     if (import.meta.env.DEV && fleet) debug.agvs = fleet.laneState()
+    if (import.meta.env.DEV && viewer) {
+      debug.camera = {
+        position: viewer.camera.position.toArray(),
+        target: viewer.controls.target.toArray()
+      }
+    }
   }
   viewer.onSelect = (id) => {
     fleet?.setSelected(id)

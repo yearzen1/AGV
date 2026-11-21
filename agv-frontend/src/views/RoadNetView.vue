@@ -605,7 +605,7 @@ onBeforeUnmount(() => {
       </div>
       <template #footer>
         <div class="preview-3d-footer">
-          <span class="muted">左键旋转 · 滚轮缩放 · 右键平移</span>
+          <span class="muted">左键旋转 · 空格+左键平移 · 滚轮缩放 · 右键平移</span>
           <div class="spacer" />
           <el-button size="small" @click="reset3DView">重置视角</el-button>
           <el-button size="small" @click="preview3DFullscreen = !preview3DFullscreen">

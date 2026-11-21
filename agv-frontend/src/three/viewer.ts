@@ -62,7 +62,9 @@ export class SceneViewer {
 
   private animationFrame = 0
   private lastFrameTime = 0
-  private pointerDown: { x: number; y: number; time: number } | null = null
+  private pointerDown: { x: number; y: number; time: number; space: boolean } | null = null
+  private hovering = false
+  private spacePressed = false
 
   constructor(container: HTMLElement, quality: SceneQuality) {
     this.container = container
@@ -127,6 +129,11 @@ export class SceneViewer {
 
     this.renderer.domElement.addEventListener('pointerdown', this.handlePointerDown)
     this.renderer.domElement.addEventListener('pointerup', this.handlePointerUp)
+    this.renderer.domElement.addEventListener('pointerenter', this.handlePointerEnter)
+    this.renderer.domElement.addEventListener('pointerleave', this.handlePointerLeave)
+    window.addEventListener('keydown', this.handleKeyDown)
+    window.addEventListener('keyup', this.handleKeyUp)
+    window.addEventListener('blur', this.handleWindowBlur)
     this.controls.addEventListener('start', this.handleControlStart)
 
     this.resizeObserver = new ResizeObserver(() => this.resize())
@@ -411,20 +418,67 @@ export class SceneViewer {
 
   private handlePointerDown = (event: PointerEvent) => {
     if (event.button !== 0) return
-    this.pointerDown = { x: event.clientX, y: event.clientY, time: performance.now() }
+    this.pointerDown = {
+      x: event.clientX,
+      y: event.clientY,
+      time: performance.now(),
+      space: this.spacePressed
+    }
+    if (this.spacePressed) this.renderer.domElement.style.cursor = 'grabbing'
   }
 
   private handlePointerUp = (event: PointerEvent) => {
     if (event.button !== 0 || !this.pointerDown) return
+    const wasSpacePan = this.pointerDown.space
     const moved = Math.hypot(event.clientX - this.pointerDown.x, event.clientY - this.pointerDown.y)
     const elapsed = performance.now() - this.pointerDown.time
     this.pointerDown = null
+    if (wasSpacePan) {
+      this.renderer.domElement.style.cursor = this.spacePressed ? 'grab' : ''
+      return
+    }
     if (moved > 6 || elapsed > 500) return
 
     const id = this.pickAgv(event)
     this.onSelect?.(id)
     if (id && id === this.followId) this.setFollow(null)
     else this.setFollow(id)
+  }
+
+  private handlePointerEnter = () => {
+    this.hovering = true
+    if (this.spacePressed) this.renderer.domElement.style.cursor = 'grab'
+  }
+
+  private handlePointerLeave = () => {
+    this.hovering = false
+  }
+
+  private handleKeyDown = (event: KeyboardEvent) => {
+    if (event.code !== 'Space' || event.repeat) return
+    if (!this.hovering || isEditableTarget(event.target)) return
+    event.preventDefault()
+    this.setSpacePan(true)
+  }
+
+  private handleKeyUp = (event: KeyboardEvent) => {
+    if (event.code === 'Space') this.setSpacePan(false)
+  }
+
+  private handleWindowBlur = () => {
+    this.setSpacePan(false)
+  }
+
+  /** 按住空格时把左键临时映射为平移；松开后恢复旋转。 */
+  private setSpacePan(active: boolean) {
+    if (active === this.spacePressed) return
+    this.spacePressed = active
+    this.controls.mouseButtons.LEFT = active ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE
+    this.renderer.domElement.style.cursor = active
+      ? 'grab'
+      : this.pointerDown?.space
+        ? 'grabbing'
+        : ''
   }
 
   private pickAgv(event: PointerEvent): string | null {
@@ -453,6 +507,12 @@ export class SceneViewer {
     this.resizeObserver.disconnect()
     this.renderer.domElement.removeEventListener('pointerdown', this.handlePointerDown)
     this.renderer.domElement.removeEventListener('pointerup', this.handlePointerUp)
+    this.renderer.domElement.removeEventListener('pointerenter', this.handlePointerEnter)
+    this.renderer.domElement.removeEventListener('pointerleave', this.handlePointerLeave)
+    window.removeEventListener('keydown', this.handleKeyDown)
+    window.removeEventListener('keyup', this.handleKeyUp)
+    window.removeEventListener('blur', this.handleWindowBlur)
+    this.renderer.domElement.style.cursor = ''
     this.controls.removeEventListener('start', this.handleControlStart)
     this.controls.dispose()
     this.disposeComposer()
@@ -470,6 +530,17 @@ export class SceneViewer {
       this.renderer.domElement.parentElement.removeChild(this.renderer.domElement)
     }
   }
+}
+
+/** 与地图编辑器保持一致：输入类控件里的空格仍按正常文本输入处理。 */
+function isEditableTarget(target: EventTarget | null) {
+  const element = target as HTMLElement | null
+  if (!element) return false
+  const tag = element.tagName
+  if (tag === 'TEXTAREA' || tag === 'SELECT' || element.isContentEditable) return true
+  if (tag !== 'INPUT') return false
+  const type = (element as HTMLInputElement).type
+  return !['button', 'checkbox', 'radio', 'range', 'color', 'file', 'submit', 'reset'].includes(type)
 }
 
 /** 地面网格：一张 2 米 × 2 米的瓦片，靠 repeat 铺满整个地面。 */
